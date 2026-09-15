@@ -1,0 +1,996 @@
+<section id="tc-auth-settings">
+<h2>Authentication, Users, Roles &amp; Settings</h2>
+
+<p>Seventy executable test cases covering the gate and the control room of Juristic Platform: sign-in and session lifetime, the two-role permission matrix on every page and endpoint group, the Users page, and the four Settings forms whose values decide what a future bill costs and what a receipt prints. Cases are grouped by feature; ids run <code>TC-AUTH-001</code> … <code>TC-AUTH-070</code> in one continuous sequence, so an id never moves when a group grows.</p>
+
+<div class="callout note">
+  <div class="title">How to read a case</div>
+  <p><strong>Type</strong> — <em>unit</em> (pure function, no database), <em>API</em> (one HTTP request against a scratch schema, asserting status, error <code>code</code> and payload), <em>UI</em> (one rendered screen, asserting Thai copy, field state and test hooks), <em>e2e</em> (a sequence across screens, ending in a persisted effect). <strong>Priority</strong> — <span class="badge p0">P0</span> demo-critical or money-touching, <span class="badge p1">P1</span> must pass before submission, <span class="badge p2">P2</span> completeness. Every expected result states an exact value: an HTTP status, an <code>UPPER_SNAKE</code> error code, a Thai sentence copied verbatim from the design, or an amount in the <code>1,790.00</code> form. Thai copy is asserted character for character — an extra space is a failure, because the same strings print on a receipt and reach a tenant's phone.</p>
+</div>
+
+<h3>0. Fixture, environment and preconditions common to every case</h3>
+
+<p>Unless a case says otherwise, the database is rebuilt from <code>db/schema.sql</code> + <code>db/seed.sql</code> immediately before the case runs, the process runs with <code>TZ=Asia/Bangkok</code>, MySQL runs at <code>time_zone='+07:00'</code>, and <code>settings.line_test_mode = 1</code> so no message can reach a real phone (D-34, D-44).</p>
+
+<div class="grid">
+  <div class="card">
+    <h4>Accounts</h4>
+    <dl class="kv">
+      <dt><code>admin</code></dt><dd>id <code>1</code> · ชื่อที่แสดง นิติบุคคล · role <code>admin</code> · <code>Active</code></dd>
+      <dt><code>staff</code></dt><dd>id <code>2</code> · ชื่อที่แสดง เจ้าหน้าที่ · role <code>staff</code> · <code>Active</code></dd>
+      <dt>Passwords</dt><dd>from <code>SEED_ADMIN_PASSWORD</code>; the test harness sets it to <code>Passw0rd!2026</code> and never commits a value (D-37)</dd>
+    </dl>
+  </div>
+  <div class="card">
+    <h4>Demo row (PRD §28)</h4>
+    <dl class="kv">
+      <dt>Room</dt><dd>id <code>41</code> · <code>205</code> · floor 2 · 30.00 ตร.ม.</dd>
+      <dt>Tenant</dt><dd>id <code>37</code> · สมชาย ใจดี · <code>0812345678</code></dd>
+      <dt>Bill</dt><dd>id <code>118</code> · period <code>2026-09</code> · total <code>1790.00</code></dd>
+      <dt>Payment / receipt</dt><dd>id <code>96</code> · <code>REC-202609-000852</code></dd>
+    </dl>
+  </div>
+  <div class="card">
+    <h4>Settings seed</h4>
+    <dl class="kv">
+      <dt>Rates</dt><dd>น้ำ 18.00 · ไฟ 8.00 · ส่วนกลาง 35.00, all <code>effective_from 2025-10-01</code></dd>
+      <dt>Future rate</dt><dd>ไฟ 8.50 <code>effective_from 2026-10-01</code></dd>
+      <dt>วันครบกำหนด</dt><dd><code>due_day = 5</code></dd>
+      <dt>Apartment</dt><dd>ศุภาลัย เรสซิเดนซ์ · 99/1 ถนนพหลโยธิน แขวงจตุจักร เขตจตุจักร กรุงเทพฯ 10900 · 0-1055-12345-67-8 · 02-123-4567 · 08:00–17:00 น.</dd>
+    </dl>
+  </div>
+</div>
+
+<div class="callout warn">
+  <div class="title">Four contradictions between the source documents, and how these tests resolve them</div>
+  <p>Each resolution is a QA decision, not an invention; the losing variant is recorded here so the owning author can correct their document.</p>
+  <ol>
+    <li><strong>Inactive account message.</strong> Engineering spec §3.3.1 and the error catalogue make wrong password, unknown username and <code>Inactive</code> user <em>indistinguishable</em> (<code>LOGIN_INVALID</code> · ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง); UI design §1 gives the Inactive case its own banner บัญชีนี้ถูกปิดการใช้งาน. <strong>Tests follow the spec</strong> — it is the binding rules document and the security-conservative option (no account enumeration). <code>TC-AUTH-006</code> asserts the shared message and flags the design's banner as a documentation defect to reconcile.</li>
+    <li><strong>Forced first-password change.</strong> D-37 states that "first login forces a change", which reads as a gate; the ADR's <code>users</code> table carries no <code>must_change_password</code> column to drive one, and engineering spec §3.7(8) resolves the wording explicitly — the rule is realised as <code>GET/POST /password</code> plus a runbook step and a Dashboard banner, <em>not</em> as a forced redirect. The UI design has no <code>/password/change</code> screen and no forced-change state, so it agrees with the spec. <strong>Tests follow the ADR and spec</strong>: <code>TC-AUTH-019</code>…<code>021</code> exercise <code>/password</code> with <code>current_password</code>. No test asserts a forced-redirect flow, and none may be written unless a column is added to the schema first.</li>
+    <li><strong>Duplicate-username message.</strong> Spec catalogue: ชื่อผู้ใช้นี้ถูกใช้แล้ว. UI design: ชื่อผู้ใช้นี้มีอยู่แล้ว. <strong>Tests assert the spec string</strong> (§3.1.6 declares itself exhaustive); <code>TC-AUTH-037</code> records the design variant.</li>
+    <li><strong>Failed-login HTTP status.</strong> Spec §3.3.1 says the page surface re-renders with <code>200</code>; the error catalogue maps <code>LOGIN_INVALID</code> to <code>401</code>. <strong>Tests assert the page contract</strong> — re-render with the Thai banner, no <code>Set-Cookie</code> session, values preserved — and treat <code>200</code> (page) / <code>401</code> (JSON) as the two surfaces of one rule.</li>
+  </ol>
+</div>
+
+<div class="callout decision">
+  <div class="title">Assumptions recorded by this section</div>
+  <ol>
+    <li>Session assertions inspect the <code>sessions</code> table directly, because <code>express-mysql-session</code> is the only durable evidence that a session was created or destroyed; there is no <code>GET /api/me</code> to ask (spec §3.1.3).</li>
+    <li>"No amount appears in a Staff response body" is asserted mechanically: the response text is searched for <code>/\d{1,3}(,\d{3})*\.\d{2}/</code> and for the strings <code>บาท</code>, <code>unit_price</code>, <code>total</code>, <code>amount</code>. A hit is a failure even when the number is unrelated (ADR §6.9, D-36).</li>
+    <li>Rate-resolution and due-date cases are written as unit tests over fixtures because both are pure functions of (period, rows) and (due_day, approval_date); the e2e cases that follow each one prove the same rule through HTTP.</li>
+    <li>The demo calendar (5 ก.ย. 2026, 3 ก.ย. 2026, <code>REC-202609-000852</code>) is used as documentation values. Where a case depends on "today", it pins the clock or computes the expectation from <code>CURDATE()</code>, per D-44: reproduce the arithmetic, never the calendar.</li>
+    <li>The login rate limiter is exercised with the limiter store reset between cases; otherwise ten earlier failures in one file would poison the next case.</li>
+  </ol>
+</div>
+
+<h3>1. Login — เข้าสู่ระบบ (<code>GET /login</code> · <code>POST /login</code>)</h3>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th></tr></thead>
+<tbody>
+
+<tr>
+<td><code>TC-AUTH-001</code></td>
+<td>Admin signs in and lands on ภาพรวม</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Seed loaded; no session cookie held by the client</td>
+<td><ol><li><code>GET /login</code></li><li>Type ชื่อผู้ใช้ and รหัสผ่าน</li><li>Press เข้าสู่ระบบ</li></ol></td>
+<td><code>username=admin</code> · <code>password=Passw0rd!2026</code></td>
+<td><code>303 See Other</code>, <code>Location: /dashboard</code>; one new row in <code>sessions</code>; the page title reads ภาพรวม; the sidebar brand shows ศุภาลัย เรสซิเดนซ์ with Juristic Platform beneath; the user block reads นิติบุคคล · admin · ออกจากระบบ. No toast.</td>
+<td>FR-01 · D-37, D-36, D-01, D-02</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-002</code></td>
+<td>Staff signs in and lands on จดมิเตอร์, never on an Admin page</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Seed loaded; viewport 360 px</td>
+<td><ol><li><code>GET /login</code></li><li>Sign in as staff</li><li>Read the landing page and the bottom tabs</li></ol></td>
+<td><code>username=staff</code> · <code>password=Passw0rd!2026</code></td>
+<td><code>303</code> → <code>/readings</code>. Bottom tabs render exactly three items in order: 📝 จดมิเตอร์ (active) · 🚪 ห้องพัก · 📊 ภาพรวม. No sidebar, no บิลประจำเดือน, no รับชำระเงิน link anywhere in the HTML.</td>
+<td>FR-01, FR-02 · D-36, D-02</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-003</code></td>
+<td>Session id is regenerated at login (fixation defence)</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Client holds a pre-login <code>connect.sid</code> issued by <code>GET /login</code></td>
+<td><ol><li>Record the cookie value from <code>GET /login</code></li><li><code>POST /login</code> with valid admin credentials</li><li>Compare the returned <code>Set-Cookie</code> value with the recorded one</li></ol></td>
+<td>Pre-login sid <code>s%3Aabc…</code> · admin credentials</td>
+<td>The post-login <code>connect.sid</code> differs from the pre-login value; the pre-login row is gone from <code>sessions</code> and exactly one authenticated row exists. Presenting the old sid afterwards is treated as no session.</td>
+<td>FR-01 · D-37</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-004</code></td>
+<td>Wrong password re-renders the form without leaking which half was wrong</td>
+<td>UI</td><td><span class="badge p0">P0</span></td>
+<td>Seed loaded</td>
+<td><ol><li><code>GET /login</code></li><li>Enter a valid username with a wrong password</li><li>Submit</li></ol></td>
+<td><code>username=somchai.admin</code> · <code>password=wrong-pass</code></td>
+<td>Login page re-rendered (page surface <code>200</code>; the JSON equivalent is <code>401 LOGIN_INVALID</code>). One <code>.notice.bad</code>: <strong>ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง</strong> / กรุณาตรวจสอบแล้วลองอีกครั้ง. Both fields carry <code>.field.invalid</code> and <em>neither</em> carries a per-field message; <code>username</code> still holds <code>somchai.admin</code>; the password input is empty and focused; no row is written to <code>sessions</code>; no <code>Set-Cookie</code> establishing a session.</td>
+<td>FR-01 · D-37, D-40</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-005</code></td>
+<td>Unknown username is indistinguishable from a wrong password</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>No user <code>ghost</code> exists</td>
+<td><ol><li><code>POST /login</code> with an unknown username</li><li><code>POST /login</code> with a known username and a wrong password</li><li>Diff the two response bodies and timings</li></ol></td>
+<td><code>ghost</code> / <code>anything123</code> — then <code>admin</code> / <code>wrong-pass</code></td>
+<td>Identical status, identical body (same <code>LOGIN_INVALID</code> · ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง), no field-level difference. A bcrypt comparison runs on the unknown-username path too, so response times do not separate the two cases by an order of magnitude.</td>
+<td>FR-01 · D-37</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-006</code></td>
+<td>Inactive user with the correct password cannot sign in</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>User <code>staff</code> (id 2) set to <code>status='Inactive'</code> by an Admin</td>
+<td><ol><li><code>POST /login</code> as staff with the correct password</li><li>Read the response and the <code>sessions</code> table</li><li>Attempt <code>GET /readings</code> with any cookie returned</li></ol></td>
+<td><code>username=staff</code> · <code>password=Passw0rd!2026</code> · <code>users.status='Inactive'</code></td>
+<td>Refused with <code>LOGIN_INVALID</code> — ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง (see contradiction 1: the UI design's บัญชีนี้ถูกปิดการใช้งาน is <em>not</em> asserted and is raised as a documentation defect). Zero new rows in <code>sessions</code>; <code>GET /readings</code> redirects to <code>/login</code>. The user's <code>password_hash</code> is unchanged.</td>
+<td>FR-01, FR-03 · D-46, D-37</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-007</code></td>
+<td>Empty username and empty password give per-field Thai messages, not the credential banner</td>
+<td>UI</td><td><span class="badge p1">P1</span></td>
+<td>Seed loaded</td>
+<td><ol><li><code>GET /login</code></li><li>Submit with both fields blank</li><li>Submit again with only รหัสผ่าน filled</li></ol></td>
+<td>Empty / empty — then <code>username=""</code>, <code>password=Passw0rd!2026</code></td>
+<td><code>422</code> from the <code>zod</code> schema, page re-rendered. Inline <code>.error</code> under each offending input: <strong>กรุณากรอกชื่อผู้ใช้</strong> and <strong>กรุณากรอกรหัสผ่าน</strong>. No <code>.notice.bad</code> banner (a validation failure is not a credential failure), no session row, and the attempt is not counted by the IP limiter.</td>
+<td>FR-01, FR-48 · D-40</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-008</code></td>
+<td>Eleventh failed attempt from one IP inside 15 minutes is rate-limited</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Limiter store empty; <code>app.set('trust proxy', 1)</code> configured</td>
+<td><ol><li>Send 10 failed <code>POST /login</code> from IP <code>203.0.113.9</code></li><li>Send an 11th, still wrong</li><li>Send a 12th with the <em>correct</em> admin password from the same IP</li><li>Send one correct login from IP <code>203.0.113.10</code></li></ol></td>
+<td><code>X-Forwarded-For: 203.0.113.9</code> ×11 · <code>admin</code>/<code>wrong-pass</code>, then <code>admin</code>/<code>Passw0rd!2026</code></td>
+<td>Attempts 1–10: <code>LOGIN_INVALID</code>. Attempt 11: <code>429</code> <code>LOGIN_RATE_LIMITED</code>, banner <strong>พยายามเข้าสู่ระบบไม่สำเร็จหลายครั้งเกินไป</strong> / กรุณารอ 15 นาที แล้วลองใหม่อีกครั้ง, primary button <code>.btn.is-disabled</code>. Attempt 12 is also <code>429</code> and <strong>no bcrypt comparison runs</strong> — the hash is never touched. The other IP signs in normally (<code>303</code> → <code>/dashboard</code>), proving the limiter keys on the real client IP and not on the proxy.</td>
+<td>FR-01 · D-37</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-009</code></td>
+<td>Login POST without a valid CSRF token is refused</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>A CSRF token was issued on <code>GET /login</code></td>
+<td><ol><li><code>POST /login</code> omitting <code>_csrf</code></li><li><code>POST /login</code> with <code>_csrf</code> from a different session</li><li>Read <code>sessions</code></li></ol></td>
+<td>Valid credentials · <code>_csrf</code> absent, then <code>_csrf=deadbeef…</code></td>
+<td>Both attempts <code>403</code> <code>CSRF_INVALID</code> — แบบฟอร์มหมดอายุ กรุณาโหลดหน้าใหม่แล้วลองอีกครั้ง. No session is created even though the credentials are correct. Comparison uses <code>crypto.timingSafeEqual</code>.</td>
+<td>FR-01 · D-37 · ADR A-8</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-010</code></td>
+<td>An already-signed-in user opening <code>/login</code> is sent to their own landing page</td>
+<td>UI</td><td><span class="badge p2">P2</span></td>
+<td>Two browsers: one signed in as admin, one as staff</td>
+<td><ol><li>As admin, <code>GET /login</code></li><li>As staff, <code>GET /login</code></li><li>As staff, <code>GET /</code></li></ol></td>
+<td>—</td>
+<td>Admin: <code>303</code> → <code>/dashboard</code>. Staff: <code>303</code> → <code>/readings</code> in both steps. No banner, no error page — Login has no 403 state because it is the only route needing no session.</td>
+<td>FR-01, FR-02 · D-36</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-011</code></td>
+<td>Session cookie carries the decided flags</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>App started once with <code>NODE_ENV=production</code> behind TLS, once with <code>NODE_ENV=development</code></td>
+<td><ol><li><code>POST /login</code> as admin in each environment</li><li>Parse the <code>Set-Cookie</code> header</li></ol></td>
+<td>Valid admin credentials</td>
+<td>Cookie name <code>connect.sid</code> (library default, not renamed); attributes <code>HttpOnly</code> and <code>SameSite=Lax</code> in both environments; <code>Secure</code> present in production and absent in development. No JWT, no bearer token, no <code>Authorization</code> header and nothing written to <code>localStorage</code>.</td>
+<td>FR-01 · D-37</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-012</code></td>
+<td>Passwords are bcrypt-hashed at cost 10 and never leave the server</td>
+<td>unit</td><td><span class="badge p1">P1</span></td>
+<td>User created through <code>POST /users</code></td>
+<td><ol><li>Read <code>users.password_hash</code> for the new user</li><li>Assert the bcrypt prefix and cost</li><li>Grep every login and users response body and the rendered HTML for the plaintext</li></ol></td>
+<td><code>password=Passw0rd!2026</code></td>
+<td><code>password_hash</code> is 60 characters and starts <code>$2a$10$</code> or <code>$2b$10$</code>; it is not the plaintext and not a hex digest. The plaintext appears in no response body, no HTML <code>value=</code> attribute and no log line; the password input is never re-populated after any failure.</td>
+<td>FR-01, FR-03 · D-37</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<h3>2. Logout and session lifetime</h3>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th></tr></thead>
+<tbody>
+
+<tr>
+<td><code>TC-AUTH-013</code></td>
+<td>ออกจากระบบ destroys the session row and the cookie</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Signed in as admin; note the <code>sessions.session_id</code></td>
+<td><ol><li>Press ออกจากระบบ (<code>POST /logout</code> with <code>_csrf</code>)</li><li>Read <code>sessions</code></li><li><code>GET /dashboard</code> with the old cookie</li></ol></td>
+<td>—</td>
+<td><code>303</code> → <code>/login</code>; the row is deleted from <code>sessions</code> (not merely expired); the cookie is cleared. Replaying the old cookie on <code>/dashboard</code> redirects to <code>/login</code> and renders no data. A prefetch of <code>GET /logout</code> is not a route and cannot end a cashier's session mid-transaction.</td>
+<td>FR-01 · D-37</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-014</code></td>
+<td>Browser Back after logout shows no protected data</td>
+<td>e2e</td><td><span class="badge p1">P1</span></td>
+<td>Admin has visited <code>/bills/118</code> then logged out</td>
+<td><ol><li>Press browser Back to <code>/bills/118</code></li><li>Force a reload</li></ol></td>
+<td>Bill 118, total 1,790.00</td>
+<td>The reload lands on <code>/login</code>; the amount <code>1,790.00</code> is not present in the newly fetched document. (A cached paint before revalidation is accepted; a successful <code>200</code> from the server is not.)</td>
+<td>FR-02 · D-37, D-40</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-015</code></td>
+<td>Expired session on a page route returns to Login with the expiry notice and the remembered URL</td>
+<td>UI</td><td><span class="badge p1">P1</span></td>
+<td>Signed in as admin; the session row is aged past the 8-hour rolling window (or deleted) out of band</td>
+<td><ol><li><code>GET /settings</code></li><li>Read the login page</li><li>Sign in again</li></ol></td>
+<td>Session older than 8 h · target <code>/settings</code></td>
+<td>Redirect to <code>/login</code> with <code>.notice.warn</code> <strong>เซสชันหมดอายุ</strong> / กรุณาเข้าสู่ระบบอีกครั้ง. After a successful sign-in the browser lands on <code>/settings</code>, the remembered URL — not on <code>/dashboard</code>.</td>
+<td>FR-01, FR-48 · D-37, D-40</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-016</code></td>
+<td>Expired session on a JSON call returns 401 UNAUTHENTICATED, never an HTML page</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Staff signed in on the reading screen; the session row is deleted out of band</td>
+<td><ol><li><code>POST /api/readings</code> for room 41 with the stale cookie</li><li>Assert the envelope</li><li>Assert the database</li></ol></td>
+<td><code>{"period":"2026-09","room_id":41,"water":{"current_reading":1260},"electric":{"current_reading":5350}}</code></td>
+<td><code>401</code> with exactly one top-level key: <code>{"error":{"code":"UNAUTHENTICATED","message":"เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่"}}</code>. No HTML, no redirect, no <code>data</code> key. No row is written to <code>meter_readings</code>, so the typed values are not silently lost <em>and</em> not silently saved.</td>
+<td>FR-01, FR-48 · D-37, D-40</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-017</code></td>
+<td>Sessions survive a process restart because the store is MySQL</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Signed in as admin; free-tier restart simulated</td>
+<td><ol><li>Restart the Node process (the database keeps running)</li><li><code>GET /dashboard</code> with the same cookie</li></ol></td>
+<td>—</td>
+<td><code>200</code> ภาพรวม — no re-login. The session row is read from the <code>sessions</code> table, proving no session state lives in process memory; a mid-demo restart cannot log the office out.</td>
+<td>FR-01 · D-37, D-43</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-018</code></td>
+<td>Deactivating a user ends their live session on the next request</td>
+<td>e2e</td><td><span class="badge p1">P1</span></td>
+<td>Staff signed in on <code>/readings</code> in browser B; Admin signed in in browser A</td>
+<td><ol><li>In A, set staff สถานะ to ปิดใช้งาน (<code>POST /users/2</code>)</li><li>In B, navigate to <code>/rooms</code></li><li>In B, try to sign in again</li></ol></td>
+<td><code>users.status='Inactive'</code> for id 2</td>
+<td>B's next request redirects to <code>/login</code>; the session row is gone. The re-login attempt is refused with ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง. Any reading B saved before the change is retained with <code>recorded_by = 2</code>.</td>
+<td>FR-02, FR-03 · D-46, D-37</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<h3>3. Changing your own password (<code>GET/POST /password</code>)</h3>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th></tr></thead>
+<tbody>
+
+<tr>
+<td><code>TC-AUTH-019</code></td>
+<td>A user changes their own password and the old one stops working</td>
+<td>e2e</td><td><span class="badge p1">P1</span></td>
+<td>Signed in as staff</td>
+<td><ol><li><code>GET /password</code></li><li>Submit current, new and confirm</li><li>Log out and sign in with the <em>old</em> password</li><li>Sign in with the new password</li></ol></td>
+<td><code>current_password=Passw0rd!2026</code> · <code>new_password=Chang3d!2026</code> · <code>confirm_password=Chang3d!2026</code></td>
+<td><code>303</code> back to the page with a success flash; the session is kept (no forced re-login). The old password is refused with ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง; the new one signs in and lands on <code>/readings</code>. <code>password_hash</code> changed and still matches <code>$2b$10$</code>.</td>
+<td>FR-01, FR-03 · D-37</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-020</code></td>
+<td>A wrong current password cannot change the password</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Signed in as admin; hash recorded</td>
+<td><ol><li><code>POST /password</code> with a wrong <code>current_password</code></li><li>Read <code>users.password_hash</code></li></ol></td>
+<td><code>current_password=nope-nope</code> · <code>new_password=Chang3d!2026</code></td>
+<td><code>422</code>, form re-rendered inline, <code>password_hash</code> byte-identical, session still valid. This is a change, not a reset: an unlocked browser cannot be turned into a password takeover.</td>
+<td>FR-01 · D-37</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-021</code></td>
+<td>New password shorter than 8 characters, or a mismatched confirmation, is rejected</td>
+<td>UI</td><td><span class="badge p2">P2</span></td>
+<td>Signed in as admin</td>
+<td><ol><li>Submit a 7-character new password</li><li>Submit an 8-character new password with a different confirmation</li></ol></td>
+<td><code>new=Short1!</code> (7) — then <code>new=Chang3d!2026</code>, <code>confirm=Chang3d!2025</code></td>
+<td>Both <code>422</code>, no hash change. Messages, verbatim: <strong>รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร</strong> and <strong>รหัสผ่านไม่ตรงกัน</strong>. On the mismatch only the confirmation field carries <code>.field.invalid</code>; both password values are cleared and focus returns to the confirmation.</td>
+<td>FR-01, FR-48 · D-37, D-40</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<h3>4. Role-based access — page routes (Admin · Staff · unauthenticated)</h3>
+
+<p>These cases walk the D-36 matrix row by row. The 403 is an explicit page, never a silent redirect, which is exactly what makes the matrix testable by URL.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th></tr></thead>
+<tbody>
+
+<tr>
+<td><code>TC-AUTH-022</code></td>
+<td>Staff typing any Admin page URL gets the Thai 403 — one case per row of the matrix</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Signed in as staff</td>
+<td><ol><li>Request each URL in the data column with <code>GET</code></li><li>For each, assert status and the rendered page</li><li>Assert no <code>Location</code> header</li></ol></td>
+<td><code>/tenants</code>, <code>/tenants/new</code>, <code>/tenants/37/edit</code>, <code>/bills</code>, <code>/bills/118</code>, <code>/bills/118/invoice</code>, <code>/payments</code>, <code>/receipts/96</code>, <code>/announcements</code>, <code>/announcements/new</code>, <code>/announcements/7</code>, <code>/reports</code>, <code>/reports/monthly</code>, <code>/reports/arrears</code>, <code>/reports/room-history</code>, <code>/reports/top-usage</code>, <code>/settings</code>, <code>/users</code>, <code>/users/new</code>, <code>/users/2/edit</code>, <code>/rooms/new</code>, <code>/rooms/41/edit</code></td>
+<td>Every one returns <code>403</code> and the 403 page — never <code>302</code>/<code>303</code>, never <code>200</code>, never a blank page. Twenty-two rows, twenty-two identical assertions. No response body contains <code>1,790.00</code>, <code>18.00</code>, <code>35.00</code> or <code>บาท</code>.</td>
+<td>FR-02, FR-48 · D-36, D-40</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-023</code></td>
+<td>The 403 page says exactly what it must and offers the way back</td>
+<td>UI</td><td><span class="badge p1">P1</span></td>
+<td>Signed in as staff</td>
+<td><ol><li><code>GET /reports/monthly</code></li><li>Read the page</li><li>Press the button</li></ol></td>
+<td>—</td>
+<td>🔒 icon; heading <strong>ไม่มีสิทธิ์เข้าถึงหน้านี้</strong>; body <strong>บัญชีของคุณเป็นเจ้าหน้าที่ กรุณาติดต่อนิติบุคคล</strong>; a button <strong>กลับไปหน้าจดมิเตอร์</strong> that navigates to <code>/readings</code>; the line รหัสข้อผิดพลาด: <code>FORBIDDEN_ROLE</code>. The Admin sidebar is absent from the DOM entirely — not hidden with CSS.</td>
+<td>FR-02, FR-48 · D-40, D-36</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-024</code></td>
+<td>Staff can open exactly the four surfaces they own</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Signed in as staff; period <code>2026-09</code></td>
+<td><ol><li><code>GET /readings?period=2026-09</code></li><li><code>GET /rooms</code></li><li><code>GET /rooms/41</code></li><li><code>GET /dashboard</code></li></ol></td>
+<td>Room 41 = 205</td>
+<td>All four return <code>200</code>. <code>/readings</code> is grouped by floor and not paginated; <code>/rooms</code> renders read-only (no เพิ่มห้อง button, no แก้ไขห้อง link); <code>/rooms/41</code> shows the 12-month history as units only; <code>/dashboard</code> renders the reduced ภาพรวม.</td>
+<td>FR-02 · D-36, D-15</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-025</code></td>
+<td>The Staff Dashboard contains room counts and reading progress and no money at all</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Signed in as staff; seed period has 67 occupied rooms</td>
+<td><ol><li><code>GET /dashboard</code></li><li>Scan the whole response body with the money regex and keyword list</li><li>Compare with the Admin response for the same period</li></ol></td>
+<td>Expected staff figures: ห้องทั้งหมด 80 · มีผู้เช่า 67 · ห้องว่าง 13 · จดแล้ว {x}/67</td>
+<td>Staff body contains the four counts and no match for <code>/\d{1,3}(,\d{3})*\.\d{2}/</code>, no <code>บาท</code>, no ยอดเรียกเก็บทั้งหมด, no ค้างชำระ, no chart canvas. The Admin body for the same URL <em>does</em> contain them, proving the difference is in the query, not in the template.</td>
+<td>FR-02, FR-28 · D-36, D-41</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-026</code></td>
+<td>Staff room list and room detail carry no rate and no amount</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Signed in as staff; room 41 has 12 months of bills</td>
+<td><ol><li><code>GET /rooms</code></li><li><code>GET /rooms/41</code></li><li>Scan both bodies</li></ol></td>
+<td>Room 205, 30.00 ตร.ม., readings 1,250 → 1,260 and 5,280 → 5,350</td>
+<td>Both <code>200</code>. Present: <code>205</code>, floor 2, <code>30.00 ตร.ม.</code>, สมชาย ใจดี, unit history (10 หน่วย, 70 หน่วย). Absent: <code>18.00</code>, <code>8.00</code>, <code>35.00</code>, <code>180.00</code>, <code>560.00</code>, <code>1,050.00</code>, <code>1,790.00</code>, <code>บาท</code>, and any bill status badge that would imply an amount.</td>
+<td>FR-02, FR-06 · D-36</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-027</code></td>
+<td>Staff navigation never renders a link the role cannot open</td>
+<td>UI</td><td><span class="badge p1">P1</span></td>
+<td>Signed in as staff on each allowed page</td>
+<td><ol><li>Render <code>/readings</code>, <code>/rooms</code>, <code>/dashboard</code></li><li>Collect every <code>href</code> in the document</li><li>Request each collected href</li></ol></td>
+<td>—</td>
+<td>The href set is a subset of <code>{/readings, /rooms, /rooms/:id, /dashboard, /password, /logout}</code>; no <code>/bills</code>, <code>/payments</code>, <code>/tenants</code>, <code>/announcements</code>, <code>/reports</code>, <code>/settings</code>, <code>/users</code> anywhere in the HTML. Every collected href returns <code>200</code> — a staff session can never click into a 403.</td>
+<td>FR-02 · D-36, D-40</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-028</code></td>
+<td>Unauthenticated requests to page routes land on Login, not on data</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>No cookie at all</td>
+<td><ol><li>Request each protected page route with no cookie</li><li>Assert the redirect</li><li>Assert nothing is rendered</li></ol></td>
+<td><code>/</code>, <code>/dashboard</code>, <code>/rooms</code>, <code>/rooms/41</code>, <code>/tenants</code>, <code>/readings</code>, <code>/bills</code>, <code>/bills/118</code>, <code>/payments</code>, <code>/receipts/96</code>, <code>/announcements</code>, <code>/reports</code>, <code>/settings</code>, <code>/users</code></td>
+<td>Every one redirects to <code>/login</code> (<code>302</code>/<code>303</code>). No response contains <code>1,790.00</code>, สมชาย ใจดี, <code>REC-202609-000852</code> or any room list. <code>GET /login</code> itself is <code>200</code>.</td>
+<td>FR-01, FR-02 · D-37, D-40</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-029</code></td>
+<td>An unauthenticated POST changes nothing</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>No cookie; bill 118 is <code>Draft</code>; rate history has 4 rows</td>
+<td><ol><li><code>POST /settings/rates</code> with no session</li><li><code>POST /users</code> with no session</li><li><code>POST /payments</code> with no session</li><li>Count rows in <code>rates</code>, <code>users</code>, <code>payments</code></li></ol></td>
+<td><code>utility_type=water&amp;unit_price=99.00</code> · <code>username=intruder</code> · <code>bill_id=118</code></td>
+<td>Each request is refused before the handler body runs — page surface redirects to <code>/login</code>, JSON surface returns <code>401 UNAUTHENTICATED</code>. Row counts are unchanged: <code>rates</code> 4, <code>users</code> 2, <code>payments</code> unchanged. No audit row is written.</td>
+<td>FR-02, FR-39 · D-37, D-38</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<h3>5. Role-based access — JSON and machine endpoints</h3>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th></tr></thead>
+<tbody>
+
+<tr>
+<td><code>TC-AUTH-030</code></td>
+<td>Staff may save a reading and the response carries no money</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Signed in as staff; room 41 has no reading for <code>2026-09</code>; previous 1,250 / 5,280</td>
+<td><ol><li><code>POST /api/readings</code> with the CSRF header</li><li>Assert the envelope</li><li>Scan for money</li></ol></td>
+<td><code>{"period":"2026-09","room_id":41,"water":{"current_reading":1260},"electric":{"current_reading":5350}}</code></td>
+<td><code>200</code>, one <code>data</code> key. <code>water.units = 10</code> (1,260 − 1,250 = 10), <code>electric.units = 70</code> (5,350 − 5,280 = 70), <code>previous_period "2026-08"</code>, <code>complete: true</code>, <code>counter</code> present. No <code>unit_price</code>, no <code>amount</code>, no <code>total</code>, no <code>บาท</code>, no <code>180.00</code>/<code>560.00</code> anywhere in the body.</td>
+<td>FR-02, FR-10, FR-11, FR-12 · D-36, D-12, D-15</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-031</code></td>
+<td>Staff may trigger the generation run and see counts, never amounts</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Signed in as staff; readings complete for 64 of 67 occupied rooms</td>
+<td><ol><li><code>POST /api/bills/generate</code></li><li>Assert the payload</li><li>Scan for money</li></ol></td>
+<td><code>{"period":"2026-09"}</code></td>
+<td><code>200</code> with counts only: <code>created</code>, <code>updated</code>, <code>skipped</code>, <code>unread</code>, <code>missing_rooms</code> as room codes (e.g. <code>["108","312","405"]</code>). No amount and no <code>total</code> appears; the Thai summary rendered to Staff is สร้างบิลใหม่ {n} ใบ · อัปเดต {n} ใบ · ข้าม (อนุมัติแล้ว) {n} ใบ · ยังไม่ได้จด 3 ห้อง with no baht figure.</td>
+<td>FR-02, FR-17, FR-42 · D-36, D-18, D-23</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-032</code></td>
+<td>Staff calling the Dashboard chart endpoint gets a JSON 403 in the standard envelope</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Signed in as staff</td>
+<td><ol><li><code>GET /api/dashboard/charts?period=2026-09</code></li><li>Assert the envelope</li></ol></td>
+<td><code>period=2026-09</code></td>
+<td><code>403</code>, body exactly <code>{"error":{"code":"FORBIDDEN_ROLE","message":"ไม่มีสิทธิ์เข้าถึงหน้านี้ · บัญชีของคุณเป็นเจ้าหน้าที่ กรุณาติดต่อนิติบุคคล"}}</code> — one top-level key, no <code>data</code>, no chart series, no HTML.</td>
+<td>FR-02 · D-36, D-40</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-033</code></td>
+<td>Staff cannot approve a bill, and nothing moves when they try</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Signed in as staff; bill 118 is <code>Draft</code>; <code>notifications</code> empty for bill 118</td>
+<td><ol><li><code>POST /api/bills/approve</code> with <code>{"bill_ids":[118]}</code></li><li>Read <code>bills</code>, <code>notifications</code>, <code>audit_log</code></li></ol></td>
+<td>Bill 118, total <code>1790.00</code></td>
+<td><code>403 FORBIDDEN_ROLE</code>. <code>bills.status</code> is still <code>Draft</code>, <code>approved_by</code> and <code>approved_at</code> are still <code>NULL</code>, <code>due_date</code> unchanged, zero <code>notifications</code> rows, zero <code>BILL_APPROVE</code> audit rows. No LINE call is attempted.</td>
+<td>FR-02, FR-18, FR-19 · D-36, D-19, D-38</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-034</code></td>
+<td>Staff cannot take cash — the PRD §12 correction, enforced</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Signed in as staff; bill 118 is <code>Unpaid</code>, total 1,790.00</td>
+<td><ol><li><code>POST /payments</code> as staff</li><li>Read <code>payments</code>, <code>receipts</code>, <code>bills</code></li><li>Repeat as admin to prove the route works</li></ol></td>
+<td><code>bill_id=118&amp;expected_total=1790.00</code></td>
+<td>Staff: <code>403 FORBIDDEN_ROLE</code>, zero rows in <code>payments</code> and <code>receipts</code>, bill still <code>Unpaid</code>. Admin: <code>303</code> to the receipt, one payment of <code>1790.00</code> with <code>method='cash'</code> and <code>received_by_user_id=1</code>, one receipt <code>REC-202609-000852</code>. This is the single documented place a decision overrides literal PRD text.</td>
+<td>FR-02, FR-22, FR-24 · D-36, D-24, D-26</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-035</code></td>
+<td>Machine endpoints ignore session roles and are never rate-limited</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>No session cookie; <code>JOB_TOKEN</code> configured; the login limiter is already tripped for the calling IP (see <code>TC-AUTH-008</code>)</td>
+<td><ol><li><code>GET /healthz</code></li><li><code>POST /internal/jobs/daily</code> with a wrong <code>X-Job-Token</code></li><li>Same with the correct token</li><li><code>POST /line/webhook</code> with an invalid <code>X-Line-Signature</code></li></ol></td>
+<td><code>X-Job-Token: wrong-token</code> then the real token · webhook body <code>{"events":[]}</code></td>
+<td><code>/healthz</code>: <code>200</code> <code>{"data":{"ok":true,"db":"up"}}</code> with no session and no limiting. Wrong job token: <code>401</code>, empty body, no <code>job_runs</code> row. Correct token: <code>200</code> with the run summary and exactly one <code>job_runs</code> row for the day. Invalid signature: <code>401</code>, empty body, nothing processed. None of the four is affected by the tripped login limiter.</td>
+<td>FR-37, FR-47 · D-32, D-37, D-43</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<h3>6. User management — ผู้ใช้งานระบบ (<code>/users</code>, Admin only)</h3>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th></tr></thead>
+<tbody>
+
+<tr>
+<td><code>TC-AUTH-036</code></td>
+<td>Admin creates a เจ้าหน้าที่ account that can immediately sign in</td>
+<td>UI</td><td><span class="badge p1">P1</span></td>
+<td>Signed in as admin; two users exist</td>
+<td><ol><li><code>GET /users</code>, press + เพิ่มผู้ใช้งาน</li><li>Fill the four fields</li><li>Press สร้างผู้ใช้งาน</li><li>Sign in as the new user in a second browser</li></ol></td>
+<td><code>username=staff2</code> · <code>display_name=สมศักดิ์ ช่างประจำ</code> · <code>role=staff</code> · <code>password=Passw0rd!2026</code></td>
+<td><code>303</code> → <code>/users</code>, toast <strong>สร้างผู้ใช้งานแล้ว</strong>. The list shows three accounts with a new row: staff2 · สมศักดิ์ ช่างประจำ · เจ้าหน้าที่ (<code>data-role="staff"</code>) · ใช้งานอยู่ · today's date in the <code>3 ก.ย. 2026</code> form. The new user signs in and lands on <code>/readings</code>.</td>
+<td>FR-03 · D-46, D-36, D-37</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-037</code></td>
+<td>A duplicate ชื่อผู้ใช้ is refused by the unique key, not by a lookup</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Signed in as admin; user <code>staff</code> exists</td>
+<td><ol><li><code>POST /users</code> with an existing username</li><li>Assert the error</li><li>Count <code>users</code></li></ol></td>
+<td><code>username=staff</code> · <code>display_name=ซ้ำ</code> · <code>role=staff</code> · <code>password=Passw0rd!2026</code></td>
+<td><code>409 USERNAME_TAKEN</code> raised by <code>uq_users_username</code>; message <strong>ชื่อผู้ใช้นี้ถูกใช้แล้ว</strong> rendered inline on the ชื่อผู้ใช้ field with every other typed value preserved and no redirect. <code>users</code> row count unchanged. (Design variant ชื่อผู้ใช้นี้มีอยู่แล้ว is contradiction 3 and is not asserted.)</td>
+<td>FR-03, FR-48 · D-46, D-40</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-038</code></td>
+<td>Username format and password length are validated at the boundary</td>
+<td>UI</td><td><span class="badge p2">P2</span></td>
+<td>Signed in as admin</td>
+<td><ol><li>Submit each invalid username in turn</li><li>Submit a valid username with a 7-character password</li></ol></td>
+<td>Usernames: <code>ab</code> (2), <code>Staff2</code> (uppercase), <code>staff 2</code> (space), <code>สมศักดิ์</code> (Thai), 51 × <code>a</code> · password <code>Short1!</code></td>
+<td>Every case <code>422 VALIDATION_FAILED</code> with no row created. Messages: <strong>ชื่อผู้ใช้ใช้ได้เฉพาะ a–z 0–9 . _ ความยาว 3–50 ตัวอักษร</strong> and <strong>รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร</strong>. An empty ชื่อที่แสดง gives <strong>กรุณากรอกชื่อที่แสดง</strong>, because that string prints on receipts.</td>
+<td>FR-03, FR-48 · D-46, D-37, D-40</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-039</code></td>
+<td>Update changes ชื่อที่แสดง, บทบาท and สถานะ — and never the username</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Signed in as admin; user <code>staff2</code> exists</td>
+<td><ol><li><code>POST /users/3</code> with a new display name, role and a username field</li><li>Read the row</li></ol></td>
+<td><code>display_name=สมศักดิ์ ช่างอาวุโส</code> · <code>role=admin</code> · <code>status=Active</code> · <code>username=changed</code></td>
+<td><code>303</code> → <code>/users</code>. <code>display_name</code> and <code>role</code> are updated; <code>username</code> is still <code>staff2</code> — the submitted value is ignored, not applied and not an error, because the username is the login identity that appears in every audit row. The role change takes effect on the user's next request.</td>
+<td>FR-03 · D-46, D-36</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-040</code></td>
+<td>There is no delete — a referenced user can only be deactivated</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Signed in as admin; user 1 is referenced by <code>payments.received_by_user_id</code>, <code>meter_readings.recorded_by</code> and <code>rates.created_by</code></td>
+<td><ol><li><code>POST /users/1/delete</code> and <code>DELETE /users/1</code></li><li>Read the Users page copy</li><li>Count <code>users</code></li></ol></td>
+<td>Receipt <code>REC-202609-000852</code> references user 1 as ผู้รับเงิน</td>
+<td>Both requests <code>404</code> — the route does not exist; the endpoint catalogue has no delete. The page shows the explanation ทำไมลบบัญชีไม่ได้ and offers only ปิดใช้งาน. Row count unchanged; every historical attribution intact.</td>
+<td>FR-03 · D-46, D-27, D-38</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-041</code></td>
+<td>Deactivate blocks login; reactivate restores it with the same password</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Signed in as admin; <code>staff2</code> is ใช้งานอยู่</td>
+<td><ol><li>On the staff2 row press ปิดใช้งาน, then ยืนยัน in the inline two-step</li><li>Try to sign in as staff2</li><li>Press เปิดใช้งาน on the row</li><li>Sign in again with the unchanged password</li></ol></td>
+<td><code>staff2</code> / <code>Passw0rd!2026</code></td>
+<td>Row status becomes ปิดใช้งาน (<code>users.status='Inactive'</code>), toast <strong>ปิดใช้งานบัญชีแล้ว</strong>. Sign-in is refused with ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง and creates no session. After เปิดใช้งาน the same password signs in and lands on <code>/readings</code>. The inline confirm is a two-step in the row — not a D-39 modal — and ยกเลิก restores the row untouched.</td>
+<td>FR-03 · D-46, D-39</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-042</code></td>
+<td>A receipt already issued still prints an Inactive user's ชื่อที่แสดง as ผู้รับเงิน</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Payment 96 was received by admin (ชื่อที่แสดง นิติบุคคล); a second Admin <code>admin2</code> exists so the last-admin rule does not block the step</td>
+<td><ol><li>Sign in as <code>admin2</code></li><li>Set user 1 to ปิดใช้งาน</li><li><code>GET /receipts/96</code></li><li>Read the ผู้รับเงิน line</li></ol></td>
+<td>Receipt <code>REC-202609-000852</code> · ผู้รับเงิน นิติบุคคล · total 1,790.00</td>
+<td>The receipt still renders ผู้รับเงิน <strong>นิติบุคคล</strong> and ยอดรวม <strong>1,790.00 บาท</strong> (180.00 + 560.00 + 1,050.00 = 1,790.00) with the ลงชื่อผู้รับเงิน line. Deactivation blocks a login; it never rewrites history. This is the whole reason deletion does not exist.</td>
+<td>FR-03, FR-24 · D-46, D-27</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-043</code></td>
+<td>An Admin cannot deactivate their own account</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Signed in as admin (id 1); a second Admin exists, so this is not the last-admin rule</td>
+<td><ol><li><code>POST /users/1</code> with <code>status=Inactive</code></li><li>Read the row and the session</li></ol></td>
+<td><code>status=Inactive</code> on one's own id</td>
+<td><code>422 VALIDATION_FAILED</code> with <code>fields</code> = <code>{"status":"ไม่สามารถปิดใช้งานบัญชีของตนเองได้"}</code>. <code>users.status</code> is still <code>Active</code>; the session survives; the page re-renders with the message inline. This is what prevents an operator locking themselves out mid-demo.</td>
+<td>FR-03 · D-46, D-40</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-044</code></td>
+<td>The last Active Admin cannot be deactivated or demoted</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Signed in as admin; exactly one Active <code>admin</code> row exists (the seed's user 1)</td>
+<td><ol><li>Create a second Admin, sign in as it, and set user 1 to <code>Inactive</code> — expect success</li><li>Now try to set the remaining Active Admin to <code>Inactive</code></li><li>Try to change its <code>role</code> to <code>staff</code></li></ol></td>
+<td><code>status=Inactive</code> · <code>role=staff</code> on the only Active admin</td>
+<td>Both refused <code>422</code> with <strong>ต้องมีผู้ดูแลระบบที่ใช้งานอยู่อย่างน้อย 1 บัญชี</strong>, checked server-side before the inline two-step can commit. The count of Active admins never reaches 0; recovery for a genuinely lost Admin is a runbook database operation, not a screen.</td>
+<td>FR-03 · D-46, D-37</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-045</code></td>
+<td>ตั้งรหัสผ่านใหม่ is the only recovery path and works end to end</td>
+<td>e2e</td><td><span class="badge p1">P1</span></td>
+<td>staff2 has forgotten their password; no email column exists anywhere</td>
+<td><ol><li>Search <code>/login</code> for any recovery link</li><li>As admin, press ตั้งรหัสผ่านใหม่ on the staff2 row</li><li>Submit the new password (<code>POST /users/3/password</code>)</li><li>Sign in as staff2 with the new password, then with the old one</li></ol></td>
+<td>New password <code>N3wPass!2026</code> · old <code>Passw0rd!2026</code></td>
+<td>Login offers only the sentence ลืมรหัสผ่าน? ติดต่อนิติบุคคลเพื่อตั้งรหัสผ่านใหม่ — a sentence, not a link, and no <code>/forgot</code> route exists (<code>404</code>). After the reset: toast <strong>ตั้งรหัสผ่านใหม่แล้ว</strong>; the new password signs in; the old one is refused. Only the password field is editable in that card; ชื่อผู้ใช้ stays disabled.</td>
+<td>FR-03 · D-37, D-46</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<h3>7. Settings — rates, effective-from dates and history</h3>
+
+<p>The rate form is the only control in the product that changes what a future bill costs. Every case here either proves that history is preserved or that an approved bill is immune.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th></tr></thead>
+<tbody>
+
+<tr>
+<td><code>TC-AUTH-046</code></td>
+<td>Saving a rate INSERTs a row and never UPDATEs one</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Signed in as admin; <code>rates</code> holds 4 seed rows; water 18.00 effective <code>2025-10-01</code></td>
+<td><ol><li><code>POST /settings/rates</code></li><li>Count and read <code>rates</code></li><li>Re-read the original row</li></ol></td>
+<td><code>utility_type=water&amp;unit_price=18.50&amp;effective_from=2026-10-01</code></td>
+<td><code>303</code> → <code>/settings</code>, inline <code>.notice.ok</code> <strong>บันทึกอัตราใหม่แล้ว</strong>. <code>rates</code> now holds 5 rows; the new row is <code>(water, 18.50, 2026-10-01, created_by=1)</code>; the 2025-10-01 row is byte-identical (18.00) — no <code>UPDATE</code> touched it. The history table lists the new row as <span class="badge info">มีผลในอนาคต</span> and the old one as <span class="badge ok">ใช้อยู่</span>.</td>
+<td>FR-07, FR-08, FR-09 · D-17</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-047</code></td>
+<td>Two rates for one utility on one effective date are impossible</td>
+<td>UI</td><td><span class="badge p1">P1</span></td>
+<td>Signed in as admin; electric 8.50 already exists for <code>2026-10-01</code></td>
+<td><ol><li>Submit an electric rate for the same date</li><li>Read the field error and the form</li><li>Count <code>rates</code></li></ol></td>
+<td><code>utility_type=electric&amp;unit_price=9.00&amp;effective_from=2026-10-01</code></td>
+<td>Refused by <code>uq_rates(utility_type, effective_from)</code> and surfaced as <code>409 RATE_DUPLICATE</code> (message มีอัตราของวันที่นี้อยู่แล้ว) with the field-level sentence rendered under มีผลตั้งแต่วันที่: <strong>มีอัตราค่าไฟของวันที่นี้อยู่แล้ว กรุณาเลือกวันอื่น</strong>. The typed <code>9.00</code> is preserved, no redirect, row count unchanged.</td>
+<td>FR-07, FR-08, FR-48 · D-17, D-40</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-048</code></td>
+<td>Rate resolution is keyed to the first day of the period month, not to the click</td>
+<td>unit</td><td><span class="badge p0">P0</span></td>
+<td>Fixture rows only; no HTTP</td>
+<td><ol><li>Resolve each utility for <code>2026-09</code></li><li>Resolve again for <code>2026-10</code></li><li>Resolve for <code>2025-09</code> (before any rate exists)</li></ol></td>
+<td>Rows: water 18.00 @2025-10-01 · electric 8.00 @2025-10-01 · common 35.00 @2025-10-01 · electric 8.50 @2026-10-01 · water 18.50 @2026-09-15</td>
+<td><code>2026-09</code> → water <strong>18.00</strong> (18.50 is dated 2026-09-15, later than 2026-09-01, so it does not apply), electric <strong>8.00</strong>, common <strong>35.00</strong>. <code>2026-10</code> → water 18.50, electric <strong>8.50</strong>, common 35.00. <code>2025-09</code> → no row for any utility, which is what raises <code>RATE_NOT_FOUND</code>. Arithmetic that follows: 10 × 18.00 = 180.00, 70 × 8.00 = 560.00, 30 × 35.00 = 1,050.00, total 1,790.00.</td>
+<td>FR-07, FR-08, FR-09, FR-14, FR-15, FR-16 · D-17, D-16</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-049</code></td>
+<td>A future-dated rate does not disturb the current period, however late generation runs</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Signed in as admin; electric 8.50 effective <code>2026-10-01</code>; readings complete for room 41 in <code>2026-09</code></td>
+<td><ol><li><code>POST /api/bills/generate</code> for <code>2026-09</code></li><li>Open <code>/bills/118</code></li><li>Read the three bill items</li></ol></td>
+<td>Period <code>2026-09</code>; water 10 units, electricity 70 units, area 30.00</td>
+<td>The electric item stores <code>quantity 70</code>, <code>unit_price 8.00</code>, <code>amount 560.00</code> — 70 × 8.00 = 560.00, <em>not</em> 70 × 8.50 = 595.00. Water 10 × 18.00 = 180.00, common 30.00 × 35.00 = 1,050.00, total <strong>1,790.00</strong> as the SQL sum of the three rounded items.</td>
+<td>FR-08, FR-15, FR-17 · D-17, D-16, D-18</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-050</code></td>
+<td>The next period picks the future rate automatically, with no further action</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Signed in as admin; readings for room 41 exist for <code>2026-10</code> with the same usage</td>
+<td><ol><li><code>POST /api/bills/generate</code> for <code>2026-10</code></li><li>Read the October bill's electric item</li></ol></td>
+<td>Period <code>2026-10</code>; 70 units of electricity; rate rows as in <code>TC-AUTH-048</code></td>
+<td>Electric item: <code>unit_price 8.50</code>, <code>amount 595.00</code> — 70 × 8.50 = 595.00. Water 10 × 18.50 = 185.00, common 30.00 × 35.00 = 1,050.00, total 1,830.00. Nobody had to press anything on 1 October: <code>effective_from ≤ 2026-10-01</code> did the work.</td>
+<td>FR-08, FR-15 · D-17</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-051</code></td>
+<td>An approved bill and its receipt are immune to any later rate change</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Bill 118 approved (<code>Unpaid</code>) and then paid; receipt <code>REC-202609-000852</code> printed once</td>
+<td><ol><li>As admin, save electric 20.00 effective today (inside period <code>2026-09</code>)</li><li>Reload <code>/bills/118</code></li><li>Reload <code>/receipts/96</code> and compare with the first print</li></ol></td>
+<td><code>utility_type=electric&amp;unit_price=20.00&amp;effective_from=</code> today</td>
+<td>Bill Detail still shows ค่าไฟ 70 หน่วย × 8.00 = 560.00 and ยอดรวม 1,790.00; the receipt still prints the same three lines and หนึ่งพันเจ็ดร้อยเก้าสิบบาทถ้วน. Nothing renders from the live <code>rates</code> table — every screen reads the bill item's own snapshot. The second render carries the สำเนา mark only because <code>print_count ≥ 1</code>, and the money is unchanged.</td>
+<td>FR-08, FR-15, FR-18, FR-24 · D-17, D-22, D-27</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-052</code></td>
+<td>A rate back-dated into a period with Draft bills warns, and recalculates Drafts only</td>
+<td>e2e</td><td><span class="badge p1">P1</span></td>
+<td>Signed in as admin; period <code>2026-09</code> has 67 Draft bills, one of them bill 118; one bill from <code>2026-08</code> is <code>Paid</code></td>
+<td><ol><li>Save electric 8.50 effective <code>2026-09-01</code></li><li>Read the Settings warning</li><li>Press คำนวณบิลฉบับร่างใหม่</li><li>Re-read bill 118 and the August Paid bill</li></ol></td>
+<td><code>utility_type=electric&amp;unit_price=8.50&amp;effective_from=2026-09-01</code></td>
+<td>Warning renders verbatim: <strong>มีบิลฉบับร่าง 67 ใบในรอบนี้ ยังใช้อัตราเดิมอยู่</strong> with the secondary button คำนวณบิลฉบับร่างใหม่ (never the primary). After the recalculation bill 118's electric item is 70 × 8.50 = <strong>595.00</strong> and its total is 180.00 + 595.00 + 1,050.00 = <strong>1,825.00</strong>; the August Paid bill is byte-identical. The button posts to <code>POST /api/bills/generate</code> — no eighth JSON endpoint appears.</td>
+<td>FR-09, FR-17 · D-17, D-18</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-053</code></td>
+<td>Invalid rate values are rejected before they can reach a bill</td>
+<td>UI</td><td><span class="badge p2">P2</span></td>
+<td>Signed in as admin</td>
+<td><ol><li>Submit each invalid value in turn</li><li>Assert the message and the row count</li></ol></td>
+<td><code>0</code> · <code>-5.00</code> · <code>18.005</code> · <code>abc</code> · empty · <code>effective_from=</code> empty</td>
+<td>All <code>422 VALIDATION_FAILED</code>, no row inserted, values preserved. Messages: <strong>อัตราต้องมากกว่า 0</strong> for 0 and −5.00; <strong>กรอกทศนิยมได้ไม่เกิน 2 ตำแหน่ง</strong> for 18.005. An empty มีผลตั้งแต่วันที่ defaults to today rather than failing: with the clock pinned to <code>2026-09-08</code> the field posts ISO <code>2026-09-08</code> while displaying <code>8 ก.ย. 2026</code> — no <code>08/09/2026</code> appears anywhere, in any locale.</td>
+<td>FR-07, FR-48 · D-17, D-16, D-03</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-054</code></td>
+<td>A rate carrying satang is legal and flows through to an amount</td>
+<td>unit</td><td><span class="badge p2">P2</span></td>
+<td>Rate fixture water 7.50</td>
+<td><ol><li>Save water 7.50</li><li>Compute the water item for 10 units</li><li>Render the amount and the Thai words for a total carrying satang</li></ol></td>
+<td><code>unit_price=7.50</code>, quantity 10 · a total of <code>1790.50</code> for the words helper</td>
+<td><code>DECIMAL(8,2)</code> accepts 7.50; the item is <code>ROUND(10 × 7.50, 2)</code> = <strong>75.00</strong>. The words helper renders 1,790.50 as หนึ่งพันเจ็ดร้อยเก้าสิบบาทห้าสิบสตางค์ and 1,790.00 as หนึ่งพันเจ็ดร้อยเก้าสิบบาทถ้วน. No JavaScript multiplication is involved — the amount comes from SQL.</td>
+<td>FR-14, FR-24 · D-16, D-27</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-055</code></td>
+<td>Every rate change writes one RATE_CHANGE audit row naming the actor</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Signed in as admin (id 1); <code>audit_log</code> empty</td>
+<td><ol><li>Save water 18.50 effective <code>2026-11-01</code></li><li>Read <code>audit_log</code></li><li>Read the ผู้บันทึก column of ประวัติอัตรา</li></ol></td>
+<td><code>utility_type=water&amp;unit_price=18.50&amp;effective_from=2026-11-01</code></td>
+<td>Exactly one row: <code>action='RATE_CHANGE'</code>, <code>entity_type='rates'</code>, <code>actor_user_id=1</code>, <code>after_json</code> carrying the new price and date, <code>bill_id</code> NULL, written on the same connection as the insert. The history row shows ผู้บันทึก <strong>นิติบุคคล</strong> — the actor's ชื่อที่แสดง, the same string that prints as ผู้รับเงิน.</td>
+<td>FR-07, FR-39 · D-38, D-46</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-056</code></td>
+<td>Generation with no eligible rate row fails loudly and bills nothing</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Signed in as admin; every <code>common</code> rate row deleted; readings complete for <code>2026-09</code></td>
+<td><ol><li><code>POST /api/bills/generate</code> for <code>2026-09</code></li><li>Count <code>bills</code> for the period</li></ol></td>
+<td>Period <code>2026-09</code>; <code>rates</code> has water and electric only</td>
+<td><code>422 RATE_NOT_FOUND</code> — <strong>ยังไม่ได้ตั้งค่าอัตราสำหรับรอบบิลนี้ กรุณาตั้งค่าที่หน้าตั้งค่า</strong>. Zero bills created for the period: a missing rate never silently becomes 0.00 on a common-area line. The rate history empty state reads ยังไม่มีการตั้งอัตรา — กรุณาบันทึกอัตราแรกก่อนสร้างบิล.</td>
+<td>FR-09, FR-16, FR-17 · D-17, D-40</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<h3>8. Settings — วันครบกำหนดชำระ and the due-date rule</h3>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th></tr></thead>
+<tbody>
+
+<tr>
+<td><code>TC-AUTH-057</code></td>
+<td>A Draft bill shows the provisional due date and says it is not yet final</td>
+<td>UI</td><td><span class="badge p1">P1</span></td>
+<td>Signed in as admin; <code>due_day = 5</code>; bill 118 is <code>Draft</code> for period <code>2026-09</code></td>
+<td><ol><li>Open <code>/bills/118</code></li><li>Read the due-date line</li><li>Search the page for a due-date input</li></ol></td>
+<td><code>settings.due_day = 5</code> · period <code>2026-09</code></td>
+<td>The line reads <strong>กำหนดชำระ 5 ก.ย. 2026 (ยืนยันเมื่ออนุมัติ)</strong> — the day of the bill's own period month, in the <code>d MMM yyyy</code> Thai short form. No editable due-date field exists anywhere in the product; the value is a derived display, not an input.</td>
+<td>FR-18 · D-20, D-03</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-058</code></td>
+<td>Approval freezes due_date = MAX(period due day, approval + 3 days) — the PRD §28 case</td>
+<td>unit</td><td><span class="badge p0">P0</span></td>
+<td>Pure function over (due_day, period, approval_date)</td>
+<td><ol><li>Evaluate for the demo approval date</li><li>Evaluate for a late approval</li><li>Evaluate for a short month</li></ol></td>
+<td><code>due_day=5</code>, period <code>2026-09</code>, approved <code>2026-09-01</code> · approved <code>2026-09-04</code> · <code>due_day=28</code>, period <code>2026-02</code>, approved <code>2026-02-01</code></td>
+<td>Case 1: MAX(2026-09-05, 2026-09-01 + 3 = 2026-09-04) = <strong>2026-09-05</strong>, exactly the PRD §28 value. Case 2: MAX(2026-09-05, 2026-09-07) = <strong>2026-09-07</strong> — a shifted date is correct behaviour, not a defect. Case 3: 2026-02-28, and the month-end clamp never fires because the range is 1–28.</td>
+<td>FR-18 · D-20, D-44</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-059</code></td>
+<td>The frozen due date reaches the bill, the LINE message and the reminder schedule together</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Signed in as admin; bill 118 Draft; clock pinned to <code>2026-09-01</code>; LINE test mode ON</td>
+<td><ol><li>Approve bill 118 (<code>POST /api/bills/approve</code> with <code>{"bill_ids":[118]}</code>)</li><li>Read <code>bills.due_date</code></li><li>Read the queued <code>BILL</code> notification payload</li></ol></td>
+<td>Bill 118 · total 1,790.00 · <code>due_day=5</code></td>
+<td><code>bills.status='Unpaid'</code>, <code>due_date='2026-09-05'</code>, <code>approved_by=1</code>. The BILL message renders 📅 กรุณาชำระภายในวันที่ <strong>5 กันยายน 2026</strong> — full Thai month in LINE, short form on screen — with 💰 ยอดรวม <strong>1,790 บาท</strong> (trailing <code>.00</code> dropped in the message, kept as 1,790.00 in tables) and the closing line ชำระเงินสดที่สำนักงานนิติบุคคล เวลา 08:00–17:00 น. from Settings.</td>
+<td>FR-18, FR-19 · D-20, D-31, D-03, D-34</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-060</code></td>
+<td>วันครบกำหนดชำระ outside 1–28 is refused by both the schema and the form</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Signed in as admin</td>
+<td><ol><li><code>POST /settings/profile</code> with <code>due_day=29</code>, then <code>0</code>, then <code>31</code></li><li>Attempt the same value with a direct <code>UPDATE</code></li><li>Read <code>settings.due_day</code></li></ol></td>
+<td><code>due_day=29</code> · <code>0</code> · <code>31</code></td>
+<td>Every form attempt <code>422 VALIDATION_FAILED</code> with <strong>วันครบกำหนดต้องอยู่ระหว่าง 1–28</strong>, values preserved, no redirect. The hand-written <code>UPDATE</code> is rejected by <code>CHECK (due_day BETWEEN 1 AND 28)</code>. <code>settings.due_day</code> remains 5.</td>
+<td>FR-48 · D-20 · ADR §6.8 layer 4</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-061</code></td>
+<td>Changing วันครบกำหนดชำระ never moves a bill that is already approved</td>
+<td>e2e</td><td><span class="badge p1">P1</span></td>
+<td>Bill 118 approved with <code>due_date = 2026-09-05</code>; a second bill for room 206 is still Draft</td>
+<td><ol><li>Change <code>due_day</code> from 5 to 10</li><li>Re-read bill 118</li><li>Approve the Draft bill on the same pinned date</li></ol></td>
+<td><code>due_day: 5 → 10</code> · clock pinned <code>2026-09-01</code></td>
+<td>Toast บันทึกการตั้งค่าแล้ว. Bill 118's <code>due_date</code> is still <strong>2026-09-05</strong> — frozen at approval, not recomputed on read. The newly approved bill gets MAX(2026-09-10, 2026-09-04) = <strong>2026-09-10</strong>. Two bills in one period may therefore hold different due dates, and that is correct.</td>
+<td>FR-18 · D-20, D-22</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<h3>9. Settings — reminder days, the manual job, quota and LINE test mode</h3>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th></tr></thead>
+<tbody>
+
+<tr>
+<td><code>TC-AUTH-062</code></td>
+<td>The reminder schedule is displayed, never configured, and matches the job exactly</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Signed in as admin; one Unpaid bill with <code>due_date = 2026-09-05</code>; clock pinned per step</td>
+<td><ol><li>Read the ตารางแจ้งเตือนอัตโนมัติ card and count its inputs</li><li>Run the daily job on 3, 4, 5, 6, 13, 20 and 21 Sep 2026</li><li>Read the queued notification types</li></ol></td>
+<td>due_date <code>2026-09-05</code> · job at 09:00 Asia/Bangkok</td>
+<td>The card renders four read-only facts — ก่อนครบกำหนด 2 วันก่อนวันครบกำหนด · เลยกำหนด วันที่ 1, 8 และ 15 หลังครบกำหนด · เวลาส่ง 09:00 น. ทุกวัน (เวลาไทย) · สูงสุดต่อบิล 4 ข้อความ — and contains <strong>zero</strong> form inputs. The job queues <code>PRE_DUE</code> on 3 Sep only (5 − 2), <code>OVERDUE</code> on 6, 13 and 20 Sep only (days_overdue 1, 8, 15) and nothing on 4, 5 or 21 Sep. Four messages maximum for the bill's whole life.</td>
+<td>FR-20, FR-21, FR-37 · D-33, D-32</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-063</code></td>
+<td>รันงานแจ้งเตือนตอนนี้ runs the same job body, skips the daily guard and never double-sends</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Signed in as admin; the scheduled <code>daily</code> run for today already completed</td>
+<td><ol><li><code>POST /internal/jobs/daily</code> again with the token — expect the no-op</li><li>Press รันงานแจ้งเตือนตอนนี้ (<code>POST /settings/run-daily-job</code>)</li><li>Count <code>notifications</code> rows and <code>job_runs</code> rows</li></ol></td>
+<td>Same calendar day; 9 pre-due, 7 overdue, 1 retry pending</td>
+<td>Step 1: <code>200</code> with <code>already_ran: true</code> and every count 0 — a retrying scheduler must never see an error. Step 2: runs as <code>job_name='daily_manual'</code>, bypassing <code>uq_job_runs</code>, and flashes <strong>ส่งแจ้งเตือนก่อนครบกำหนด 9 ราย · เลยกำหนด 7 ราย · ส่งซ้ำที่ล้มเหลว 1 ราย</strong>. No duplicate message is produced: <code>uq_notifications(dedupe_key)</code> rejects the same type/bill/tenant/day twice.</td>
+<td>FR-37, FR-32 · D-32, D-30</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-064</code></td>
+<td>The quota line counts only delivered messages and warns above 450</td>
+<td>API</td><td><span class="badge p2">P2</span></td>
+<td>Signed in as admin; this month's <code>notifications</code>: 195 <code>sent</code>, 12 <code>failed</code>, 13 <code>skipped_no_line</code>; then a fixture with 451 <code>sent</code></td>
+<td><ol><li><code>GET /settings</code>, read the quota line</li><li>Swap in the 451-sent fixture and reload</li><li>Attempt to send past 500</li></ol></td>
+<td>195 sent / 12 failed / 13 skipped · then 451 sent</td>
+<td>First render: <strong>ส่งข้อความเดือนนี้ (LINE ฟรี 500 ข้อความ/เดือน) 195/500</strong> — failed and skipped rows never inflate the count. Second render: same line at 451/500 in warn colour. Nothing is throttled or blocked at any count: exhausting the allowance silently stops delivery, which is limitation 12 and must not be "fixed" by a guard.</td>
+<td>FR-40 · D-34, D-05</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-065</code></td>
+<td>โหมดทดสอบ LINE defaults ON and cannot be left on without a test recipient</td>
+<td>UI</td><td><span class="badge p2">P2</span></td>
+<td>Fresh database from <code>schema.sql</code> + <code>seed.sql</code></td>
+<td><ol><li><code>GET /settings</code> and read the card</li><li>Submit the card with test mode ON and an empty LINE User ID</li><li>Approve one bill with test mode ON and read the notification row</li></ol></td>
+<td><code>line_test_mode=1</code>, <code>line_test_user_id=""</code> · then <code>Ud4f8a91c02e7b6…</code></td>
+<td>The card renders โหมดทดสอบ LINE with the badge เปิดอยู่ — <code>settings.line_test_mode</code> defaults to <code>1</code> in every environment. The empty-id save is refused <code>422</code> with <strong>กรุณากรอก LINE User ID สำหรับทดสอบ</strong>. With test mode on, the outbound push goes to the whitelisted id while the <code>notifications</code> row still records the intended <code>tenant_id</code> — delivery reporting stays truthful.</td>
+<td>FR-40, FR-32 · D-34, D-30</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<h3>10. Settings — apartment information used on receipts and in LINE</h3>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th></tr></thead>
+<tbody>
+
+<tr>
+<td><code>TC-AUTH-066</code></td>
+<td>The apartment profile is what the receipt letterhead prints — and the software name is not</td>
+<td>e2e</td><td><span class="badge p1">P1</span></td>
+<td>Signed in as admin; receipt 96 exists for payment 96</td>
+<td><ol><li><code>GET /settings</code> and read ตัวอย่างหัวใบเสร็จ</li><li><code>GET /receipts/96</code></li><li>Diff the two letterheads</li><li>Search the printed receipt for the product name</li></ol></td>
+<td>ศุภาลัย เรสซิเดนซ์ · 99/1 ถนนพหลโยธิน แขวงจตุจักร เขตจตุจักร กรุงเทพฯ 10900 · โทร. 02-123-4567 · เลขประจำตัวผู้เสียภาษี 0-1055-12345-67-8</td>
+<td>The preview and the A5 receipt render the same four values character for character, with nothing prefixed and nothing invented. The strings <code>Juristic Platform</code> and <code>UtilityHub</code> appear <strong>nowhere</strong> on the receipt or on the ใบแจ้งค่าใช้จ่าย — the receipt is issued by the juristic person, not by the software. The title is ใบเสร็จรับเงิน; no ใบกำกับภาษี and no VAT line appears.</td>
+<td>FR-24, FR-38 · D-01, D-27, D-05</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-067</code></td>
+<td>An empty เลขประจำตัวผู้เสียภาษี removes that line instead of printing an empty label</td>
+<td>UI</td><td><span class="badge p1">P1</span></td>
+<td>Signed in as admin; tax id currently set</td>
+<td><ol><li>Clear เลขประจำตัวผู้เสียภาษี and save</li><li>Read the preview</li><li>Reload <code>/receipts/96</code> and the invoice view</li></ol></td>
+<td><code>tax_id=""</code></td>
+<td>Toast <strong>บันทึกข้อมูลอพาร์ตเมนต์แล้ว</strong>. The third letterhead line renders as โทร. 02-123-4567 only — no dangling separator, no empty เลขประจำตัวผู้เสียภาษี label — on the preview, the receipt and the ใบแจ้งค่าใช้จ่าย alike. It is the one optional field of the letterhead.</td>
+<td>FR-24 · D-27, D-01</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-068</code></td>
+<td>Required apartment fields and formats are validated per field, and one bad form never rolls back another</td>
+<td>UI</td><td><span class="badge p2">P2</span></td>
+<td>Signed in as admin; a rate save is in progress in the rates card</td>
+<td><ol><li>Submit the profile card with an empty ชื่ออพาร์ตเมนต์</li><li>Submit with a malformed phone</li><li>Submit a 12-digit tax id</li><li>Confirm the rates card is still usable and unsubmitted</li></ol></td>
+<td><code>apartment_name=""</code> · <code>phone=12345</code> · <code>tax_id=012345678901</code> (12 digits)</td>
+<td>Each attempt <code>422</code> with its own inline message: <strong>กรุณากรอกชื่ออพาร์ตเมนต์</strong>, <strong>กรอกเบอร์โทรศัพท์ให้ถูกต้อง</strong>, <strong>เลขประจำตัวผู้เสียภาษีต้องมี 13 หลัก</strong> (validated only when the field is filled). Typed values are preserved, only the submitted card's button shows <code>.is-loading</code>, and the other three Settings forms remain independently usable — a typo in the phone number can never roll back a rate change.</td>
+<td>FR-48 · D-27, D-40</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-069</code></td>
+<td>เวลาทำการ and ชื่ออพาร์ตเมนต์ reach LINE as placeholders, never as literals</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Signed in as admin; LINE test mode ON; one Draft bill for room 205 and one announcement to send</td>
+<td><ol><li>Change เวลาทำการ to <code>09:00–18:00 น.</code> and save</li><li>Approve bill 118 and read the queued BILL text</li><li>Send an announcement and read its text</li></ol></td>
+<td><code>office_hours=09:00–18:00 น.</code> · <code>apartment_name=ศุภาลัย เรสซิเดนซ์</code></td>
+<td>The BILL message ends ชำระเงินสดที่สำนักงานนิติบุคคล เวลา <strong>09:00–18:00 น.</strong> — rendered from <code>{office_hours}</code>, with no hard-coded time anywhere in <code>lib/templates.js</code>. The announcement is signed <strong>— นิติบุคคล ศุภาลัย เรสซิเดนซ์</strong> (exactly one space after นิติบุคคล). No message carries the product name.</td>
+<td>FR-19, FR-27 · D-31, D-01, D-34</td>
+</tr>
+
+<tr>
+<td><code>TC-AUTH-070</code></td>
+<td>Renaming the apartment changes future <em>letterheads</em> only — never a bill's money or its tenant snapshot</td>
+<td>e2e</td><td><span class="badge p1">P1</span></td>
+<td>Receipt <code>REC-202609-000852</code> already issued and printed once for สมชาย ใจดี</td>
+<td><ol><li>Change ชื่ออพาร์ตเมนต์ to <code>ศุภาลัย เรสซิเดนซ์ 2</code></li><li>Reprint <code>/receipts/96</code></li><li>Compare every field with the first print</li></ol></td>
+<td><code>apartment_name: ศุภาลัย เรสซิเดนซ์ → ศุภาลัย เรสซิเดนซ์ 2</code></td>
+<td>The letterhead now reads ศุภาลัย เรสซิเดนซ์ 2 — the letterhead is rendered live from Settings and is deliberately not snapshotted (D-27). Everything else is identical: เลขที่ <code>REC-202609-000852</code>, ห้อง 205, ชื่อผู้เช่า สมชาย ใจดี, ค่าน้ำ 10 หน่วย × 18.00 = 180.00, ค่าไฟ 70 หน่วย × 8.00 = 560.00, ค่าส่วนกลาง 30 ตร.ม. × 35.00 = 1,050.00, ยอดรวม 1,790.00 บาท, ผู้รับเงิน นิติบุคคล. The reprint carries the สำเนา mark. Testers must record this as expected behaviour, not as a defect.</td>
+<td>FR-24 · D-27, D-09, D-01</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<h3>11. Traceability roll-up</h3>
+
+<p>Every requirement this section owns, and the cases that discharge it. A requirement with no case in this section is covered elsewhere in the test plan.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Requirement</th><th>Cases</th></tr></thead>
+<tbody>
+<tr><td><strong>FR-01</strong> Login</td><td>001–012, 013–017, 019–021, 028</td></tr>
+<tr><td><strong>FR-02</strong> Role management</td><td>002, 010, 014, 018, 022–035</td></tr>
+<tr><td><strong>FR-03</strong> จัดการผู้ใช้งานระบบ</td><td>006, 012, 018, 019, 036–045</td></tr>
+<tr><td><strong>FR-06</strong> Room area (Staff visibility)</td><td>026</td></tr>
+<tr><td><strong>FR-07 · FR-08 · FR-09</strong> Rates</td><td>046–056</td></tr>
+<tr><td><strong>FR-10 · FR-11 · FR-12</strong> Readings (Staff path)</td><td>030</td></tr>
+<tr><td><strong>FR-14 · FR-15 · FR-16</strong> Money arithmetic from rates</td><td>048–052, 054, 056</td></tr>
+<tr><td><strong>FR-17</strong> Generation</td><td>031, 049, 052, 056</td></tr>
+<tr><td><strong>FR-18</strong> Approval and due date</td><td>033, 057–059, 061</td></tr>
+<tr><td><strong>FR-19</strong> Bill via LINE</td><td>033, 059, 069</td></tr>
+<tr><td><strong>FR-20 · FR-21</strong> Reminders</td><td>062</td></tr>
+<tr><td><strong>FR-22</strong> Cash payment</td><td>034</td></tr>
+<tr><td><strong>FR-24</strong> Receipt</td><td>034, 042, 051, 054, 066, 067, 070</td></tr>
+<tr><td><strong>FR-27</strong> Announcement</td><td>069</td></tr>
+<tr><td><strong>FR-28</strong> Dashboard</td><td>025</td></tr>
+<tr><td><strong>FR-32</strong> Notification log</td><td>063, 065</td></tr>
+<tr><td><strong>FR-37</strong> Scheduled job and manual trigger</td><td>035, 062, 063</td></tr>
+<tr><td><strong>FR-38</strong> Printable ใบแจ้งค่าใช้จ่าย</td><td>066, 067</td></tr>
+<tr><td><strong>FR-39</strong> Audit trail</td><td>029, 055</td></tr>
+<tr><td><strong>FR-40</strong> LINE test mode and quota</td><td>064, 065</td></tr>
+<tr><td><strong>FR-42</strong> Missing-reading visibility</td><td>031</td></tr>
+<tr><td><strong>FR-47</strong> Health endpoint</td><td>035</td></tr>
+<tr><td><strong>FR-48</strong> Standard failure treatment</td><td>007, 015, 016, 021, 022, 023, 037, 038, 053, 060, 068</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout ok">
+  <div class="title">Regression set for the demo morning</div>
+  <ul class="checklist">
+    <li><code>TC-AUTH-001</code> · <code>TC-AUTH-002</code> — both roles sign in and land where they should</li>
+    <li><code>TC-AUTH-022</code> · <code>TC-AUTH-034</code> — the permission matrix holds and Staff cannot take cash</li>
+    <li><code>TC-AUTH-048</code> · <code>TC-AUTH-049</code> — 10 × 18.00 = 180.00, 70 × 8.00 = 560.00, 30.00 × 35.00 = 1,050.00, total 1,790.00</li>
+    <li><code>TC-AUTH-058</code> · <code>TC-AUTH-059</code> — the due date freezes and reaches LINE as 5 กันยายน 2026</li>
+    <li><code>TC-AUTH-042</code> · <code>TC-AUTH-066</code> — the receipt prints the apartment's letterhead and its ผู้รับเงิน</li>
+  </ul>
+</div>
+
+</section>

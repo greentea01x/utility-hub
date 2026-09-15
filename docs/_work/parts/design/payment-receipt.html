@@ -1,0 +1,895 @@
+<section id="payment-receipt">
+<h2>Payment &amp; Receipt</h2>
+
+<p>Three screens close the money loop of the product: the counter takes cash against exactly one Unpaid bill, the receipt is issued and printed on A5, and every settled payment stays findable and reprintable afterwards. Together they implement PRD §12, §13 and §18 functions 22–25, under the decisions that govern them — <strong>D-24</strong> (full payment only, amount never an input), <strong>D-25</strong> (void, never delete), <strong>D-26</strong> (the database is the guarantee, not the button), <strong>D-27</strong> (receipt fields and numbering), <strong>D-28</strong> (A5 through the browser's own print dialog), <strong>D-39</strong> (two of the six confirmation dialogs live here) and <strong>D-40</strong> (empty, loading, error and 403 treatments).</p>
+
+<div class="callout warn">
+  <div class="title">The counter is Admin, not Staff</div>
+  <p>PRD §12 says <span lang="th">เจ้าหน้าที่กด Confirm Cash Payment</span>. That sentence contradicts PRD §4, which grants <span lang="th">รับชำระเงิน</span> and <span lang="th">ออกใบเสร็จ</span> to Admin only, and it is treated as a drafting error (D-36). Every screen in this section is Admin-only; a staff session reaching any of these routes gets the Thai 403 page, and no amount appears anywhere in a staff API response.</p>
+</div>
+
+<div class="callout note">
+  <div class="title">What the mockups are, and are not</div>
+  <p>All figures are the PRD §28 demo values (room 205, 30 ตร.ม., 10 หน่วย × 18, 70 หน่วย × 8, 30 × 35, total 1,790 THB, due 5 Sep 2026, paid 3 Sep 2026, receipt <code>REC-202609-000852</code>) and the D-44 seed identities. The calendar dates are documentation values: the live demo reproduces the arithmetic against dates computed from the run date, never this calendar (D-44). Tenant names, phone numbers and the apartment address are fictional.</p>
+</div>
+
+<style>
+/* Layout specifics for the Payment &amp; Receipt mockups only. Every rule is scoped
+   under .screen, inside this section, and uses --ui-* custom properties. */
+#payment-receipt .screen{position:relative}
+#payment-receipt .screen .pay-grid{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:var(--ui-sp-4);align-items:start}
+#payment-receipt .screen .rcpt-grid{display:grid;grid-template-columns:minmax(0,1fr) 288px;gap:var(--ui-sp-4);align-items:start}
+#payment-receipt .screen .sheet-box{background:var(--ui-surface-2);border:1px solid var(--ui-border);border-radius:var(--ui-r-md);padding:var(--ui-sp-4);display:flex;justify-content:center;overflow-x:auto}
+#payment-receipt .screen .sheet-box .receipt{min-height:0;box-shadow:var(--ui-sh-1)}
+</style>
+
+<!-- ==================================================================== -->
+<h3>Payment · รับชำระเงิน — <code>/payments</code></h3>
+
+<div class="screen-meta">
+  <span><b>Role:</b> Admin only (D-36)</span>
+  <span><b>Entry points:</b> sidebar <span lang="th">รับชำระเงิน</span> · Bill Detail <span lang="th">รับชำระเงิน</span> · Dashboard arrears tile · Reports <span lang="th">รายการค้างชำระ</span></span>
+  <span><b>Primary action:</b> <span lang="th">ยืนยันรับเงินสด</span></span>
+  <span><b>Device:</b> desktop 1200 (counter workstation)</span>
+</div>
+
+<div class="device desktop">
+  <div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/payments?q=205</span></div>
+  <div class="screen">
+    <div class="app">
+      <nav class="sidebar">
+        <div class="brand"><b>ศุภาลัย เรสซิเดนซ์</b><span>Juristic Platform</span></div>
+        <a class="nav-item">📊 ภาพรวม</a>
+        <a class="nav-item">📝 จดมิเตอร์</a>
+        <a class="nav-item">🧾 บิลประจำเดือน <span class="count">3</span></a>
+        <a class="nav-item active">💵 รับชำระเงิน</a>
+        <a class="nav-item">🚪 ห้องพัก</a>
+        <a class="nav-item">👤 ผู้เช่า</a>
+        <a class="nav-item">📢 ประกาศ</a>
+        <a class="nav-item">📈 รายงาน</a>
+        <div class="nav-section">ตั้งค่าระบบ</div>
+        <a class="nav-item">⚙️ ตั้งค่า</a>
+        <a class="nav-item">👥 ผู้ใช้งานระบบ</a>
+        <div class="user">นิติบุคคล · admin · ออกจากระบบ</div>
+      </nav>
+      <div class="main">
+        <div class="topbar">
+          <span class="title">รับชำระเงิน</span>
+          <span class="actions"><a class="btn sm">ประวัติการรับชำระ</a></span>
+        </div>
+        <div class="page">
+
+          <div class="toolbar" style="position:relative">
+            <span class="ann" style="top:-10px;left:-10px">1</span>
+            <span class="search" style="width:320px"><span aria-hidden="true">🔍</span><input value="205" aria-label="ค้นหาห้องหรือผู้เช่า"></span>
+            <button class="btn">ค้นหา</button>
+            <span class="ui-sub">ค้นหาด้วยเลขห้องหรือชื่อผู้เช่า · พบ 1 ห้อง</span>
+          </div>
+
+          <div class="card" style="position:relative">
+            <span class="ann" style="top:-10px;left:-10px">2</span>
+            <div class="spread">
+              <div>
+                <span style="font-size:var(--ui-fs-xl);font-weight:var(--ui-fw-semi)">ห้อง 205</span>
+                <span class="badge occupied">มีผู้เช่า</span>
+              </div>
+              <div class="row" style="position:relative">
+                <span class="ann" style="top:-16px;left:-16px">3</span>
+                <span class="badge ok">ผูก LINE แล้ว</span>
+              </div>
+            </div>
+            <div class="ui-sub" style="margin-top:var(--ui-sp-1)">ชั้น 2 · 30 ตร.ม. · ผู้เช่า นางสาวอารยา ศรีสุวรรณ · โทร 081-234-5678 · เข้าอยู่ 1 มี.ค. 2025</div>
+          </div>
+
+          <div class="pay-grid">
+            <div>
+              <div class="card" style="position:relative">
+                <span class="ann" style="top:-10px;left:-10px">4</span>
+                <div class="card-head">
+                  <span class="card-title">บิลที่ยังไม่ชำระ · 1 รายการ</span>
+                  <span class="ui-sub">เรียงจากรอบเก่าสุด</span>
+                </div>
+                <div class="table-scroll">
+                  <table class="compact">
+                    <thead>
+                      <tr>
+                        <th style="width:36px"></th><th>รอบบิล</th><th>ครบกำหนด</th>
+                        <th class="num">ค่าน้ำ</th><th class="num">ค่าไฟ</th><th class="num">ค่าส่วนกลาง</th>
+                        <th class="num">ยอดรวม</th><th>สถานะ</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr class="is-selected">
+                        <td style="position:relative"><span class="ann" style="top:2px;left:2px">5</span><input type="radio" checked aria-label="เลือกบิลรอบ กันยายน 2026"></td>
+                        <td>กันยายน 2026</td>
+                        <td>5 ก.ย. 2026</td>
+                        <td class="num">180.00</td>
+                        <td class="num">560.00</td>
+                        <td class="num">1,050.00</td>
+                        <td class="num"><b>1,790.00</b></td>
+                        <td><span class="badge unpaid" data-status="Unpaid">รอชำระ</span></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="card-head">
+                  <span class="card-title">ชำระแล้วล่าสุด</span>
+                  <a class="btn ghost sm">ดูประวัติทั้งหมด</a>
+                </div>
+                <div class="table-scroll">
+                  <table class="compact zebra">
+                    <thead>
+                      <tr><th>รอบบิล</th><th>วันที่ชำระ</th><th class="num">ยอด</th><th>เลขที่ใบเสร็จ</th><th>สถานะ</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>สิงหาคม 2026</td><td>4 ส.ค. 2026</td><td class="num">1,835.00</td>
+                        <td>REC-202608-000803</td>
+                        <td><span class="badge paid" data-status="Paid">ชำระแล้ว</span></td>
+                        <td style="position:relative"><span class="ann" style="top:4px;left:-14px">11</span><a class="btn ghost sm">ดูใบเสร็จ</a></td>
+                      </tr>
+                      <tr>
+                        <td>กรกฎาคม 2026</td><td>3 ก.ค. 2026</td><td class="num">1,742.00</td>
+                        <td>REC-202607-000751</td>
+                        <td><span class="badge paid" data-status="Paid">ชำระแล้ว</span></td>
+                        <td><a class="btn ghost sm">ดูใบเสร็จ</a></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div class="card" style="position:relative">
+              <span class="ann" style="top:-10px;left:-10px">6</span>
+              <div class="card-head">
+                <span class="card-title">รับชำระเงิน</span>
+                <span class="badge unpaid" data-status="Unpaid">รอชำระ</span>
+              </div>
+              <div class="spread"><span class="ui-muted">ห้อง</span><span><b>205</b></span></div>
+              <div class="spread"><span class="ui-muted">รอบบิล</span><span>กันยายน 2026</span></div>
+              <div class="spread" style="margin-bottom:var(--ui-sp-3)"><span class="ui-muted">ครบกำหนด</span><span>5 ก.ย. 2026</span></div>
+
+              <div class="amount-rows">
+                <span>💧</span><span>ค่าน้ำ<br><span class="ui-sub">10 หน่วย × 18.00 บาท</span></span><span class="amt">180.00</span>
+                <span>⚡</span><span>ค่าไฟ<br><span class="ui-sub">70 หน่วย × 8.00 บาท</span></span><span class="amt">560.00</span>
+                <span>🏢</span><span>ค่าส่วนกลาง<br><span class="ui-sub">30 ตร.ม. × 35.00 บาท</span></span><span class="amt">1,050.00</span>
+              </div>
+
+              <div class="amount-total" style="position:relative">
+                <span class="ann" style="top:6px;left:-16px">7</span>
+                <span>ยอดที่ต้องชำระ</span><span>1,790.00 บาท</span>
+              </div>
+              <div class="ui-sub" style="margin-top:var(--ui-sp-1)">ระบบรับชำระเต็มจำนวนเท่านั้น · แก้ไขยอดไม่ได้</div>
+
+              <hr class="divider">
+
+              <label class="field" style="position:relative;margin-bottom:var(--ui-sp-2)">
+                <span class="ann" style="top:-10px;left:-16px">8</span>
+                <span class="label">รับเงิน <span class="ui-sub">(ตัวช่วยบนหน้าจอ)</span></span>
+                <input class="input" inputmode="numeric" value="2,000">
+                <span class="hint">ไม่บันทึกลงระบบ ไม่พิมพ์บนใบเสร็จ</span>
+              </label>
+              <div class="spread" style="margin-bottom:var(--ui-sp-4)">
+                <span class="ui-muted">เงินทอน</span><span class="money" style="font-size:var(--ui-fs-lg);font-weight:var(--ui-fw-semi)">210.00 บาท</span>
+              </div>
+
+              <div class="field-row" style="position:relative;margin-bottom:var(--ui-sp-4)">
+                <span class="ann" style="top:-10px;left:-16px">9</span>
+                <label class="field" style="margin:0"><span class="label">ผู้รับเงิน</span><input class="input readonly" value="นิติบุคคล" readonly></label>
+                <label class="field" style="margin:0"><span class="label">วันที่และเวลา</span><input class="input readonly" value="3 ก.ย. 2026 · 14:30 น." readonly></label>
+              </div>
+
+              <div style="position:relative">
+                <span class="ann" style="top:-10px;left:-16px">10</span>
+                <button class="btn primary lg block">ยืนยันรับเงินสด</button>
+              </div>
+              <div class="ui-sub" style="margin-top:var(--ui-sp-2);text-align:center">ระบบจะออกใบเสร็จและส่งข้อความยืนยันผ่าน LINE ให้อัตโนมัติ</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<ol class="annotations">
+  <li><span class="ann">1</span><b>Search field.</b> A plain <code>GET /payments?q=</code>; Enter or <span lang="th">ค้นหา</span> submits. The server matches <code>room_code</code> by prefix and the active tenant's name by substring, and returns rooms of either status — a Vacant room can still hold an Unpaid bill left by a finished tenancy (D-07, D-08). One match renders the room directly; several render a chooser list; none renders the empty state (never a blank page, D-40). The query stays in the URL so the browser Back button returns the cashier to the same room.</li>
+  <li><span class="ann">2</span><b>Room identity panel.</b> Room code, floor, area and the room's current Active tenant. It is here so that a cashier who typed <code>250</code> instead of <code>205</code> reads the wrong tenant's name <em>before</em> money changes hands. Read-only; nothing on this panel is editable from the counter.</li>
+  <li><span class="ann">3</span><b>LINE binding badge.</b> <span lang="th">ผูก LINE แล้ว</span> or <span lang="th">ไม่มี LINE</span>, from the tenant's binding (D-29). Informational only: it predicts whether the ✅ confirmation message can be delivered after the payment (D-30). It never blocks or delays taking cash.</li>
+  <li><span class="ann">4</span><b>Open bills list.</b> Every bill of this room whose <em>stored</em> status is <code>Unpaid</code>, oldest period first. Draft bills never appear (they have not been approved and were never sent to the tenant) and Paid bills never appear. The status cell runs through the shared display helper, so a bill past its due date reads <span lang="th">เกินกำหนด</span> with <code>data-status="Overdue"</code> and no stored value changes (D-21).</li>
+  <li><span class="ann">5</span><b>Bill selection.</b> One radio, one bill — no multi-select, no "pay everything". Selecting a row applies <code>tr.is-selected</code> and rewrites the panel on the right; nothing is submitted yet. Every row shows its billing period because a room in arrears has several open bills, and paying the wrong month is precisely the mistake the void path exists to undo (D-25, D-39 #3).</li>
+  <li><span class="ann">6</span><b>Frozen breakdown.</b> Units, unit prices and line amounts are snapshots taken at Approve &amp; Send and are not recomputed at the counter; no field here is editable through any endpoint (D-22). The three lines are always present, even at zero units, so the panel always sums to the total (D-41).</li>
+  <li><span class="ann">7</span><b>ยอดที่ต้องชำระ — text, not an input.</b> The stored payment amount is fixed at the bill total. Partial payment and overpayment do not exist in v1: a tenant who is short returns with the full amount and the bill stays <span lang="th">รอชำระ</span> / <span lang="th">เกินกำหนด</span> (D-24, D-05 #2). This is what lets <code>Paid</code> always mean "paid in full" without a fifth status.</li>
+  <li><span class="ann">8</span><b>รับเงิน / เงินทอน cashier aid.</b> Browser-side only (<code>public/js/payment-change.js</code>), recomputed on every keystroke. Non-numeric characters are ignored; a value below the total hides the change figure and shows <span lang="th">รับเงินน้อยกว่ายอดที่ต้องชำระ</span> as a hint but never disables the confirm button, because a cashier may skip the aid entirely. Neither value is submitted, stored, printed on the receipt or sent to LINE (D-24).</li>
+  <li><span class="ann">9</span><b>ผู้รับเงิน and timestamp.</b> Server-supplied and read-only (dashed border = system value): the signed-in Admin's <span lang="th">ชื่อที่แสดง</span> (D-46) and the server clock in Asia/Bangkok, 24-hour with the <span lang="th">น.</span> suffix (D-03). They are displayed because both are printed on the receipt.</li>
+  <li><span class="ann">10</span><b>ยืนยันรับเงินสด — the one page action.</b> Disabled while no bill is selected. It opens the confirmation dialog (marker 12) rather than posting immediately. On submit it takes <code>.is-loading</code> and <code>disabled</code> — a courtesy, never the guarantee: the guarantee is <code>UNIQUE(active_bill_id)</code> plus a conditional status update in the database (D-26). Resulting state on success: one <code>payments</code> row, bill <code>Unpaid → Paid</code>, one receipt number allocated, one LINE message queued, one audit row — one transaction, then a redirect to the receipt.</li>
+  <li><span class="ann">11</span><b>Recent payments.</b> The room's last settled bills with their receipt numbers, each linking to <code>/receipts/:id</code>. It answers "<span lang="th">เดือนที่แล้วจ่ายหรือยัง</span>" at the counter without leaving the screen, and it is the reprint path for a tenant who lost last month's slip.</li>
+</ol>
+
+<h4>Alternate state — Confirm Cash Payment dialog (D-39 #3)</h4>
+
+<div class="device desktop">
+  <div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/payments?q=205</span></div>
+  <div class="screen" style="min-height:420px">
+    <div class="app" style="min-height:420px">
+      <nav class="sidebar">
+        <div class="brand"><b>ศุภาลัย เรสซิเดนซ์</b><span>Juristic Platform</span></div>
+        <a class="nav-item active">💵 รับชำระเงิน</a>
+        <a class="nav-item">🧾 บิลประจำเดือน <span class="count">3</span></a>
+        <a class="nav-item">📈 รายงาน</a>
+      </nav>
+      <div class="main">
+        <div class="topbar"><span class="title">รับชำระเงิน</span></div>
+        <div class="page">
+          <div class="card">
+            <div class="spread">
+              <div><span style="font-size:var(--ui-fs-xl);font-weight:var(--ui-fw-semi)">ห้อง 205</span> <span class="badge occupied">มีผู้เช่า</span></div>
+              <span class="badge unpaid" data-status="Unpaid">รอชำระ · 1,790.00 บาท</span>
+            </div>
+            <div class="ui-sub" style="margin-top:var(--ui-sp-1)">นางสาวอารยา ศรีสุวรรณ · รอบ กันยายน 2026 · ครบกำหนด 5 ก.ย. 2026</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal">
+      <div class="dialog" style="position:relative">
+        <span class="ann" style="top:-10px;left:-10px">12</span>
+        <div class="dialog-title">ยืนยันรับเงินสด</div>
+        <div class="dialog-body">
+          <p style="position:relative"><span class="ann" style="top:-2px;left:-30px">13</span>ยืนยันรับเงินสด <b>1,790 บาท</b> · ห้อง <b>205</b> · รอบ <b>กันยายน 2026</b> และออกใบเสร็จ</p>
+          <p class="ui-sub" style="margin:0">ระบบจะเปลี่ยนสถานะบิลเป็น ชำระแล้ว ออกเลขที่ใบเสร็จ และส่งข้อความยืนยันผ่าน LINE</p>
+        </div>
+        <div class="dialog-actions">
+          <span style="position:relative"><span class="ann" style="top:-10px;left:-10px">15</span><button class="btn">ยกเลิก</button></span>
+          <span style="position:relative"><span class="ann" style="top:-10px;left:-10px">14</span><button class="btn primary">ยืนยันรับเงินสด</button></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<ol class="annotations" start="12">
+  <li><span class="ann">12</span><b>The shared dialog component.</b> One <code>.modal</code> + <code>.dialog</code> partial, six call sites in the product, never the browser's native <code>confirm()</code> (D-39). It is the last stop before an irreversible effect: the amount is committed, and the LINE message cannot be recalled.</li>
+  <li><span class="ann">13</span><b>Amount, room and period, verbatim.</b> D-39 #3 requires all three. The period is in the sentence because a room in arrears has several open bills; a cashier reading "<span lang="th">รอบ กันยายน 2026</span>" here is the cheapest defence against the mistake that D-25's void exists to repair. Money in sentence text is written <span lang="th">1,790 บาท</span> — thousands separator, no trailing <code>.00</code>, unit after the number (D-03).</li>
+  <li><span class="ann">14</span><b>Primary button repeats the verb.</b> <span lang="th">ยืนยันรับเงินสด</span>, never <span lang="th">ตกลง</span>. One press posts once; the button then carries <code>disabled</code> and a spinner. A second press that still reaches the server finds <code>UPDATE bills SET status='Paid' WHERE id=? AND status='Unpaid'</code> matching zero rows and returns 409 <span lang="th">บิลนี้ถูกชำระไปแล้ว</span> (D-26) — one payment, one receipt number, always.</li>
+  <li><span class="ann">15</span><b>Cancel is free.</b> <span lang="th">ยกเลิก</span> and the Escape key both close the dialog and return to the page with the selected bill and the typed <span lang="th">รับเงิน</span> value intact. Nothing was written, so nothing has to be undone — and there is deliberately no toast-with-undo anywhere in this product, because an undo window would force outbound LINE messages into a delay queue (D-39).</li>
+</ol>
+
+<h4>States — Payment</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th style="width:110px">State</th><th>Trigger</th><th>What the screen shows</th><th>Thai copy</th></tr></thead>
+<tbody>
+<tr><td><span class="badge neutral">Empty</span></td><td>Page opened, no query yet</td><td><code>.empty-state</code> with a muted icon and no action — the search field above stays focused</td><td lang="th">ค้นหาห้องเพื่อรับชำระเงิน</td></tr>
+<tr><td><span class="badge neutral">Empty</span></td><td>Query matches nothing</td><td><code>.empty-state</code> plus a ghost button clearing the query</td><td lang="th">ไม่พบห้องหรือผู้เช่าที่ตรงกับ “250” · ล้างการค้นหา</td></tr>
+<tr><td><span class="badge neutral">Empty</span></td><td>Room found, nothing outstanding</td><td>Room panel renders; the bills card shows the empty state with a link to the room's payment history</td><td lang="th">ห้อง 205 ไม่มีบิลค้างชำระในขณะนี้ · ดูประวัติการรับชำระ</td></tr>
+<tr><td><span class="badge info">Loading</span></td><td>Search submitted</td><td>Three <code>.skeleton.row</code> in the bills card; the rest of the page stays interactive — never a centred spinner over an empty page (D-40)</td><td>—</td></tr>
+<tr><td><span class="badge info">Loading</span></td><td>Confirm pressed</td><td>The dialog's primary button takes <code>.is-loading</code> + <code>disabled</code>; the cancel button stays enabled until the response arrives</td><td>—</td></tr>
+<tr><td><span class="badge bad">Error</span></td><td>409 — the bill was paid by another session (or a double submit)</td><td><code>.notice.bad</code> above the bills card with a link to the existing receipt; the list refreshes and the bill disappears from it</td><td lang="th">บิลนี้ถูกชำระไปแล้ว · ดูใบเสร็จ</td></tr>
+<tr><td><span class="badge bad">Error</span></td><td>409 — the bill was reverted to Draft meanwhile (D-22)</td><td><code>.notice.bad</code>; the row is removed from the list, no payment written</td><td lang="th">บิลนี้ถูกตีกลับเป็นฉบับร่าง ไม่สามารถรับชำระได้</td></tr>
+<tr><td><span class="badge bad">Error</span></td><td>500 or the connection dropped</td><td><code>.notice.bad</code> above the form with a retry button; the selected bill and the typed <span lang="th">รับเงิน</span> value are preserved, no redirect, nothing lost (D-40)</td><td lang="th">บันทึกการรับเงินไม่สำเร็จ กรุณาลองอีกครั้ง · ลองอีกครั้ง</td></tr>
+<tr><td><span class="badge ok">Success</span></td><td>Transaction committed</td><td>Redirect to <code>/receipts/:id</code> — a full result screen, not a toast, because money moved and a LINE message was queued (D-40)</td><td lang="th">บันทึกการรับเงินเรียบร้อย · ห้อง 205 · รอบ กันยายน 2026 · เลขที่ใบเสร็จ REC-202609-000852</td></tr>
+<tr><td><span class="badge bad">403</span></td><td>Staff session opens <code>/payments</code></td><td>Full-page Thai 403 with a button back to <span lang="th">จดมิเตอร์</span>; the JSON route answers 403 with an error code and no amounts anywhere in the body (D-36, D-40)</td><td lang="th">ไม่มีสิทธิ์เข้าถึงหน้านี้ · บัญชีของคุณเป็นเจ้าหน้าที่ กรุณาติดต่อนิติบุคคล</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>Thai copy — Payment</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th style="width:170px">Element</th><th>Thai (verbatim)</th><th>Note</th></tr></thead>
+<tbody>
+<tr><td>Page title</td><td lang="th">รับชำระเงิน</td><td>D-02 mapping for <em>Payment</em></td></tr>
+<tr><td>Search placeholder</td><td lang="th">เลขห้อง หรือ ชื่อผู้เช่า</td><td>—</td></tr>
+<tr><td>Search hint</td><td lang="th">ค้นหาด้วยเลขห้องหรือชื่อผู้เช่า</td><td>Result count appended: <span lang="th">พบ 1 ห้อง</span></td></tr>
+<tr><td>Card titles</td><td lang="th">บิลที่ยังไม่ชำระ · {n} รายการ · ชำระแล้วล่าสุด · รับชำระเงิน</td><td>—</td></tr>
+<tr><td>Table headers</td><td lang="th">รอบบิล · ครบกำหนด · ค่าน้ำ · ค่าไฟ · ค่าส่วนกลาง · ยอดรวม · สถานะ</td><td>—</td></tr>
+<tr><td>Status badges</td><td lang="th">รอชำระ · เกินกำหนด · ชำระแล้ว</td><td><code>data-status="Unpaid|Overdue|Paid"</code> (D-02, D-21)</td></tr>
+<tr><td>Amount label</td><td lang="th">ยอดที่ต้องชำระ</td><td>Read-only text</td></tr>
+<tr><td>Full-payment rule</td><td lang="th">ระบบรับชำระเต็มจำนวนเท่านั้น · แก้ไขยอดไม่ได้</td><td>D-24</td></tr>
+<tr><td>Cashier aid</td><td lang="th">รับเงิน (ตัวช่วยบนหน้าจอ) · เงินทอน · ไม่บันทึกลงระบบ ไม่พิมพ์บนใบเสร็จ</td><td>D-24</td></tr>
+<tr><td>Read-only fields</td><td lang="th">ผู้รับเงิน · วันที่และเวลา</td><td>Server-supplied</td></tr>
+<tr><td>Primary button</td><td lang="th">ยืนยันรับเงินสด</td><td>D-02 mapping for <em>Confirm Cash Payment</em></td></tr>
+<tr><td>Button helper</td><td lang="th">ระบบจะออกใบเสร็จและส่งข้อความยืนยันผ่าน LINE ให้อัตโนมัติ</td><td>—</td></tr>
+<tr><td>Validation — no selection</td><td lang="th">เลือกบิลที่ต้องการรับชำระ</td><td>Hint under the disabled button</td></tr>
+<tr><td>Validation — non-numeric</td><td lang="th">กรอกเป็นตัวเลขเท่านั้น</td><td>On the <span lang="th">รับเงิน</span> aid only</td></tr>
+<tr><td>Validation — short cash</td><td lang="th">รับเงินน้อยกว่ายอดที่ต้องชำระ 1,790.00 บาท</td><td>Hint, non-blocking (D-24)</td></tr>
+<tr><td>Dialog title</td><td lang="th">ยืนยันรับเงินสด</td><td>D-39 #3</td></tr>
+<tr><td>Dialog body</td><td lang="th">ยืนยันรับเงินสด 1,790 บาท · ห้อง 205 · รอบ กันยายน 2026 และออกใบเสร็จ</td><td>Verbatim from D-39</td></tr>
+<tr><td>Dialog sub-line</td><td lang="th">ระบบจะเปลี่ยนสถานะบิลเป็น ชำระแล้ว ออกเลขที่ใบเสร็จ และส่งข้อความยืนยันผ่าน LINE</td><td>—</td></tr>
+<tr><td>Dialog buttons</td><td lang="th">ยกเลิก · ยืนยันรับเงินสด</td><td>Primary repeats the verb (D-39)</td></tr>
+</tbody>
+</table>
+</div>
+
+<!-- ==================================================================== -->
+<h3>Receipt · ใบเสร็จ — <code>/receipts/:id</code></h3>
+
+<div class="screen-meta">
+  <span><b>Role:</b> Admin only (D-36)</span>
+  <span><b>Entry points:</b> redirect after <span lang="th">ยืนยันรับเงินสด</span> · Payment <span lang="th">ดูใบเสร็จ</span> · payment history · Bill Detail</span>
+  <span><b>Primary action:</b> <span lang="th">พิมพ์ใบเสร็จ</span> (then <span lang="th">พิมพ์สำเนา</span>)</span>
+  <span><b>Device:</b> desktop 1200 for the view · A5 portrait for print (D-28)</span>
+</div>
+
+<div class="device desktop">
+  <div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/receipts/1042</span></div>
+  <div class="screen">
+    <div class="app">
+      <nav class="sidebar">
+        <div class="brand"><b>ศุภาลัย เรสซิเดนซ์</b><span>Juristic Platform</span></div>
+        <a class="nav-item">📊 ภาพรวม</a>
+        <a class="nav-item">📝 จดมิเตอร์</a>
+        <a class="nav-item">🧾 บิลประจำเดือน <span class="count">3</span></a>
+        <a class="nav-item active">💵 รับชำระเงิน</a>
+        <a class="nav-item">🚪 ห้องพัก</a>
+        <a class="nav-item">👤 ผู้เช่า</a>
+        <a class="nav-item">📢 ประกาศ</a>
+        <a class="nav-item">📈 รายงาน</a>
+        <div class="nav-section">ตั้งค่าระบบ</div>
+        <a class="nav-item">⚙️ ตั้งค่า</a>
+        <a class="nav-item">👥 ผู้ใช้งานระบบ</a>
+        <div class="user">นิติบุคคล · admin · ออกจากระบบ</div>
+      </nav>
+      <div class="main">
+        <div class="topbar">
+          <span class="title">ใบเสร็จ</span>
+          <span class="actions"><a class="btn sm">กลับไปหน้ารับชำระเงิน</a></span>
+        </div>
+        <div class="page">
+
+          <div class="notice ok" style="position:relative">
+            <span class="ann" style="top:-10px;left:-10px">1</span>
+            <b>บันทึกการรับเงินเรียบร้อย</b>
+            ห้อง 205 · รอบ กันยายน 2026 · เลขที่ใบเสร็จ REC-202609-000852
+          </div>
+
+          <div class="rcpt-grid">
+            <div class="sheet-box" style="position:relative">
+              <span class="ann" style="top:6px;left:6px">7</span>
+              <div class="receipt">
+                <div class="receipt-head">
+                  <div class="receipt-org">นิติบุคคลอาคารชุด ศุภาลัย เรสซิเดนซ์</div>
+                  <div class="receipt-org-meta">99/1 ถนนพหลโยธิน แขวงจตุจักร เขตจตุจักร กรุงเทพฯ 10900 · โทร 02-123-4567</div>
+                  <div class="receipt-org-meta">เลขประจำตัวผู้เสียภาษี 0-1055-12345-67-8</div>
+                </div>
+                <div class="receipt-title">ใบเสร็จรับเงิน</div>
+                <dl class="receipt-meta">
+                  <dt>เลขที่</dt><dd>REC-202609-000852</dd><dt>วันที่ชำระ</dt><dd>3 กันยายน 2026</dd>
+                  <dt>ห้อง</dt><dd>205</dd><dt>รอบบิล</dt><dd>กันยายน 2026</dd>
+                  <dt>ชื่อผู้เช่า</dt><dd>นางสาวอารยา ศรีสุวรรณ</dd><dt>ชำระโดย</dt><dd>เงินสด</dd>
+                  <dt>ผู้รับเงิน</dt><dd>นิติบุคคล</dd><dt></dt><dd></dd>
+                </dl>
+                <table>
+                  <thead><tr><th>รายการ</th><th class="num">จำนวน</th><th class="num">ราคา/หน่วย</th><th class="num">จำนวนเงิน</th></tr></thead>
+                  <tbody>
+                    <tr><td>ค่าน้ำ</td><td class="num">10 หน่วย</td><td class="num">18.00</td><td class="num">180.00</td></tr>
+                    <tr><td>ค่าไฟ</td><td class="num">70 หน่วย</td><td class="num">8.00</td><td class="num">560.00</td></tr>
+                    <tr><td>ค่าส่วนกลาง</td><td class="num">30 ตร.ม.</td><td class="num">35.00</td><td class="num">1,050.00</td></tr>
+                  </tbody>
+                </table>
+                <div class="receipt-total"><span>ยอดรวม</span><span>1,790.00 บาท</span></div>
+                <div class="receipt-words">(หนึ่งพันเจ็ดร้อยเก้าสิบบาทถ้วน)</div>
+                <div class="receipt-sign">
+                  <div class="line"></div>
+                  ลงชื่อผู้รับเงิน · นิติบุคคล
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div class="card">
+                <div class="card-head"><span class="card-title">รายละเอียดการชำระ</span><span class="badge paid" data-status="Paid">ชำระแล้ว</span></div>
+                <div class="spread" style="position:relative">
+                  <span class="ann" style="top:-4px;left:-16px">2</span>
+                  <span class="ui-muted">เลขที่ใบเสร็จ</span><span><b>REC-202609-000852</b></span>
+                </div>
+                <div class="spread" style="position:relative">
+                  <span class="ann" style="top:24px;left:-16px">3</span>
+                  <span class="ui-muted">วันที่ชำระ</span><span>3 ก.ย. 2026 · 14:30 น.</span>
+                </div>
+                <div class="spread"><span class="ui-muted">ยอดที่รับ</span><span class="money">1,790.00 บาท</span></div>
+                <div class="spread"><span class="ui-muted">ชำระโดย</span><span>เงินสด</span></div>
+                <div class="spread"><span class="ui-muted">ผู้รับเงิน</span><span>นิติบุคคล</span></div>
+                <div class="spread"><span class="ui-muted">รอบบิล</span><span>กันยายน 2026</span></div>
+              </div>
+
+              <div class="card">
+                <div class="card-head"><span class="card-title">การแจ้งเตือน</span></div>
+                <div class="spread" style="position:relative">
+                  <span class="ann" style="top:-4px;left:-16px">4</span>
+                  <span class="ui-muted">ยืนยันการชำระผ่าน LINE</span><span class="badge ok">ส่งแล้ว</span>
+                </div>
+                <div class="ui-sub" style="margin-top:var(--ui-sp-1)">ส่งเมื่อ 3 ก.ย. 2026 · 14:30 น. ถึง นางสาวอารยา ศรีสุวรรณ</div>
+              </div>
+
+              <div class="card">
+                <div style="position:relative">
+                  <span class="ann" style="top:-10px;left:-16px">5</span>
+                  <button class="btn primary lg block">พิมพ์ใบเสร็จ</button>
+                </div>
+                <div class="ui-sub" style="position:relative;margin:var(--ui-sp-2) 0 var(--ui-sp-3);text-align:center">
+                  <span class="ann" style="top:-4px;left:-16px">6</span>
+                  พิมพ์แล้ว 0 ครั้ง · พิมพ์ครั้งต่อไปจะมีคำว่า สำเนา
+                </div>
+                <div style="position:relative">
+                  <span class="ann" style="top:-10px;left:-16px">9</span>
+                  <button class="btn block" style="margin-bottom:var(--ui-sp-2)">กลับไปหน้ารับชำระเงิน</button>
+                </div>
+                <div style="position:relative">
+                  <span class="ann" style="top:-10px;left:-16px">8</span>
+                  <button class="btn danger block">ยกเลิกการชำระเงิน</button>
+                </div>
+                <div class="ui-sub" style="margin-top:var(--ui-sp-2);text-align:center">ใช้เมื่อรับเงินผิดห้องหรือผิดรอบเท่านั้น</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<ol class="annotations">
+  <li><span class="ann">1</span><b>Success banner.</b> Rendered once after the redirect from the payment POST and carries the three things the cashier must read back to the tenant: room, period and receipt number. A full result screen rather than a toast, because money moved and a LINE message was queued (D-40).</li>
+  <li><span class="ann">2</span><b>Receipt number.</b> <code>REC-&lt;payment month YYYYMM&gt;-&lt;6-digit sequence&gt;</code>, allocated inside the payment transaction from one counter that never resets (D-27). It is unique and monotonic but <em>not</em> gapless — a rolled-back transaction consumes a number, and the seed starts at an offset to reproduce 000852 — so no screen, document or test may claim gaplessness (D-05 #10).</li>
+  <li><span class="ann">3</span><b>Payment facts.</b> Amount, method (<span lang="th">เงินสด</span> — the only method that exists in v1), the Admin who took it and the server timestamp. The bill's badge is <span lang="th">ชำระแล้ว</span> with <code>data-status="Paid"</code>; because the payment amount always equals the bill total, <code>Paid</code> needs no qualifier (D-24).</li>
+  <li><span class="ann">4</span><b>LINE delivery state.</b> Read from this bill's <code>notifications</code> row: <span lang="th">ส่งแล้ว</span> (ok), <span lang="th">ยังไม่ได้ส่ง — ไม่มี LINE</span> (neutral), <span lang="th">ส่งไม่สำเร็จ</span> (bad, error text on hover). In the latter two a <span lang="th">ส่งข้อความอีกครั้ง</span> button appears; the manual resend is never capped, unlike the three automatic attempts (D-30). Delivery state never affects the money state.</li>
+  <li><span class="ann">5</span><b>พิมพ์ใบเสร็จ.</b> POSTs <code>/api/receipts/:id/print</code> to increment <code>print_count</code>, then calls <code>window.print()</code>; the browser's own dialog handles paper and printer (D-28). After the first press the label becomes <span lang="th">พิมพ์สำเนา</span> and every later render carries the สำเนา mark. Printing from the browser's menu bypasses the counter and yields an unmarked copy — a listed limitation, not a defect (D-05 #11).</li>
+  <li><span class="ann">6</span><b>Print counter.</b> The only thing that decides whether the sheet coming out is an original or a copy. It is shown in plain words so the office can see the state before pressing, and it is why the copy mark is testable at all (D-27).</li>
+  <li><span class="ann">7</span><b>A5 preview.</b> The same markup the print route renders — what is on screen is what comes out of the printer. On screen the sheet is shown at its natural width without the full 200 mm page height; the print output is the complete A5 page shown below (D-28).</li>
+  <li><span class="ann">8</span><b>ยกเลิกการชำระเงิน.</b> Admin only, styled destructive and placed away from the print button. Opens dialog #5 of D-39, which insists the cash goes back across the counter <em>first</em>. This is the only correction path for a payment: there is no edit, no refund, no credit and no balance inside the system (D-25, D-05 #4).</li>
+  <li><span class="ann">9</span><b>กลับไปหน้ารับชำระเงิน.</b> Returns to <code>/payments</code> with the room still in the query, so the next tenant in the queue is one search away. The counter's normal loop is search → confirm → print → back.</li>
+</ol>
+
+<h4>Alternate state — Void payment dialog (D-39 #5)</h4>
+
+<div class="device desktop">
+  <div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/receipts/1042</span></div>
+  <div class="screen" style="min-height:440px">
+    <div class="app" style="min-height:440px">
+      <nav class="sidebar">
+        <div class="brand"><b>ศุภาลัย เรสซิเดนซ์</b><span>Juristic Platform</span></div>
+        <a class="nav-item active">💵 รับชำระเงิน</a>
+        <a class="nav-item">🧾 บิลประจำเดือน <span class="count">3</span></a>
+        <a class="nav-item">📈 รายงาน</a>
+      </nav>
+      <div class="main">
+        <div class="topbar"><span class="title">ใบเสร็จ</span></div>
+        <div class="page">
+          <div class="card">
+            <div class="spread">
+              <span><b>REC-202609-000852</b> · ห้อง 205 · รอบ กันยายน 2026</span>
+              <span class="badge paid" data-status="Paid">ชำระแล้ว</span>
+            </div>
+            <div class="ui-sub" style="margin-top:var(--ui-sp-1)">รับเงิน 1,790.00 บาท · เงินสด · 3 ก.ย. 2026 14:30 น. · ผู้รับเงิน นิติบุคคล</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal">
+      <div class="dialog">
+        <div class="dialog-title">ยกเลิกการชำระเงิน</div>
+        <div class="dialog-body">
+          <p style="position:relative"><span class="ann" style="top:-2px;left:-30px">10</span><b>คืนเงินสด 1,790 บาท ให้ผู้เช่าก่อนยืนยันการยกเลิก</b></p>
+          <p class="ui-sub">ใบเสร็จเลขที่ REC-202609-000852 จะถูกประทับว่า ยกเลิก และบิลห้อง 205 รอบ กันยายน 2026 จะกลับเป็นสถานะ รอชำระ</p>
+          <label class="field invalid" style="position:relative;margin-bottom:0">
+            <span class="ann" style="top:-10px;left:-30px">11</span>
+            <span class="label">เหตุผลการยกเลิก <span class="req">*</span></span>
+            <input class="input" value="รับเงิน">
+            <span class="error">กรุณาระบุเหตุผลอย่างน้อย 10 ตัวอักษร</span>
+          </label>
+        </div>
+        <div class="dialog-actions">
+          <button class="btn">ปิด</button>
+          <span style="position:relative"><span class="ann" style="top:-10px;left:-10px">12</span><button class="btn danger is-disabled" aria-disabled="true">ยกเลิกการชำระเงิน</button></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<ol class="annotations" start="10">
+  <li><span class="ann">10</span><b>Cash first, click second.</b> The dialog's first line is an instruction, not a description: the money is handed back across the counter before anything is confirmed, because the system holds no refund, credit or balance (D-25, D-39 #5). The sentence names the exact amount.</li>
+  <li><span class="ann">11</span><b>Reason, required, minimum 10 characters.</b> Validated on input; the field shows <code>.field.invalid</code> and the Thai error until it passes. The text is stored on the payment row (<code>void_reason</code>) and copied into the audit row with before/after JSON (D-38), so the reconciliation question "why is receipt 852 void?" has an answer six months later.</li>
+  <li><span class="ann">12</span><b>Destructive primary, disabled until valid.</b> On confirm, in one transaction: the payment row is marked voided (never deleted), the receipt row is marked voided and <em>keeps its number</em>, the bill returns to <code>Unpaid</code> — displaying as <span lang="th">เกินกำหนด</span> automatically if the due date has passed (D-21) — and an audit row is written. No LINE message is sent on the void; the office explains in person. The bill is then excluded from automatic reminders and carries the badge <span lang="th">ระงับการแจ้งเตือนอัตโนมัติ</span>, so the system never chases a tenant who paid and did nothing wrong (D-25).</li>
+</ol>
+
+<h4>Print layout — ใบเสร็จรับเงิน, A5 portrait</h4>
+
+<p>One route serves both the screen view above and the paper: <code>window.print()</code> with <code>@page { size: A5 portrait; margin: 10mm }</code> and a print stylesheet that hides the app chrome. No PDF library, no server-side rendering, no thermal-printer layout, no printer-driver assumptions (D-28). Fitting on exactly one A5 page with all three line items, the total and the number is a QA check.</p>
+
+<div class="device print">
+  <div class="screen">
+    <div class="receipt">
+      <div class="receipt-head" style="position:relative">
+        <span class="ann" style="top:-6px;left:-6px">13</span>
+        <div class="receipt-org">นิติบุคคลอาคารชุด ศุภาลัย เรสซิเดนซ์</div>
+        <div class="receipt-org-meta">99/1 ถนนพหลโยธิน แขวงจตุจักร เขตจตุจักร กรุงเทพฯ 10900 · โทร 02-123-4567</div>
+        <div class="receipt-org-meta">เลขประจำตัวผู้เสียภาษี 0-1055-12345-67-8</div>
+      </div>
+      <div class="receipt-title" style="position:relative"><span class="ann" style="top:-4px;left:-6px">14</span>ใบเสร็จรับเงิน</div>
+      <dl class="receipt-meta" style="position:relative">
+        <span class="ann" style="top:-6px;left:-6px">15</span>
+        <dt>เลขที่</dt><dd>REC-202609-000852</dd><dt>วันที่ชำระ</dt><dd>3 กันยายน 2026</dd>
+        <dt>ห้อง</dt><dd>205</dd><dt>รอบบิล</dt><dd>กันยายน 2026</dd>
+        <dt>ชื่อผู้เช่า</dt><dd>นางสาวอารยา ศรีสุวรรณ</dd><dt>ชำระโดย</dt><dd>เงินสด</dd>
+        <dt>ผู้รับเงิน</dt><dd>นิติบุคคล</dd><dt></dt><dd></dd>
+      </dl>
+      <div style="position:relative">
+        <span class="ann" style="top:-6px;left:-6px">16</span>
+        <table>
+          <thead><tr><th>รายการ</th><th class="num">จำนวน</th><th class="num">ราคา/หน่วย</th><th class="num">จำนวนเงิน</th></tr></thead>
+          <tbody>
+            <tr><td>ค่าน้ำ</td><td class="num">10 หน่วย</td><td class="num">18.00</td><td class="num">180.00</td></tr>
+            <tr><td>ค่าไฟ</td><td class="num">70 หน่วย</td><td class="num">8.00</td><td class="num">560.00</td></tr>
+            <tr><td>ค่าส่วนกลาง</td><td class="num">30 ตร.ม.</td><td class="num">35.00</td><td class="num">1,050.00</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="receipt-total" style="position:relative"><span class="ann" style="top:2px;left:-6px">17</span><span>ยอดรวม</span><span>1,790.00 บาท</span></div>
+      <div class="receipt-words">(หนึ่งพันเจ็ดร้อยเก้าสิบบาทถ้วน)</div>
+      <div class="receipt-sign" style="position:relative">
+        <span class="ann" style="top:-6px;left:6px">18</span>
+        <div class="line"></div>
+        ลงชื่อผู้รับเงิน · นิติบุคคล
+      </div>
+    </div>
+  </div>
+</div>
+
+<ol class="annotations" start="13">
+  <li><span class="ann">13</span><b>Letterhead — the apartment, never the software.</b> Name, address and phone come from Settings; <span lang="th">เลขประจำตัวผู้เสียภาษี</span> is the one optional line and renders only when Settings holds one. The product name <em>Juristic Platform</em> never appears here, because the receipt is issued by the juristic person, not by the software (D-01, D-27).</li>
+  <li><span class="ann">14</span><b>Title — a non-tax receipt.</b> <span lang="th">ใบเสร็จรับเงิน</span> only: no VAT, no VAT breakdown, no <span lang="th">ใบกำกับภาษี</span>, and no toggle that could produce one (D-27, D-05 #6). The same layout titled <span lang="th">ใบแจ้งค่าใช้จ่าย</span>, with the receipt number, payment date, <span lang="th">ผู้รับเงิน</span> and signature line removed and <span lang="th">กำหนดชำระ</span> added, is the paper bill printed from Bill Detail (D-28).</li>
+  <li><span class="ann">15</span><b>Meta block, fixed order.</b> <span lang="th">เลขที่ · วันที่ชำระ · ห้อง · รอบบิล · ชื่อผู้เช่า · ชำระโดย · ผู้รับเงิน</span>. The tenant name is a snapshot taken at payment time, so a later tenancy change never rewrites a printed receipt. Dates use the full Thai month and Gregorian years (D-03); <span lang="th">ผู้รับเงิน</span> is the Admin's <span lang="th">ชื่อที่แสดง</span> (D-46).</li>
+  <li><span class="ann">16</span><b>Always exactly three line items.</b> Water, electricity and common area, each with quantity, unit price and amount — printed even at zero units and 0.00 THB, so the sheet always reconciles and the layout never shifts (D-41). Quantities carry their unit (<span lang="th">หน่วย</span>, <span lang="th">ตร.ม.</span>), money columns are right-aligned tabular figures.</li>
+  <li><span class="ann">17</span><b>Total and amount in words.</b> The total is the sum of the already-rounded line amounts, so the printed total always equals the sum of the printed lines — there is no second rounding (D-16). The words come from one shared helper with both forms: <span lang="th">…บาทถ้วน</span> for an integer total and <span lang="th">…บาท…สตางค์</span> when satang exist, which they can because a rate may be 7.50 (D-27).</li>
+  <li><span class="ann">18</span><b>Signature line.</b> <span lang="th">ลงชื่อผู้รับเงิน</span> with the Admin's display name printed beneath the rule; the tenant keeps the sheet as proof. This block, the receipt number and the payment date are exactly what the <span lang="th">ใบแจ้งค่าใช้จ่าย</span> variant drops (D-28).</li>
+</ol>
+
+<h4>Print variants — สำเนา and ยกเลิก</h4>
+
+<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">
+  <div class="device print" style="margin:0">
+    <div class="screen">
+      <div class="receipt">
+        <div class="receipt-stamp copy">สำเนา</div>
+        <div class="receipt-head">
+          <div class="receipt-org">นิติบุคคลอาคารชุด ศุภาลัย เรสซิเดนซ์</div>
+          <div class="receipt-org-meta">99/1 ถนนพหลโยธิน แขวงจตุจักร เขตจตุจักร กรุงเทพฯ 10900 · โทร 02-123-4567</div>
+        </div>
+        <div class="receipt-title">ใบเสร็จรับเงิน</div>
+        <dl class="receipt-meta">
+          <dt>เลขที่</dt><dd>REC-202609-000852</dd><dt>วันที่ชำระ</dt><dd>3 กันยายน 2026</dd>
+          <dt>ห้อง</dt><dd>205</dd><dt>รอบบิล</dt><dd>กันยายน 2026</dd>
+          <dt>ชื่อผู้เช่า</dt><dd>นางสาวอารยา ศรีสุวรรณ</dd><dt>ชำระโดย</dt><dd>เงินสด</dd>
+        </dl>
+        <table>
+          <tbody>
+            <tr><td>ค่าน้ำ</td><td class="num">10 หน่วย</td><td class="num">180.00</td></tr>
+            <tr><td>ค่าไฟ</td><td class="num">70 หน่วย</td><td class="num">560.00</td></tr>
+            <tr><td>ค่าส่วนกลาง</td><td class="num">30 ตร.ม.</td><td class="num">1,050.00</td></tr>
+          </tbody>
+        </table>
+        <div class="receipt-total"><span>ยอดรวม</span><span>1,790.00 บาท</span></div>
+        <div class="receipt-words">(หนึ่งพันเจ็ดร้อยเก้าสิบบาทถ้วน)</div>
+        <div class="receipt-sign"><div class="line"></div>ลงชื่อผู้รับเงิน · นิติบุคคล</div>
+      </div>
+    </div>
+  </div>
+  <div class="device print" style="margin:0">
+    <div class="screen">
+      <div class="receipt">
+        <div class="receipt-stamp">ยกเลิก</div>
+        <div class="receipt-head">
+          <div class="receipt-org">นิติบุคคลอาคารชุด ศุภาลัย เรสซิเดนซ์</div>
+          <div class="receipt-org-meta">99/1 ถนนพหลโยธิน แขวงจตุจักร เขตจตุจักร กรุงเทพฯ 10900 · โทร 02-123-4567</div>
+        </div>
+        <div class="receipt-title">ใบเสร็จรับเงิน</div>
+        <dl class="receipt-meta">
+          <dt>เลขที่</dt><dd>REC-202609-000852</dd><dt>วันที่ชำระ</dt><dd>3 กันยายน 2026</dd>
+          <dt>ห้อง</dt><dd>205</dd><dt>รอบบิล</dt><dd>กันยายน 2026</dd>
+          <dt>ชื่อผู้เช่า</dt><dd>นางสาวอารยา ศรีสุวรรณ</dd><dt>ชำระโดย</dt><dd>เงินสด</dd>
+        </dl>
+        <table>
+          <tbody>
+            <tr><td>ค่าน้ำ</td><td class="num">10 หน่วย</td><td class="num">180.00</td></tr>
+            <tr><td>ค่าไฟ</td><td class="num">70 หน่วย</td><td class="num">560.00</td></tr>
+            <tr><td>ค่าส่วนกลาง</td><td class="num">30 ตร.ม.</td><td class="num">1,050.00</td></tr>
+          </tbody>
+        </table>
+        <div class="receipt-total"><span>ยอดรวม</span><span>1,790.00 บาท</span></div>
+        <div class="receipt-words">(หนึ่งพันเจ็ดร้อยเก้าสิบบาทถ้วน)</div>
+        <div class="receipt-sign"><div class="line"></div>ลงชื่อผู้รับเงิน · นิติบุคคล</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="muted" style="font-size:13px">Left: every render at <code>print_count ≥ 1</code> carries the grey <span lang="th">สำเนา</span> mark and the button reads <span lang="th">พิมพ์สำเนา</span> (D-27). Right: a voided receipt keeps its number and prints stamped <span lang="th">ยกเลิก</span> in red, on screen and on paper, for as long as the record exists (D-25). Both variants are the same route and the same markup — only the stamp element differs.</p>
+
+<h4>States — Receipt</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th style="width:110px">State</th><th>Trigger</th><th>What the screen shows</th><th>Thai copy</th></tr></thead>
+<tbody>
+<tr><td><span class="badge neutral">Empty</span></td><td>Unknown or deleted receipt id</td><td>The shared 404 page — a receipt route always has a receipt, so there is no in-page empty state</td><td lang="th">ไม่พบใบเสร็จที่ต้องการ · กลับไปหน้ารับชำระเงิน</td></tr>
+<tr><td><span class="badge info">Loading</span></td><td><span lang="th">พิมพ์ใบเสร็จ</span> pressed</td><td>The button takes <code>.is-loading</code> + <code>disabled</code> while <code>POST /api/receipts/:id/print</code> runs; <code>window.print()</code> is called only after it returns</td><td>—</td></tr>
+<tr><td><span class="badge bad">Error</span></td><td>The print-count POST fails</td><td><code>.notice.warn</code> above the sheet; printing still proceeds, because the tenant is standing at the counter — the sheet simply carries no สำเนา mark, the same accepted gap as printing from the browser menu (D-05 #11)</td><td lang="th">บันทึกจำนวนครั้งที่พิมพ์ไม่สำเร็จ · พิมพ์ต่อได้ แต่ใบเสร็จจะไม่มีคำว่า สำเนา</td></tr>
+<tr><td><span class="badge bad">Error</span></td><td>LINE confirmation failed</td><td>Badge <span lang="th">ส่งไม่สำเร็จ</span> with the error on hover plus a resend button; the payment and the receipt are unaffected (D-30)</td><td lang="th">ส่งไม่สำเร็จ · ส่งข้อความอีกครั้ง</td></tr>
+<tr><td><span class="badge warn">Warning</span></td><td>Tenant has no LINE binding</td><td>Badge <span lang="th">ยังไม่ได้ส่ง — ไม่มี LINE</span> (neutral, not an error) and a hint that the paper receipt is the hand-over path</td><td lang="th">ยังไม่ได้ส่ง — ไม่มี LINE · มอบใบเสร็จให้ผู้เช่าที่เคาน์เตอร์</td></tr>
+<tr><td><span class="badge ok">Success</span></td><td>Arrived from a confirmed payment</td><td>Green banner, print button primary, print counter at 0</td><td lang="th">บันทึกการรับเงินเรียบร้อย · ห้อง 205 · รอบ กันยายน 2026 · เลขที่ใบเสร็จ REC-202609-000852</td></tr>
+<tr><td><span class="badge ok">Success</span></td><td>Printed once or more</td><td>Sheet carries the สำเนา mark, button label switches, counter increments</td><td lang="th">พิมพ์แล้ว 2 ครั้ง · พิมพ์สำเนา</td></tr>
+<tr><td><span class="badge bad">Voided</span></td><td>Payment voided (D-25)</td><td>Red <span lang="th">ยกเลิก</span> stamp on the sheet, <code>.notice.bad</code> with the reason and who did it, the void button gone, only <span lang="th">พิมพ์สำเนา</span> left; the bill shows <span lang="th">รอชำระ</span> / <span lang="th">เกินกำหนด</span> plus <span lang="th">ระงับการแจ้งเตือนอัตโนมัติ</span></td><td lang="th">ใบเสร็จนี้ถูกยกเลิกเมื่อ 3 ก.ย. 2026 15:10 น. โดย นิติบุคคล · เหตุผล: รับเงินผิดห้อง</td></tr>
+<tr><td><span class="badge bad">403</span></td><td>Staff session opens a receipt URL</td><td>Full-page Thai 403 with a button back to <span lang="th">จดมิเตอร์</span>; no amount appears anywhere in the response (D-36)</td><td lang="th">ไม่มีสิทธิ์เข้าถึงหน้านี้ · บัญชีของคุณเป็นเจ้าหน้าที่ กรุณาติดต่อนิติบุคคล</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>Thai copy — Receipt</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th style="width:170px">Element</th><th>Thai (verbatim)</th><th>Note</th></tr></thead>
+<tbody>
+<tr><td>Page title</td><td lang="th">ใบเสร็จ</td><td>D-02 mapping for <em>Receipt</em></td></tr>
+<tr><td>Printed title</td><td lang="th">ใบเสร็จรับเงิน</td><td>Non-tax receipt (D-27)</td></tr>
+<tr><td>Success banner</td><td lang="th">บันทึกการรับเงินเรียบร้อย · ห้อง 205 · รอบ กันยายน 2026 · เลขที่ใบเสร็จ REC-202609-000852</td><td>—</td></tr>
+<tr><td>Card titles</td><td lang="th">รายละเอียดการชำระ · การแจ้งเตือน</td><td>—</td></tr>
+<tr><td>Detail labels</td><td lang="th">เลขที่ใบเสร็จ · วันที่ชำระ · ยอดที่รับ · ชำระโดย · ผู้รับเงิน · รอบบิล</td><td>—</td></tr>
+<tr><td>Receipt sheet labels</td><td lang="th">เลขที่ · วันที่ชำระ · ห้อง · รอบบิล · ชื่อผู้เช่า · ชำระโดย · ผู้รับเงิน · รายการ · จำนวน · ราคา/หน่วย · จำนวนเงิน · ยอดรวม · ลงชื่อผู้รับเงิน</td><td>Order fixed by D-27</td></tr>
+<tr><td>Method value</td><td lang="th">เงินสด</td><td>The only method in v1 (PRD §24)</td></tr>
+<tr><td>Amount in words</td><td lang="th">(หนึ่งพันเจ็ดร้อยเก้าสิบบาทถ้วน)</td><td>Satang form: <span lang="th">…บาท…สตางค์</span> (D-27)</td></tr>
+<tr><td>Buttons</td><td lang="th">พิมพ์ใบเสร็จ · พิมพ์สำเนา · กลับไปหน้ารับชำระเงิน · ยกเลิกการชำระเงิน · ส่งข้อความอีกครั้ง</td><td>Label switches after the first print</td></tr>
+<tr><td>Print counter</td><td lang="th">พิมพ์แล้ว {n} ครั้ง · พิมพ์ครั้งต่อไปจะมีคำว่า สำเนา</td><td>—</td></tr>
+<tr><td>Void button helper</td><td lang="th">ใช้เมื่อรับเงินผิดห้องหรือผิดรอบเท่านั้น</td><td>—</td></tr>
+<tr><td>LINE badges</td><td lang="th">ส่งแล้ว · ยังไม่ได้ส่ง — ไม่มี LINE · ส่งไม่สำเร็จ</td><td>Verbatim from D-30</td></tr>
+<tr><td>Void dialog title</td><td lang="th">ยกเลิกการชำระเงิน</td><td>D-39 #5</td></tr>
+<tr><td>Void dialog body</td><td lang="th">คืนเงินสด 1,790 บาท ให้ผู้เช่าก่อนยืนยันการยกเลิก</td><td>Verbatim from D-39</td></tr>
+<tr><td>Void dialog sub-line</td><td lang="th">ใบเสร็จเลขที่ REC-202609-000852 จะถูกประทับว่า ยกเลิก และบิลห้อง 205 รอบ กันยายน 2026 จะกลับเป็นสถานะ รอชำระ</td><td>—</td></tr>
+<tr><td>Void reason field</td><td lang="th">เหตุผลการยกเลิก * · อย่างน้อย 10 ตัวอักษร</td><td>Required (D-25)</td></tr>
+<tr><td>Void validation</td><td lang="th">กรุณาระบุเหตุผลอย่างน้อย 10 ตัวอักษร</td><td>Blocks the primary button</td></tr>
+<tr><td>Void dialog buttons</td><td lang="th">ปิด · ยกเลิกการชำระเงิน</td><td>Primary is <code>.btn.danger</code></td></tr>
+<tr><td>Stamps</td><td lang="th">สำเนา · ยกเลิก</td><td>Grey / red (D-25, D-27)</td></tr>
+<tr><td>LINE message sent</td><td lang="th">✅ ยืนยันการชำระเงิน / ห้อง 205 / ได้รับชำระค่าใช้จ่ายจำนวน 1,790 บาท เรียบร้อยแล้ว / วันที่ 3 กันยายน 2026 / เลขที่ใบเสร็จ REC-202609-000852 / ขอบคุณครับ/ค่ะ</td><td>Template PAID, rendered with the §28 values; the stored template uses braced placeholders only (D-31)</td></tr>
+</tbody>
+</table>
+</div>
+
+<!-- ==================================================================== -->
+<h3>Payment history · ประวัติการรับชำระ — <code>/payments/history</code></h3>
+
+<div class="screen-meta">
+  <span><b>Role:</b> Admin only (D-36)</span>
+  <span><b>Entry points:</b> Payment topbar <span lang="th">ประวัติการรับชำระ</span> · room panel <span lang="th">ดูประวัติทั้งหมด</span> · Room detail</span>
+  <span><b>Primary action:</b> <span lang="th">ดูใบเสร็จ</span> / <span lang="th">พิมพ์สำเนา</span></span>
+  <span><b>Device:</b> desktop 1200</span>
+</div>
+
+<div class="device desktop">
+  <div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/payments/history?period=2026-09</span></div>
+  <div class="screen">
+    <div class="app">
+      <nav class="sidebar">
+        <div class="brand"><b>ศุภาลัย เรสซิเดนซ์</b><span>Juristic Platform</span></div>
+        <a class="nav-item">📊 ภาพรวม</a>
+        <a class="nav-item">📝 จดมิเตอร์</a>
+        <a class="nav-item">🧾 บิลประจำเดือน <span class="count">3</span></a>
+        <a class="nav-item active">💵 รับชำระเงิน</a>
+        <a class="nav-item">🚪 ห้องพัก</a>
+        <a class="nav-item">👤 ผู้เช่า</a>
+        <a class="nav-item">📢 ประกาศ</a>
+        <a class="nav-item">📈 รายงาน</a>
+        <div class="nav-section">ตั้งค่าระบบ</div>
+        <a class="nav-item">⚙️ ตั้งค่า</a>
+        <a class="nav-item">👥 ผู้ใช้งานระบบ</a>
+        <div class="user">นิติบุคคล · admin · ออกจากระบบ</div>
+      </nav>
+      <div class="main">
+        <div class="topbar"><span class="title">รับชำระเงิน</span></div>
+        <div class="page">
+
+          <div class="tabs" style="position:relative">
+            <span class="ann" style="top:-10px;left:-10px">1</span>
+            <a class="tab-link">รับชำระเงิน</a>
+            <a class="tab-link active">ประวัติการรับชำระ</a>
+          </div>
+
+          <div class="toolbar">
+            <span style="position:relative">
+              <span class="ann" style="top:-10px;left:-10px">2</span>
+              <span class="month-picker"><span class="arrow">‹</span> กันยายน 2026 <span class="arrow">›</span></span>
+            </span>
+            <span class="search" style="width:260px;position:relative">
+              <span class="ann" style="top:-10px;left:-10px">3</span>
+              <span aria-hidden="true">🔍</span><input value="" placeholder="เลขห้อง หรือ เลขที่ใบเสร็จ" aria-label="ค้นหาเลขห้องหรือเลขที่ใบเสร็จ">
+            </span>
+          </div>
+
+          <div class="chip-row" style="position:relative">
+            <span class="ann" style="top:-10px;left:-10px">4</span>
+            <span class="chip active">ทั้งหมด <span class="count">63</span></span>
+            <span class="chip">ปกติ <span class="count">62</span></span>
+            <span class="chip">ยกเลิกแล้ว <span class="count">1</span></span>
+          </div>
+
+          <div class="card">
+            <div class="card-head" style="position:relative">
+              <span class="ann" style="top:-10px;left:-10px">5</span>
+              <span class="card-title">รวมรับชำระเดือนนี้ (ไม่รวมรายการที่ยกเลิก)</span>
+              <span class="money" style="font-size:var(--ui-fs-xl);font-weight:var(--ui-fw-semi)">112,455.00 บาท · 62 รายการ</span>
+            </div>
+            <div class="table-scroll">
+              <table class="compact zebra sticky">
+                <thead>
+                  <tr>
+                    <th>วันที่ชำระ</th><th>ห้อง</th><th>ผู้เช่า</th><th>รอบบิล</th>
+                    <th class="num">ยอด</th><th>เลขที่ใบเสร็จ</th><th>ผู้รับเงิน</th><th>สถานะ</th><th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td style="position:relative"><span class="ann" style="top:2px;left:2px">6</span>3 ก.ย. 2026 · 14:30 น.</td>
+                    <td>205</td><td>นางสาวอารยา ศรีสุวรรณ</td><td>กันยายน 2026</td>
+                    <td class="num">1,790.00</td><td>REC-202609-000852</td><td>นิติบุคคล</td>
+                    <td><span class="badge paid" data-status="Paid">ชำระแล้ว</span></td>
+                    <td style="position:relative"><span class="ann" style="top:2px;left:-14px">8</span><a class="btn ghost sm">ดูใบเสร็จ</a> <a class="btn ghost sm">พิมพ์สำเนา</a></td>
+                  </tr>
+                  <tr>
+                    <td>3 ก.ย. 2026 · 11:05 น.</td><td>112</td><td>นายกิตติพงษ์ ใจดี</td><td>กันยายน 2026</td>
+                    <td class="num">1,684.00</td><td>REC-202609-000851</td><td>นิติบุคคล</td>
+                    <td><span class="badge paid" data-status="Paid">ชำระแล้ว</span></td>
+                    <td><a class="btn ghost sm">ดูใบเสร็จ</a> <a class="btn ghost sm">พิมพ์สำเนา</a></td>
+                  </tr>
+                  <tr>
+                    <td>2 ก.ย. 2026 · 16:40 น.</td><td>309</td><td>นางสาวพิมพ์ชนก วงศ์ทอง</td><td>กันยายน 2026</td>
+                    <td class="num">1,655.00</td><td>REC-202609-000848</td><td>นิติบุคคล</td>
+                    <td style="position:relative">
+                      <span class="ann" style="top:-2px;left:-14px">7</span>
+                      <span class="badge bad">ยกเลิกแล้ว</span>
+                      <div class="ui-sub">เหตุผล: รับเงินผิดห้อง</div>
+                    </td>
+                    <td><a class="btn ghost sm">ดูใบเสร็จ</a> <a class="btn ghost sm">พิมพ์สำเนา</a></td>
+                  </tr>
+                  <tr>
+                    <td>2 ก.ย. 2026 · 16:52 น.</td><td>310</td><td>นายวีระพล แสงจันทร์</td><td>กันยายน 2026</td>
+                    <td class="num">1,655.00</td><td>REC-202609-000849</td><td>นิติบุคคล</td>
+                    <td><span class="badge paid" data-status="Paid">ชำระแล้ว</span></td>
+                    <td><a class="btn ghost sm">ดูใบเสร็จ</a> <a class="btn ghost sm">พิมพ์สำเนา</a></td>
+                  </tr>
+                  <tr>
+                    <td>2 ก.ย. 2026 · 10:18 น.</td><td>415</td><td>นางสุดารัตน์ พูลสุข</td><td>กันยายน 2026</td>
+                    <td class="num">1,921.00</td><td>REC-202609-000845</td><td>นิติบุคคล</td>
+                    <td><span class="badge paid" data-status="Paid">ชำระแล้ว</span></td>
+                    <td><a class="btn ghost sm">ดูใบเสร็จ</a> <a class="btn ghost sm">พิมพ์สำเนา</a></td>
+                  </tr>
+                  <tr>
+                    <td>1 ก.ย. 2026 · 09:47 น.</td><td>508</td><td>นายธนกฤต บุญมี</td><td>สิงหาคม 2026</td>
+                    <td class="num">1,808.00</td><td>REC-202609-000841</td><td>นิติบุคคล</td>
+                    <td><span class="badge paid" data-status="Paid">ชำระแล้ว</span></td>
+                    <td><a class="btn ghost sm">ดูใบเสร็จ</a> <a class="btn ghost sm">พิมพ์สำเนา</a></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="pagination" style="position:relative">
+              <span class="ann" style="top:-10px;left:-10px">9</span>
+              <a class="page-link active">1</a><a class="page-link">2</a><a class="page-link">3</a>
+              <span class="page-info">แสดง 1–25 จาก 63 รายการ</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="muted" style="font-size:13px">The mockup shows the first six rows of page 1; the real page renders 25.</p>
+
+<ol class="annotations">
+  <li><span class="ann">1</span><b>Two tabs, one page.</b> History is the second tab of Payment at <code>/payments/history</code>, not a new sidebar entry and not a fifth report — D-42 fixes the report set at four. It satisfies PRD §18 function 25 (<span lang="th">ดูประวัติการชำระ</span>) where the cashier already is.</li>
+  <li><span class="ann">2</span><b>Month picker — filters by payment date.</b> <code>?period=YYYY-MM</code> over <code>payments.paid_at</code>, not over the billing period: a September payment settling an August bill (row 6 in the table) belongs to September here. This is deliberately different from the Dashboard's <span lang="th">รับชำระแล้ว</span> tile, which is scoped by billing period (D-41); the two figures are not expected to match and neither is wrong. The <span lang="th">รอบบิล</span> column makes the difference visible on every row.</li>
+  <li><span class="ann">3</span><b>Search.</b> Room number or receipt number, matched exactly enough that pasting <code>REC-202609-000852</code> from a tenant's photo finds the row. Combines with the month filter; clearing it restores the full month.</li>
+  <li><span class="ann">4</span><b>Status chips with live counts.</b> <span lang="th">ทั้งหมด</span> / <span lang="th">ปกติ</span> / <span lang="th">ยกเลิกแล้ว</span>. Voided payments are visible by default and never hidden away, because reconciling the cash drawer against a receipt number that no longer represents money is exactly what the office does at the end of the day (D-25).</li>
+  <li><span class="ann">5</span><b>Total line.</b> The sum of non-voided payments in the current filter, shown next to the row count so a wrong filter is obvious. Voided rows are excluded from the sum but counted in the chip.</li>
+  <li><span class="ann">6</span><b>Columns.</b> <span lang="th">วันที่ชำระ</span> carries the time (24-hour with <span lang="th">น.</span>), because two payments on one day are ordered by it; <span lang="th">ผู้รับเงิน</span> is the Admin's <span lang="th">ชื่อที่แสดง</span> from <code>payments.received_by_user_id</code> and stays correct even after that user is set Inactive (D-46). Money is right-aligned tabular.</li>
+  <li><span class="ann">7</span><b>Voided row.</b> Badge <span lang="th">ยกเลิกแล้ว</span> with the reason beneath it. The row is never deleted and keeps its receipt number — that, and not gaplessness, is what voiding rather than deleting buys (D-25, D-27). Its bill has returned to <span lang="th">รอชำระ</span> and appears again on the Payment screen.</li>
+  <li><span class="ann">8</span><b>Row actions.</b> <span lang="th">ดูใบเสร็จ</span> opens <code>/receipts/:id</code>. <span lang="th">พิมพ์สำเนา</span> is the same button as on the receipt screen — it increments <code>print_count</code> and prints a sheet marked <span lang="th">สำเนา</span> (or <span lang="th">ยกเลิก</span> for a voided one), so a reprint requested at the counter never produces something indistinguishable from the original (D-27).</li>
+  <li><span class="ann">9</span><b>Pagination.</b> Server-side, 25 rows per page, newest payment first; the page info states the range and the total so a month with 63 payments is legible at a glance. No CSV export here — the four reports are the export surface (D-42).</li>
+</ol>
+
+<h4>Alternate state — empty month</h4>
+
+<div class="device desktop">
+  <div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/payments/history?period=2026-10</span></div>
+  <div class="screen" style="min-height:340px">
+    <div class="app" style="min-height:340px">
+      <nav class="sidebar">
+        <div class="brand"><b>ศุภาลัย เรสซิเดนซ์</b><span>Juristic Platform</span></div>
+        <a class="nav-item active">💵 รับชำระเงิน</a>
+        <a class="nav-item">🧾 บิลประจำเดือน <span class="count">3</span></a>
+        <a class="nav-item">📈 รายงาน</a>
+      </nav>
+      <div class="main">
+        <div class="topbar"><span class="title">รับชำระเงิน</span></div>
+        <div class="page">
+          <div class="tabs">
+            <a class="tab-link">รับชำระเงิน</a>
+            <a class="tab-link active">ประวัติการรับชำระ</a>
+          </div>
+          <div class="toolbar">
+            <span class="month-picker"><span class="arrow">‹</span> ตุลาคม 2026 <span class="arrow">›</span></span>
+            <span class="search" style="width:260px"><span aria-hidden="true">🔍</span><input value="" placeholder="เลขห้อง หรือ เลขที่ใบเสร็จ" aria-label="ค้นหา"></span>
+          </div>
+          <div class="card">
+            <div class="empty-state">
+              <span class="ico">🧾</span>
+              <p>ไม่พบรายการรับชำระในเดือนนี้</p>
+              <button class="btn">ดูเดือนก่อนหน้า</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h4>States — Payment history</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th style="width:110px">State</th><th>Trigger</th><th>What the screen shows</th><th>Thai copy</th></tr></thead>
+<tbody>
+<tr><td><span class="badge neutral">Empty</span></td><td>No payment in the selected month</td><td><code>.empty-state</code> with one action stepping the month picker back</td><td lang="th">ไม่พบรายการรับชำระในเดือนนี้ · ดูเดือนก่อนหน้า</td></tr>
+<tr><td><span class="badge neutral">Empty</span></td><td>Filter or search excludes everything</td><td><code>.empty-state</code> with an action clearing the filters; the chips keep their real counts so the cause is visible</td><td lang="th">ไม่พบรายการที่ตรงกับตัวกรอง · ล้างตัวกรอง</td></tr>
+<tr><td><span class="badge info">Loading</span></td><td>Month or filter changed</td><td>Five <code>.skeleton.row</code> inside the card; chips and toolbar stay usable (D-40)</td><td>—</td></tr>
+<tr><td><span class="badge bad">Error</span></td><td>The list fails to load</td><td><code>.notice.bad</code> above the card with a retry; filters keep their values</td><td lang="th">โหลดรายการไม่สำเร็จ กรุณาลองอีกครั้ง · ลองอีกครั้ง</td></tr>
+<tr><td><span class="badge ok">Success</span></td><td><span lang="th">พิมพ์สำเนา</span> pressed on a row</td><td>The print count for that receipt increments and the browser print dialog opens; no toast, no undo — the effect is visible on the sheet itself</td><td>—</td></tr>
+<tr><td><span class="badge bad">403</span></td><td>Staff session opens the route</td><td>Full-page Thai 403 with a button back to <span lang="th">จดมิเตอร์</span></td><td lang="th">ไม่มีสิทธิ์เข้าถึงหน้านี้ · บัญชีของคุณเป็นเจ้าหน้าที่ กรุณาติดต่อนิติบุคคล</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>Thai copy — Payment history</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th style="width:170px">Element</th><th>Thai (verbatim)</th><th>Note</th></tr></thead>
+<tbody>
+<tr><td>Tabs</td><td lang="th">รับชำระเงิน · ประวัติการรับชำระ</td><td>Second tab is this screen</td></tr>
+<tr><td>Search placeholder</td><td lang="th">เลขห้อง หรือ เลขที่ใบเสร็จ</td><td>—</td></tr>
+<tr><td>Filter chips</td><td lang="th">ทั้งหมด · ปกติ · ยกเลิกแล้ว</td><td>With live counts</td></tr>
+<tr><td>Summary line</td><td lang="th">รวมรับชำระเดือนนี้ (ไม่รวมรายการที่ยกเลิก)</td><td>By payment date, not billing period (D-41)</td></tr>
+<tr><td>Table headers</td><td lang="th">วันที่ชำระ · ห้อง · ผู้เช่า · รอบบิล · ยอด · เลขที่ใบเสร็จ · ผู้รับเงิน · สถานะ</td><td>—</td></tr>
+<tr><td>Status badges</td><td lang="th">ชำระแล้ว · ยกเลิกแล้ว</td><td><code>data-status="Paid"</code> on the first</td></tr>
+<tr><td>Void reason line</td><td lang="th">เหตุผล: รับเงินผิดห้อง</td><td>From <code>void_reason</code></td></tr>
+<tr><td>Row actions</td><td lang="th">ดูใบเสร็จ · พิมพ์สำเนา</td><td>Reprint always marked (D-27)</td></tr>
+<tr><td>Pagination</td><td lang="th">แสดง 1–25 จาก 63 รายการ</td><td>—</td></tr>
+</tbody>
+</table>
+</div>
+
+<!-- ==================================================================== -->
+<h3>Assumptions recorded by these screens</h3>
+
+<ol>
+  <li><b>Payment history lives at <code>/payments/history</code> as the Payment page's second tab.</b> PRD §18 function 25 requires it, the site map's fifteen routes do not name it, and D-42 fixes the report set at four. Making it a sub-route of Payment adds no navigation entry, no export surface and no new permission row.</li>
+  <li><b>Payment search matches a room code by prefix and a tenant name by substring, across rooms of both statuses.</b> A Vacant room can still hold an Unpaid bill from a finished tenancy (D-07, D-08), so restricting the search to Occupied rooms would hide money owed.</li>
+  <li><b>History is filtered by payment date, the Dashboard tile by billing period.</b> Both are correct and they will differ whenever a bill is settled in a later month; the <span lang="th">รอบบิล</span> column exists so the difference is visible rather than mysterious (D-41).</li>
+  <li><b>If <code>POST /api/receipts/:id/print</code> fails, printing proceeds anyway with a warning.</b> D-27 fixes the order (increment, then print) but not the failure path. The tenant is at the counter; blocking the print would be worse than an unmarked sheet, which is already an accepted outcome when printing from the browser menu (D-05 #11).</li>
+  <li><b>The <span lang="th">รับเงิน</span> cashier aid never blocks the confirm button.</b> A value below the total shows a hint only. The aid is optional scratch arithmetic, and D-24 states plainly that neither value reaches the API.</li>
+  <li><b>Receipt routes are keyed by the receipt's row id, not its number</b> (<code>/receipts/1042</code> renders <code>REC-202609-000852</code>). The number is a document identifier that must survive voiding; the id is the route key.</li>
+  <li><b>The receipt preview on the view screen is shown at natural width without the full 200 mm page height.</b> The printed sheet is the A5 page shown in the print frame; the preview is a legibility aid, not a page-fidelity proof — that is a QA check on the real print output (D-28).</li>
+</ol>
+
+</section>

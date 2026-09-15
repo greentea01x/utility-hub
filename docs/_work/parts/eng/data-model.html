@@ -1,0 +1,1067 @@
+<section id="data-model">
+<h2>Data Model &amp; Database</h2>
+
+<p>Eighteen tables on MySQL 8.4 (minimum 8.0.16 for <code>CHECK</code>), InnoDB, <code>utf8mb4</code> throughout, accessed through <code>mysql2/promise</code> with hand-written prepared statements and no ORM (ADR §1, A-2). The schema is not a transcription of the object graph — it is where the rules that cost money live. Eleven unique keys, three stored generated columns and twenty-one <code>CHECK</code> constraints hold under a race, under a handler that forgot a guard, and under a student running an <code>UPDATE</code> by hand (ADR §6.8 layer 4, A-10).</p>
+
+<dl class="kv">
+  <dt>Schema management</dt><dd>Committed <code>db/schema.sql</code> + <code>db/seed.sql</code>, database rebuilt from empty. No migration framework, no <code>schema_migrations</code> (ADR A-3).</dd>
+  <dt>Surrogate key</dt><dd><code>id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT</code> on every table except <code>counters</code> (<code>name</code>), <code>line_followers</code> (<code>line_user_id</code>), <code>settings</code> (fixed <code>id = 1</code>) and <code>sessions</code> (<code>session_id</code>).</dd>
+  <dt>Money</dt><dd><code>DECIMAL(10,2)</code> amounts, <code>DECIMAL(8,2)</code> rates, <code>DECIMAL(6,2)</code> area. <code>FLOAT</code> and <code>DOUBLE</code> appear nowhere (D-16).</dd>
+  <dt>Time</dt><dd><code>TIMESTAMP</code> for instants (stored UTC, read back as Asia/Bangkok), <code>DATE</code> for business dates, <code>dateStrings: true</code> on the pool (D-03, ADR A-5).</dd>
+  <dt>Naming</dt><dd>Tables <code>snake_case</code> plural; columns <code>snake_case</code> singular; foreign keys <code>&lt;singular_table&gt;_id</code>; indexes <code>uq_&lt;table&gt;_&lt;cols&gt;</code> / <code>ix_&lt;table&gt;_&lt;cols&gt;</code>; foreign keys <code>fk_&lt;table&gt;_&lt;role&gt;</code>; checks <code>ck_&lt;table&gt;_&lt;rule&gt;</code> (ADR §6.1).</dd>
+  <dt>Deletion</dt><dd>Nothing on the money path is ever deleted. Retirement is a column, not a <code>DELETE</code> — see §6.6.</dd>
+</dl>
+
+<div class="callout decision">
+  <div class="title">One deviation from the section brief, recorded rather than silently applied</div>
+  <p>The brief for this section says money is <code>DECIMAL(12,2)</code>. <strong>D-16 is binding and says <code>DECIMAL(10,2)</code></strong>, and the ADR restates it in §6.4. This document uses <code>DECIMAL(10,2)</code>. The ceiling is 99,999,999.99 THB on a single amount, against a real maximum around 3,000 THB per bill and 120,000 THB per month across 67 rooms — six orders of magnitude of headroom. No sibling section should write <code>DECIMAL(12,2)</code>.</p>
+</div>
+
+<h3>1. Entity relationship diagram</h3>
+
+<div class="diagram">
+<pre class="mermaid">
+erDiagram
+  users ||--o{ meter_readings : records
+  users ||--o{ payments : receives
+  users ||--o{ rates : sets
+  users ||--o{ audit_log : writes
+  rooms ||--o{ tenants : houses
+  rooms ||--o{ meter_readings : has
+  rooms ||--o{ bills : billed
+  tenants ||--o{ bills : owes
+  tenants ||--o{ link_codes : invited
+  tenants ||--o{ notifications : receives
+  bills ||--|{ bill_items : contains
+  bills ||--o{ payments : settled
+  bills ||--o{ audit_log : timeline
+  payments ||--|| receipts : issues
+  announcements ||--o{ notifications : broadcasts
+  settings {
+    tinyint id "always 1"
+  }
+  counters {
+    varchar name "receipt"
+  }
+  job_runs {
+    date run_date "one row per job per day"
+  }
+  line_followers {
+    varchar line_user_id "natural key"
+  }
+  sessions {
+    varchar session_id "express-mysql-session"
+  }
+</pre>
+<div class="caption">Eighteen tables. The billing spine carries every foreign key; five tables stand alone by design — <code>settings</code> is a singleton, <code>counters</code> holds one row, <code>job_runs</code> is a scheduler ledger, <code>line_followers</code> is keyed by LINE's own identifier, and <code>sessions</code> is owned by <code>express-mysql-session</code>.</div>
+</div>
+
+<div class="callout note">
+  <div class="title">There is no <code>line_accounts</code> table</div>
+  <p>PRD §21 lists <code>LineAccounts</code>; that entry is descriptive, not normative. D-29 keys the binding to the <strong>tenant</strong>, and <code>tenants.id</code> already gives that uniqueness by construction, so the binding is three columns on <code>tenants</code> — <code>line_user_id</code>, <code>line_display_name</code>, <code>line_linked_at</code> — plus <code>link_codes</code> for the one-time code and <code>line_followers</code> for the pre-binding <code>follow</code> event (ADR A-12). One LINE account may be bound to two Active tenants (a parent renting two rooms); every template names the room, and each room's bill writes its own <code>notifications</code> row.</p>
+  <p>PRD §21 also splits rates into <code>UtilityRates</code> and <code>CommonAreaRates</code>. One <code>rates</code> table with <code>utility_type ENUM('water','electric','common')</code> replaces both: the resolution query, the effective-dating rule and the Settings screen are identical for all three, and two tables would mean two copies of D-17.</p>
+</div>
+
+<h3>2. Table inventory</h3>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Table</th><th>Purpose</th><th>Primary key</th><th>The constraint that matters</th><th>Rows retired by</th></tr></thead>
+<tbody>
+<tr><td><code>users</code></td><td>Admin and staff accounts</td><td><code>id</code></td><td><code>uq_users_username</code></td><td><code>status='Inactive'</code> (D-46)</td></tr>
+<tr><td><code>settings</code></td><td>The one apartment profile</td><td><code>id</code> = 1</td><td><code>ck_settings_singleton</code></td><td>never</td></tr>
+<tr><td><code>rooms</code></td><td>80 rooms, area, meter baselines</td><td><code>id</code></td><td><code>uq_rooms_room_code</code></td><td><code>is_active=0</code> (D-47)</td></tr>
+<tr><td><code>tenants</code></td><td>Tenancy + LINE binding</td><td><code>id</code></td><td><code>uq_tenants_active_room</code> (ENG-1)</td><td><code>status='Inactive'</code> (D-10)</td></tr>
+<tr><td><code>link_codes</code></td><td>6-character one-time LINE codes</td><td><code>id</code></td><td><code>uq_link_codes_code</code></td><td><code>used_at</code> / <code>expires_at</code></td></tr>
+<tr><td><code>line_followers</code></td><td>OA followers seen before binding</td><td><code>line_user_id</code></td><td>natural key</td><td><code>unfollowed_at</code></td></tr>
+<tr><td><code>meter_readings</code></td><td>One row per room per period per utility</td><td><code>id</code></td><td><code>uq_readings_room_period_utility</code></td><td>never (edited in place)</td></tr>
+<tr><td><code>rates</code></td><td>Effective-dated unit prices</td><td><code>id</code></td><td><code>uq_rates_utility_effective</code></td><td>never — insert-only (D-17)</td></tr>
+<tr><td><code>bills</code></td><td>One bill per room per period</td><td><code>id</code></td><td><code>uq_bills_room_period</code> (D-18)</td><td>never</td></tr>
+<tr><td><code>bill_items</code></td><td>Exactly three lines per bill</td><td><code>id</code></td><td><code>uq_bill_items_bill_type</code> (ENG-2)</td><td>never</td></tr>
+<tr><td><code>payments</code></td><td>One live cash payment per bill</td><td><code>id</code></td><td><code>uq_payments_active_bill</code> (D-26)</td><td><code>voided_at</code> (D-25)</td></tr>
+<tr><td><code>receipts</code></td><td>REC-YYYYMM-NNNNNN</td><td><code>id</code></td><td><code>uq_receipts_no</code>, <code>uq_receipts_payment</code></td><td><code>voided_at</code> — number stays taken</td></tr>
+<tr><td><code>counters</code></td><td>The receipt sequence</td><td><code>name</code></td><td>one row, <code>name='receipt'</code></td><td>never</td></tr>
+<tr><td><code>announcements</code></td><td>Broadcast text and audience</td><td><code>id</code></td><td><code>ck_announcements_floors</code></td><td>never — immutable once sent (D-35)</td></tr>
+<tr><td><code>notifications</code></td><td>One row per recipient per message</td><td><code>id</code></td><td><code>uq_notifications_dedupe</code> (ENG-3)</td><td>never</td></tr>
+<tr><td><code>audit_log</code></td><td>Append-only change trail</td><td><code>id</code></td><td><code>ix_audit_bill_created</code> (D-38)</td><td>never</td></tr>
+<tr><td><code>job_runs</code></td><td>Daily-job ledger</td><td><code>id</code></td><td><code>uq_job_runs_name_date</code> (D-32)</td><td>never</td></tr>
+<tr><td><code>sessions</code></td><td>Login sessions, MySQL-backed</td><td><code>session_id</code></td><td>owned by the library</td><td><code>expires</code> sweep (D-37)</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>3. Per-table specification</h3>
+
+<p>Nullability is stated per column; every column not marked <em>NULL</em> is <code>NOT NULL</code>. "Why" is the reason the column exists at all — a column with no reason is a column that should not be in a capstone schema.</p>
+
+<h4>3.1 <code>users</code> — accounts and receipt attribution</h4>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Column</th><th>Type</th><th>Null</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td><code>id</code></td><td>BIGINT UNSIGNED AI</td><td>no</td><td>Referenced by five tables; never reused.</td></tr>
+<tr><td><code>username</code></td><td>VARCHAR(50)</td><td>no</td><td>Login identifier. <code>uq_users_username</code> — the only unique key.</td></tr>
+<tr><td><code>display_name</code></td><td>VARCHAR(100)</td><td>no</td><td>Prints as <strong>ผู้รับเงิน</strong> on the receipt (D-27, D-46). Not derivable from <code>username</code>.</td></tr>
+<tr><td><code>password_hash</code></td><td>CHAR(60)</td><td>no</td><td>bcrypt cost 10 output is exactly 60 characters (D-37). <code>CHAR</code>, not <code>VARCHAR</code>: a hash of another length is a bug.</td></tr>
+<tr><td><code>role</code></td><td>ENUM('admin','staff')</td><td>no</td><td>The whole D-36 matrix. No third role, no permission table.</td></tr>
+<tr><td><code>status</code></td><td>ENUM('Active','Inactive')</td><td>no, default <code>Active</code></td><td>An Inactive user cannot log in but keeps every historical attribution (D-46).</td></tr>
+<tr><td><code>created_at</code></td><td>TIMESTAMP</td><td>no, default <code>CURRENT_TIMESTAMP</code></td><td>Users page ordering.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>3.2 <code>settings</code> — the singleton apartment profile</h4>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Column</th><th>Type</th><th>Null</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td><code>id</code></td><td>TINYINT UNSIGNED</td><td>no, default 1</td><td><code>ck_settings_singleton CHECK (id = 1)</code> makes a second property impossible to insert (D-04). Every read is <code>WHERE id = 1</code>.</td></tr>
+<tr><td><code>apartment_name</code></td><td>VARCHAR(120)</td><td>no</td><td>Header, receipt letterhead, LINE signature <code>— นิติบุคคล {apartment_name}</code> (D-01).</td></tr>
+<tr><td><code>address</code></td><td>VARCHAR(255)</td><td>no</td><td>Receipt letterhead.</td></tr>
+<tr><td><code>tax_id</code></td><td>VARCHAR(13)</td><td><strong>NULL</strong></td><td>Optional — the letterhead omits เลขประจำตัวผู้เสียภาษี when empty (D-27). Not <code>CHAR(13)</code>: an empty value must be NULL, not thirteen spaces.</td></tr>
+<tr><td><code>phone</code></td><td>VARCHAR(20)</td><td>no</td><td>Letterhead and LINE fallback text. Landline formats vary, so not <code>CHAR(10)</code>.</td></tr>
+<tr><td><code>office_hours</code></td><td>VARCHAR(60)</td><td>no</td><td>A placeholder in the BILL and PRE_DUE templates, never a literal (D-31).</td></tr>
+<tr><td><code>due_day</code></td><td>TINYINT UNSIGNED</td><td>no, default 5</td><td><code>ck_settings_due_day CHECK (due_day BETWEEN 1 AND 28)</code> — the range is what makes D-20's short-month clamp unreachable in practice.</td></tr>
+<tr><td><code>line_test_mode</code></td><td>TINYINT(1)</td><td>no, <strong>default 1</strong></td><td>Test mode defaults ON in <em>every</em> environment (D-34); a stray send cannot reach a real tenant or wipe a seeded binding.</td></tr>
+<tr><td><code>line_test_user_id</code></td><td>VARCHAR(64)</td><td><strong>NULL</strong></td><td>The single whitelisted recipient while test mode is on. NULL means "test mode swallows the send and records it".</td></tr>
+<tr><td><code>updated_at</code></td><td>TIMESTAMP</td><td>no, <code>ON UPDATE CURRENT_TIMESTAMP</code></td><td>Settings profile edits are not audited (D-38); this column is the only trace, and it is free.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>3.3 <code>rooms</code> — 80 rooms and their meter baselines</h4>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Column</th><th>Type</th><th>Null</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td><code>id</code></td><td>BIGINT UNSIGNED AI</td><td>no</td><td>—</td></tr>
+<tr><td><code>room_code</code></td><td>VARCHAR(10)</td><td>no</td><td>One of only two identifiers a human ever sees (ADR §6.6). <code>uq_rooms_room_code</code>. Free text so <code>A-205</code> needs no migration (D-04).</td></tr>
+<tr><td><code>floor</code></td><td>TINYINT UNSIGNED</td><td>no</td><td><strong>Entered, never parsed from the code</strong> (D-47) — <code>A-205</code> cannot be parsed. Read by D-15's floor grouping and D-35's floor audience.</td></tr>
+<tr><td><code>room_type</code></td><td>VARCHAR(20)</td><td><strong>NULL</strong></td><td>PRD §5's ประเภทห้อง. Display-only label; it never affects any amount.</td></tr>
+<tr><td><code>area_sqm</code></td><td>DECIMAL(6,2)</td><td>no</td><td>Multiplicand of the common-area fee. Admin-only and audited as <code>ROOM_AREA_CHANGE</code> because it silently changes every future fee (D-09, D-38). <code>ck_rooms_area CHECK (area_sqm &gt; 0)</code>.</td></tr>
+<tr><td><code>baseline_water</code></td><td>INT UNSIGNED</td><td>no</td><td>Opening meter value. Living here rather than in a synthetic reading row is what removes every first-period special case and stops a placeholder colliding with the first real reading under <code>uq_readings_room_period_utility</code> (D-06).</td></tr>
+<tr><td><code>baseline_electric</code></td><td>INT UNSIGNED</td><td>no</td><td>As above.</td></tr>
+<tr><td><code>baseline_date</code></td><td>DATE</td><td>no</td><td>วันที่เริ่มต้น, shown next to the baselines so the office can see how old they are. Not used in arithmetic.</td></tr>
+<tr><td><code>status</code></td><td>ENUM('Occupied','Vacant')</td><td>no, default <code>Vacant</code></td><td>Maintained by the tenant transaction only, never independently editable (D-07, D-10). Half of the billable-room test.</td></tr>
+<tr><td><code>is_active</code></td><td>TINYINT(1)</td><td>no, default 1</td><td>ปิดใช้งานห้อง. A room referenced by any bill is deactivated, never deleted, or D-09's reprint guarantee breaks (D-47).</td></tr>
+<tr><td><code>created_at</code></td><td>TIMESTAMP</td><td>no, default <code>CURRENT_TIMESTAMP</code></td><td>—</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>3.4 <code>tenants</code> — tenancy and the LINE binding</h4>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Column</th><th>Type</th><th>Null</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td><code>id</code></td><td>BIGINT UNSIGNED AI</td><td>no</td><td>Its own uniqueness <em>is</em> D-29's per-tenant LINE binding rule.</td></tr>
+<tr><td><code>room_id</code></td><td>BIGINT UNSIGNED</td><td>no</td><td><code>fk_tenants_room</code>. A tenant record belongs to exactly one room; re-letting creates a new record (D-10).</td></tr>
+<tr><td><code>full_name</code></td><td>VARCHAR(120)</td><td>no</td><td>Snapshotted onto every bill, so the live value may change without rewriting history (D-09).</td></tr>
+<tr><td><code>phone</code></td><td>CHAR(10)</td><td>no</td><td>Thai mobile <code>0XXXXXXXXX</code>, fixed width. <code>ck_tenants_phone CHECK (phone REGEXP '^0[0-9]{9}$')</code> — the arrears report dials this number, so a malformed one is a defect, not a cosmetic issue.</td></tr>
+<tr><td><code>move_in_date</code></td><td>DATE</td><td>no</td><td>Displayed only; no proration exists (D-08).</td></tr>
+<tr><td><code>move_out_date</code></td><td>DATE</td><td><strong>NULL</strong></td><td>Written by สิ้นสุดสัญญาเช่า, never hand-edited, never future-dated (D-10).</td></tr>
+<tr><td><code>status</code></td><td>ENUM('Active','Inactive')</td><td>no, default <code>Active</code></td><td>Set by an action, never derived from a date — so D-07's billable-room test always reads a settled value with nothing scheduled to run.</td></tr>
+<tr><td><code>line_user_id</code></td><td>VARCHAR(64)</td><td><strong>NULL</strong></td><td>Filled only by the webhook (D-29); staff can never type it. NULL is the <em>common</em> case on day one — 13 of the 67 seeded tenants (D-44).</td></tr>
+<tr><td><code>line_display_name</code></td><td>VARCHAR(120)</td><td><strong>NULL</strong></td><td>Copied from <code>line_followers</code> at bind time so the Tenants page can show who was bound.</td></tr>
+<tr><td><code>line_linked_at</code></td><td>TIMESTAMP</td><td><strong>NULL</strong></td><td>Shown next to the binding; NULL and <code>line_user_id</code> NULL always agree.</td></tr>
+<tr><td><code>created_at</code></td><td>TIMESTAMP</td><td>no, default <code>CURRENT_TIMESTAMP</code></td><td>—</td></tr>
+<tr><td><code>active_room_id</code></td><td>BIGINT UNSIGNED, <strong>STORED generated</strong></td><td>NULL when Inactive</td><td><code>IF(status='Active', room_id, NULL)</code> with <code>uq_tenants_active_room</code>. <strong>ENG-1</strong>: at most one Active tenant per room, enforced by InnoDB rather than by a service that could lose a race (D-10). MySQL permits repeated NULLs in a unique index, so any number of past tenants coexist.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>3.5 <code>meter_readings</code> — the snapshot chain</h4>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Column</th><th>Type</th><th>Null</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td><code>id</code></td><td>BIGINT UNSIGNED AI</td><td>no</td><td>—</td></tr>
+<tr><td><code>room_id</code></td><td>BIGINT UNSIGNED</td><td>no</td><td><code>fk_readings_room</code>.</td></tr>
+<tr><td><code>period</code></td><td>CHAR(7)</td><td>no</td><td><code>YYYY-MM</code>. Fixed width means string order <em>is</em> chronological order, which is what makes the D-14 lookup an index range scan. <code>ck_readings_period</code> rejects <code>2026-13</code>.</td></tr>
+<tr><td><code>utility_type</code></td><td>ENUM('water','electric')</td><td>no</td><td>Two values only — <code>common</code> is not metered.</td></tr>
+<tr><td><code>previous_reading</code></td><td>INT UNSIGNED</td><td>no</td><td><strong>Snapshot at save time</strong>, not a join. This is why D-22 restricts reverting to a room's newest bill (D-12).</td></tr>
+<tr><td><code>current_reading</code></td><td>INT UNSIGNED</td><td>no</td><td>Whole units only; the input rejects decimals (D-16).</td></tr>
+<tr><td><code>units</code></td><td>INT UNSIGNED</td><td>no</td><td>Stored, not computed at read time, because the meter-replacement branch makes it a two-segment sum. <code>ck_readings_units CHECK (units &gt;= 0)</code> is redundant against <code>UNSIGNED</code> and is written anyway — D-13 names it, and it documents the invariant where a reader looks for it.</td></tr>
+<tr><td><code>previous_period</code></td><td><strong>VARCHAR(8)</strong></td><td>no</td><td>Holds <code>'baseline'</code> or a <code>YYYY-MM</code>. <strong>Not <code>VARCHAR(7)</code></strong>, which truncates <code>'baseline'</code> to <code>'baselin'</code> — the ADR corrects both proposals here. Drives Bill Detail's ครอบคลุมการใช้ตั้งแต่รอบ line and the BILL template's gap note (D-14, D-31).</td></tr>
+<tr><td><code>meter_replaced</code></td><td>TINYINT(1)</td><td>no, default 0</td><td>The single branch in the whole reading path (D-13).</td></tr>
+<tr><td><code>old_final</code></td><td>INT UNSIGNED</td><td><strong>NULL</strong></td><td>เลขสุดท้ายของมิเตอร์เดิม. NULL exactly when <code>meter_replaced = 0</code>, enforced by <code>ck_readings_replacement</code>.</td></tr>
+<tr><td><code>new_start</code></td><td>INT UNSIGNED</td><td><strong>NULL</strong></td><td>เลขเริ่มต้นของมิเตอร์ใหม่, defaults to 0 on the form.</td></tr>
+<tr><td><code>replace_reason</code></td><td>VARCHAR(200)</td><td><strong>NULL</strong></td><td>Required Thai reason when the box is ticked; audited as <code>METER_REPLACEMENT</code> (D-13, D-38). Collecting a reason and discarding it would be a defect.</td></tr>
+<tr><td><code>recorded_by</code></td><td>BIGINT UNSIGNED</td><td>no</td><td><code>fk_readings_user</code>. PRD names this column explicitly; D-38 keeps it here rather than folding it into <code>audit_log</code>.</td></tr>
+<tr><td><code>recorded_at</code></td><td>TIMESTAMP</td><td>no, <code>ON UPDATE CURRENT_TIMESTAMP</code></td><td>An edit is a re-save, so the timestamp follows the edit. Never used for ordering — D-14 orders by <code>period</code>, so a late entry resolves exactly as a punctual one would.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout note">
+  <div class="title">There is no reading status and no period table</div>
+  <p><code>meter_readings</code> has no status column and no state machine, and there is no <code>periods</code> table and no <code>closed</code> state anywhere in the system (D-11, ADR §3.4). A reading's editability is <em>derived</em>: editable while its room's bill for that period is <code>Draft</code> or does not exist, frozen otherwise (D-12). Storing it would create a second source of truth that a revert would have to keep in sync.</p>
+</div>
+
+<h4>3.6 <code>rates</code> — append-only, effective-dated</h4>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Column</th><th>Type</th><th>Null</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td><code>id</code></td><td>BIGINT UNSIGNED AI</td><td>no</td><td>—</td></tr>
+<tr><td><code>utility_type</code></td><td>ENUM('water','electric','common')</td><td>no</td><td><strong>Three</strong> values — one table replaces PRD §21's <code>UtilityRates</code> + <code>CommonAreaRates</code>.</td></tr>
+<tr><td><code>unit_price</code></td><td>DECIMAL(8,2)</td><td>no</td><td>18.00 / 8.00 / 35.00 today; 7.50 is legal, which is why the receipt's amount-in-words helper must handle satang (D-16, D-27). <code>ck_rates_price CHECK (unit_price &gt;= 0)</code>.</td></tr>
+<tr><td><code>effective_from</code></td><td>DATE</td><td>no</td><td><code>uq_rates_utility_effective (utility_type, effective_from)</code> makes a same-day tie impossible, and is <em>also</em> the index the resolution query scans backwards. No second index is needed.</td></tr>
+<tr><td><code>created_by</code></td><td>BIGINT UNSIGNED</td><td>no</td><td><code>fk_rates_user</code>; PRD names it. Every insert is audited as <code>RATE_CHANGE</code>.</td></tr>
+<tr><td><code>created_at</code></td><td>TIMESTAMP</td><td>no, default <code>CURRENT_TIMESTAMP</code></td><td>Distinguishes "when it was decided" from "when it takes effect" — a back-dated rate has <code>created_at &gt; effective_from</code>.</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>No row is ever <code>UPDATE</code>d or <code>DELETE</code>d.</strong> A Settings save inserts (D-17). That is the same amount of code as an update and gives Settings a complete audit story for free.</p>
+
+<h4>3.7 <code>bills</code> — frozen at approval, snapshotted at generation</h4>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Column</th><th>Type</th><th>Null</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td><code>id</code></td><td>BIGINT UNSIGNED AI</td><td>no</td><td>—</td></tr>
+<tr><td><code>room_id</code></td><td>BIGINT UNSIGNED</td><td>no</td><td><code>fk_bills_room</code>.</td></tr>
+<tr><td><code>tenant_id</code></td><td>BIGINT UNSIGNED</td><td>no</td><td><code>fk_bills_tenant</code>. The bill stays attached to the departing tenant forever (D-08); this is also the LINE recipient lookup.</td></tr>
+<tr><td><code>period</code></td><td>CHAR(7)</td><td>no</td><td>With <code>room_id</code>, the idempotency key of the whole billing run.</td></tr>
+<tr><td><code>room_code_snapshot</code></td><td>VARCHAR(10)</td><td>no</td><td>Reprint fidelity (D-09): every screen, print view and LINE message renders from the bill's own snapshot and never joins live to <code>rooms</code>/<code>tenants</code>.</td></tr>
+<tr><td><code>room_area_sqm</code></td><td>DECIMAL(6,2)</td><td>no</td><td>The area actually billed. Changing a room's area affects only bills generated afterwards.</td></tr>
+<tr><td><code>tenant_name_snapshot</code></td><td>VARCHAR(120)</td><td>no</td><td>ชื่อผู้เช่า on the receipt, fixed at generation.</td></tr>
+<tr><td><code>total</code></td><td>DECIMAL(10,2)</td><td>no, default 0.00</td><td>The SQL <code>SUM</code> of already-rounded items. There is no second rounding here (D-16). <code>ck_bills_total CHECK (total &gt;= 0)</code>.</td></tr>
+<tr><td><code>status</code></td><td>ENUM('Draft','Unpaid','Paid')</td><td>no, default <code>Draft</code></td><td><strong>Three stored values.</strong> <code>Overdue</code> is never stored, never written by a job, and adds no charge (D-21).</td></tr>
+<tr><td><code>due_date</code></td><td>DATE</td><td>no</td><td>Nominal at Draft, recomputed once and frozen at approval. <code>DATE</code>, not <code>TIMESTAMP</code>: a bill is due on a day, not at an instant, and <code>dateStrings</code> stops a JS <code>Date</code> shifting it into Overdue a day early.</td></tr>
+<tr><td><code>approved_by</code></td><td>BIGINT UNSIGNED</td><td><strong>NULL</strong></td><td><code>fk_bills_approver</code>. NULL while Draft.</td></tr>
+<tr><td><code>approved_at</code></td><td>TIMESTAMP</td><td><strong>NULL</strong></td><td><code>ck_bills_approved</code> ties it to the status: Draft ⇒ NULL, otherwise NOT NULL. A revert clears both columns (§5).</td></tr>
+<tr><td><code>created_at</code> / <code>updated_at</code></td><td>TIMESTAMP</td><td>no</td><td><code>updated_at</code> moves on every in-place recalculation, which is the cheap way to see whether a Draft is stale after a rate change.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>3.8 <code>bill_items</code> — always exactly three</h4>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Column</th><th>Type</th><th>Null</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td><code>id</code></td><td>BIGINT UNSIGNED AI</td><td>no</td><td>—</td></tr>
+<tr><td><code>bill_id</code></td><td>BIGINT UNSIGNED</td><td>no</td><td><code>fk_bill_items_bill</code>, <code>ON DELETE CASCADE</code>. Bills are never deleted in production; the cascade exists so the integration tier can drop a scratch bill in one statement.</td></tr>
+<tr><td><code>item_type</code></td><td>ENUM('water','electric','common')</td><td>no</td><td><code>uq_bill_items_bill_type (bill_id, item_type)</code> — <strong>ENG-2</strong>. A fourth item or a duplicate item is impossible, which is what makes the Dashboard tiles sum to the total, the receipt print three lines, and D-42's split columns never null.</td></tr>
+<tr><td><code>quantity</code></td><td>DECIMAL(10,2)</td><td>no</td><td>Units for water/electric (10.00, 70.00), ตร.ม. for common (30.00). One column, one multiplication rule. <code>ck_bill_items_quantity CHECK (quantity &gt;= 0)</code>.</td></tr>
+<tr><td><code>unit_price</code></td><td>DECIMAL(8,2)</td><td>no</td><td><strong>Rate snapshot</strong>, copied at generation. An approved bill is never disturbed by a later rate change (D-17).</td></tr>
+<tr><td><code>amount</code></td><td>DECIMAL(10,2)</td><td>no</td><td><code>ROUND(quantity * unit_price, 2)</code>, computed and rounded <em>in SQL</em> (D-16, ADR A-4). <code>ck_bill_items_amount CHECK (amount &gt;= 0)</code>.</td></tr>
+<tr><td><code>previous_reading</code></td><td>INT UNSIGNED</td><td><strong>NULL</strong></td><td>Meter columns for the two metered lines; NULL on <code>common</code>. <code>ck_bill_items_meter</code> enforces both directions, so a common-area line can never carry a meter number and a water line can never lack one.</td></tr>
+<tr><td><code>current_reading</code></td><td>INT UNSIGNED</td><td><strong>NULL</strong></td><td>Printed on the receipt as 1,250 → 1,260 without touching <code>meter_readings</code>.</td></tr>
+<tr><td><code>previous_period</code></td><td>VARCHAR(8)</td><td><strong>NULL</strong></td><td>Copied from the reading so a reprint can still explain a gap-covering bill years later.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>3.9 <code>payments</code> and <code>receipts</code></h4>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Column</th><th>Type</th><th>Null</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td colspan="4"><strong><code>payments</code></strong></td></tr>
+<tr><td><code>bill_id</code></td><td>BIGINT UNSIGNED</td><td>no</td><td><code>fk_payments_bill</code>.</td></tr>
+<tr><td><code>amount</code></td><td>DECIMAL(10,2)</td><td>no</td><td>Always equal to <code>bills.total</code> — not an input (D-24). Because of that there is no partial payment, no overpayment, no refund and no <code>SUM</code> in any query. <code>ck_payments_amount CHECK (amount &gt; 0)</code>.</td></tr>
+<tr><td><code>paid_at</code></td><td>TIMESTAMP</td><td>no, default <code>CURRENT_TIMESTAMP</code></td><td>Its month is the <code>YYYYMM</code> label of the receipt number.</td></tr>
+<tr><td><code>received_by_user_id</code></td><td>BIGINT UNSIGNED</td><td>no</td><td><code>fk_payments_receiver</code>; this user's <code>display_name</code> prints as ผู้รับเงิน.</td></tr>
+<tr><td><code>method</code></td><td>ENUM('cash')</td><td>no, default <code>cash</code></td><td>One value. The column exists because PRD §12 and D-24 name วิธีชำระเงิน on the receipt — printing a literal would be a lie about where the value comes from. PRD §24 forbids every other method.</td></tr>
+<tr><td><code>voided_at</code> / <code>voided_by</code> / <code>void_reason</code></td><td>TIMESTAMP / BIGINT UNSIGNED / VARCHAR(255)</td><td><strong>NULL</strong></td><td>All three NULL or all three set, and the reason at least 10 characters — <code>ck_payments_void</code> encodes D-25's dialog rule in the schema. A payment is never deleted.</td></tr>
+<tr><td><code>active_bill_id</code></td><td>BIGINT UNSIGNED, <strong>STORED generated</strong></td><td>NULL when voided</td><td><code>IF(voided_at IS NULL, bill_id, NULL)</code> with <code>uq_payments_active_bill</code> (D-26, <strong>binding</strong>). At most one live payment per bill; any number of voided ones. Must not be "simplified" to <code>UNIQUE(bill_id)</code>, which would make a corrected bill unpayable forever, nor to a filtered index, which MySQL 8 does not have.</td></tr>
+<tr><td colspan="4"><strong><code>receipts</code></strong></td></tr>
+<tr><td><code>payment_id</code></td><td>BIGINT UNSIGNED</td><td>no</td><td><code>uq_receipts_payment</code> — one receipt per payment, the second half of the double-click guard.</td></tr>
+<tr><td><code>receipt_no</code></td><td>VARCHAR(20)</td><td>no</td><td><code>uq_receipts_no</code> plus <code>ck_receipts_no CHECK (receipt_no REGEXP '^REC-[0-9]{6}-[0-9]{6}$')</code>. 18 characters today; VARCHAR(20) leaves room without inviting a format change.</td></tr>
+<tr><td><code>issued_at</code></td><td>TIMESTAMP</td><td>no, default <code>CURRENT_TIMESTAMP</code></td><td>Allocation instant, inside the payment transaction.</td></tr>
+<tr><td><code>print_count</code></td><td>INT UNSIGNED</td><td>no, default 0</td><td>0 renders the original; ≥ 1 renders สำเนา and the button reads พิมพ์สำเนา (D-27). Incremented by <code>POST /api/receipts/:id/print</code> before <code>window.print()</code>.</td></tr>
+<tr><td><code>voided_at</code></td><td>TIMESTAMP</td><td><strong>NULL</strong></td><td>Voided, never deleted — <strong>that, and not gaplessness, is what voiding buys</strong>: the number stays taken and every render is stamped ยกเลิก (D-25).</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>3.10 <code>notifications</code> — one row per recipient, never per API call</h4>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Column</th><th>Type</th><th>Null</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td><code>type</code></td><td>ENUM('BILL','BILL_CORRECTED','PRE_DUE','OVERDUE','PAID','ANNOUNCEMENT')</td><td>no</td><td>Six values; the seventh and eighth templates (LINK_OK, LINK_FAIL) go out through the Reply API and write no row at all (<strong>ENG-4</strong>).</td></tr>
+<tr><td><code>bill_id</code></td><td>BIGINT UNSIGNED</td><td><strong>NULL</strong></td><td><code>fk_notifications_bill</code>. Exactly one of <code>bill_id</code> / <code>announcement_id</code> is set — <code>ck_notifications_target</code>.</td></tr>
+<tr><td><code>announcement_id</code></td><td>BIGINT UNSIGNED</td><td><strong>NULL</strong></td><td><code>fk_notifications_announcement</code>.</td></tr>
+<tr><td><code>tenant_id</code></td><td>BIGINT UNSIGNED</td><td>no</td><td><code>fk_notifications_tenant</code>. The <em>intended</em> recipient, recorded even when test mode redirects the send elsewhere (D-34).</td></tr>
+<tr><td><code>recipient_user_id</code></td><td>VARCHAR(64)</td><td><strong>NULL</strong></td><td>The LINE <code>userId</code> targeted. NULL with <code>status='skipped_no_line'</code> is the day-one common case (D-30).</td></tr>
+<tr><td><code>status</code></td><td>ENUM('queued','sent','failed','skipped_no_line')</td><td>no, default <code>queued</code></td><td>Badged as ส่งแล้ว / ยังไม่ได้ส่ง — ไม่มี LINE / ส่งไม่สำเร็จ. The word "blocked" appears nowhere: LINE reports a blocked recipient as success (D-05 item 9).</td></tr>
+<tr><td><code>attempt_count</code></td><td>INT UNSIGNED</td><td>no, default 0</td><td>Automatic retries stop at 3; the Admin's manual ส่งแจ้งเตือนอีกครั้ง is never capped (D-30, D-33).</td></tr>
+<tr><td><code>retry_key</code></td><td>CHAR(36)</td><td>no</td><td>A UUID written at enqueue and reused on every attempt as <code>X-Line-Retry-Key</code>. The only identifier in the system that is a UUID, and only because LINE requires that shape. Closes the gap the table cannot: a push that succeeded at LINE but whose result was lost.</td></tr>
+<tr><td><code>last_error</code> / <code>http_status</code></td><td>VARCHAR(255) / SMALLINT UNSIGNED</td><td><strong>NULL</strong></td><td>An explicit <code>400</code> from the push endpoint is the <em>only</em> trigger for auto-unbinding a tenant, and never for a <code>Useed</code> seed id (D-30, D-44).</td></tr>
+<tr><td><code>last_attempt_at</code></td><td>TIMESTAMP</td><td><strong>NULL</strong></td><td>NULL means never attempted.</td></tr>
+<tr><td><code>send_date</code></td><td>DATE</td><td>no</td><td>Asia/Bangkok calendar day, part of the dedupe key. <code>DATE</code>, so two attempts 23 hours apart on the same day still collide.</td></tr>
+<tr><td><code>created_at</code></td><td>TIMESTAMP</td><td>no, default <code>CURRENT_TIMESTAMP</code></td><td>Enqueue instant, distinct from <code>last_attempt_at</code>.</td></tr>
+<tr><td><code>dedupe_key</code></td><td>VARCHAR(80), <strong>STORED generated</strong></td><td>no</td><td><code>CONCAT_WS(':', type, IFNULL(bill_id,0), IFNULL(announcement_id,0), tenant_id, send_date)</code> with <code>uq_notifications_dedupe</code> — <strong>ENG-3</strong>. D-30's literal <code>UNIQUE(type, bill_id, announcement_id, tenant_id, send_date)</code> cannot enforce the rule: InnoDB treats NULLs as distinct and one of the two id columns is always NULL, so every duplicate would be accepted. Same semantics, working mechanism. Every attempt UPSERTs this row.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>3.11 <code>audit_log</code>, <code>announcements</code>, <code>link_codes</code>, <code>line_followers</code>, <code>counters</code>, <code>job_runs</code>, <code>sessions</code></h4>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Table</th><th>Columns</th><th>Constraints, indexes and why</th></tr></thead>
+<tbody>
+<tr><td><code>audit_log</code></td><td><code>id</code>, <code>entity_type</code> VARCHAR(30), <code>entity_id</code> BIGINT UNSIGNED, <code>bill_id</code> NULL, <code>action</code> ENUM (16 values), <code>actor_user_id</code>, <code>before_json</code> JSON NULL, <code>after_json</code> JSON NULL, <code>reason</code> VARCHAR(255) NULL, <code>created_at</code></td><td><code>ix_audit_bill_created (bill_id, created_at)</code> makes Bill Detail's Admin-only timeline exactly <code>SELECT * FROM audit_log WHERE bill_id = ? ORDER BY created_at</code> — no cross-entity join to invent (D-38). <code>entity_id</code> points at four different tables, so it carries <strong>no</strong> foreign key; <code>ix_audit_entity (entity_type, entity_id, created_at)</code> serves per-entity lookups instead. Rows are written on the <em>same connection</em> as the change they describe, inside its transaction. Append-only: no update path, no delete path, no global audit browser in v1.</td></tr>
+<tr><td><code>announcements</code></td><td><code>id</code>, <code>title</code> VARCHAR(60), <code>body</code> VARCHAR(400), <code>audience</code> ENUM('all','floors'), <code>audience_floors</code> VARCHAR(50) NULL, <code>created_by</code>, <code>sent_at</code></td><td>Immutable once sent — there is no edit endpoint and no recall (D-35). <code>ck_announcements_floors</code> pairs the two columns: <code>all</code> ⇒ <code>audience_floors</code> NULL, <code>floors</code> ⇒ a comma-separated list of digits. A comma-separated list rather than a join table because it is written once, read once, never queried by floor, and capped at five floors.</td></tr>
+<tr><td><code>link_codes</code></td><td><code>id</code>, <code>tenant_id</code>, <code>code</code> CHAR(6), <code>expires_at</code>, <code>used_at</code> NULL, <code>created_by</code>, <code>created_at</code></td><td><code>uq_link_codes_code</code> — the webhook looks a code up by its value alone, so it must be globally unique, not unique per tenant. <code>ck_link_codes_alphabet</code> pins the D-29 alphabet <code>ABCDEFGHJKLMNPQRSTUVWXYZ23456789</code> (no O/0/I/1, because the code is read off a printed slip). Single use: <code>used_at IS NULL AND expires_at &gt; NOW()</code> is the whole validity test.</td></tr>
+<tr><td><code>line_followers</code></td><td><code>line_user_id</code> VARCHAR(64) PK, <code>display_name</code> NULL, <code>followed_at</code>, <code>unfollowed_at</code> NULL</td><td>Natural primary key — LINE's identifier is the only key that exists at <code>follow</code> time, before any tenant is known. Upserted by the <code>follow</code> event so the code-matching step has a name to show. No foreign key to <code>tenants</code>: a follower may never bind, and a binding may outlive an unfollow.</td></tr>
+<tr><td><code>counters</code></td><td><code>name</code> VARCHAR(20) PK, <code>seq</code> BIGINT UNSIGNED</td><td>Exactly one row, <code>name='receipt'</code>. Natural key so the allocation statement needs no lookup (D-26). A second counter would need a decision, not an insert.</td></tr>
+<tr><td><code>job_runs</code></td><td><code>id</code>, <code>job_name</code> ENUM('daily','daily_manual'), <code>run_date</code> DATE, <code>started_at</code>, <code>finished_at</code> NULL, <code>summary_json</code> JSON NULL</td><td><code>uq_job_runs_name_date</code> — a retrying scheduler cannot run the day twice (D-32). The demo button writes <code>daily_manual</code> and deliberately skips the guard, so a 14:00 rehearsal still works after the 09:00 cron ran; it relies on <code>uq_notifications_dedupe</code> instead.</td></tr>
+<tr><td><code>sessions</code></td><td><code>session_id</code> VARCHAR(128) PK, <code>expires</code> INT UNSIGNED, <code>data</code> MEDIUMTEXT</td><td>Owned by <code>express-mysql-session</code>; the schema is the library's own, reproduced in <code>schema.sql</code> so a rebuild from empty is complete. <strong>Never touched by application code</strong> (D-37). Collation <code>utf8mb4_bin</code> because session ids are case-sensitive.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>3.12 Index rationale</h4>
+<p>Every index below exists for a named query. There are no speculative indexes — 80 rooms and roughly 800 bills a year is a data set where a wrong index costs more in confusion than a table scan costs in milliseconds.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Index</th><th>Serves</th></tr></thead>
+<tbody>
+<tr><td><code>uq_readings_room_period_utility (room_id, period, utility_type)</code></td><td>The D-12 UPSERT, and the correctness guarantee that a double submit is a non-event.</td></tr>
+<tr><td><code>ix_readings_lookup (room_id, utility_type, period)</code></td><td>The D-14 previous-reading query: an equality prefix plus a backwards range scan on <code>period</code>, <code>LIMIT 1</code>. The unique key has the wrong column order for this.</td></tr>
+<tr><td><code>ix_readings_period (period)</code></td><td>The Meter Reading page's per-period list and the จดแล้ว X/Y counter.</td></tr>
+<tr><td><code>uq_rates_utility_effective (utility_type, effective_from)</code></td><td>Both the same-day-tie constraint and the greatest-effective-date resolution scan.</td></tr>
+<tr><td><code>uq_bills_room_period (room_id, period)</code></td><td>The idempotency key of the entire generation run (D-18), and D-22's "is there a later bill for this room" probe.</td></tr>
+<tr><td><code>ix_bills_period_status (period, status)</code></td><td>Monthly Billing's list and the Dashboard money tiles for a selected period (D-41).</td></tr>
+<tr><td><code>ix_bills_status_due (status, due_date)</code></td><td>The daily job's two queries — <code>PRE_DUE</code> at <code>due_date − 2</code> and <code>OVERDUE</code> at <code>days_overdue IN (1,8,15)</code> — and the arrears report's ageing (D-33, D-42).</td></tr>
+<tr><td><code>ix_bills_tenant (tenant_id)</code></td><td>The departing tenant's history, which must survive the tenancy (D-08).</td></tr>
+<tr><td><code>uq_bill_items_bill_type (bill_id, item_type)</code></td><td>ENG-2, and the item UPSERT during recalculation.</td></tr>
+<tr><td><code>uq_payments_active_bill (active_bill_id)</code></td><td>One live payment per bill under concurrency (D-26).</td></tr>
+<tr><td><code>ix_payments_paid_at (paid_at)</code></td><td>The revenue chart and the monthly collection report.</td></tr>
+<tr><td><code>uq_notifications_dedupe (dedupe_key)</code></td><td>ENG-3 — one message type per bill per tenant per day.</td></tr>
+<tr><td><code>ix_notifications_drain (status, attempt_count, id)</code></td><td>The drain batch: <code>WHERE status='queued' OR (status='failed' AND attempt_count &lt; 3) ORDER BY id LIMIT 20</code>.</td></tr>
+<tr><td><code>ix_notifications_status_send_date (status, send_date)</code></td><td>Settings' ส่งข้อความเดือนนี้ {N}/500 counter, which counts only <code>status='sent'</code> (D-34).</td></tr>
+<tr><td><code>ix_audit_bill_created (bill_id, created_at)</code></td><td>Bill Detail's timeline in one query with no join (D-38).</td></tr>
+<tr><td><code>ix_rooms_floor_code (floor, room_code)</code></td><td>D-15's floor-grouped reading list and D-35's floor audience.</td></tr>
+<tr><td><code>ix_tenants_room_status (room_id, status)</code></td><td>The billable-room test and the per-room tenancy history.</td></tr>
+<tr><td><code>ix_tenants_line_user (line_user_id)</code></td><td>The webhook resolving an inbound <code>userId</code> to its tenancies — deliberately <strong>not</strong> unique (D-29: one account, two rooms).</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>4. Complete DDL — <code>db/schema.sql</code></h3>
+
+<p>Runnable as-is against an empty MySQL 8.4 schema; tables are declared in foreign-key order so the file executes top to bottom with no deferred constraints. This is the whole of schema management — there is no migration runner and no <code>schema_migrations</code> table (ADR A-3).</p>
+
+<pre><code>-- db/schema.sql — Juristic Platform, MySQL 8.4 (minimum 8.0.16 for CHECK)
+-- Rebuild: mysql -u root juristic &lt; db/schema.sql &amp;&amp; mysql -u root juristic &lt; db/seed.sql
+
+SET NAMES utf8mb4;
+SET time_zone = '+07:00';
+SET FOREIGN_KEY_CHECKS = 1;
+
+-- ---------------------------------------------------------------- users
+CREATE TABLE users (
+  id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  username      VARCHAR(50)  NOT NULL,
+  display_name  VARCHAR(100) NOT NULL,           -- prints as ผู้รับเงิน (D-27)
+  password_hash CHAR(60)     NOT NULL,           -- bcryptjs cost 10 (D-37)
+  role          ENUM('admin','staff')     NOT NULL,
+  status        ENUM('Active','Inactive') NOT NULL DEFAULT 'Active',
+  created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_users_username (username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ---------------------------------------------------------------- settings
+CREATE TABLE settings (
+  id                TINYINT UNSIGNED NOT NULL DEFAULT 1,
+  apartment_name    VARCHAR(120) NOT NULL,
+  address           VARCHAR(255) NOT NULL,
+  tax_id            VARCHAR(13)  NULL,           -- optional letterhead line (D-27)
+  phone             VARCHAR(20)  NOT NULL,
+  office_hours      VARCHAR(60)  NOT NULL,       -- a template placeholder (D-31)
+  due_day           TINYINT UNSIGNED NOT NULL DEFAULT 5,
+  line_test_mode    TINYINT(1)   NOT NULL DEFAULT 1,   -- ON everywhere (D-34)
+  line_test_user_id VARCHAR(64)  NULL,
+  updated_at        TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+                                 ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  CONSTRAINT ck_settings_singleton CHECK (id = 1),
+  CONSTRAINT ck_settings_due_day   CHECK (due_day BETWEEN 1 AND 28)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ---------------------------------------------------------------- counters
+CREATE TABLE counters (
+  name VARCHAR(20)     NOT NULL,
+  seq  BIGINT UNSIGNED NOT NULL,
+  PRIMARY KEY (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ---------------------------------------------------------------- line_followers
+CREATE TABLE line_followers (
+  line_user_id  VARCHAR(64)  NOT NULL,
+  display_name  VARCHAR(120) NULL,
+  followed_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  unfollowed_at TIMESTAMP    NULL,
+  PRIMARY KEY (line_user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ---------------------------------------------------------------- rooms
+CREATE TABLE rooms (
+  id                BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  room_code         VARCHAR(10)      NOT NULL,   -- '205', tolerates 'A-205' (D-04)
+  floor             TINYINT UNSIGNED NOT NULL,   -- entered, never parsed (D-47)
+  room_type         VARCHAR(20)      NULL,       -- display-only label
+  area_sqm          DECIMAL(6,2)     NOT NULL,
+  baseline_water    INT UNSIGNED     NOT NULL,   -- opening meter values (D-06)
+  baseline_electric INT UNSIGNED     NOT NULL,
+  baseline_date     DATE             NOT NULL,
+  status            ENUM('Occupied','Vacant') NOT NULL DEFAULT 'Vacant',
+  is_active         TINYINT(1)       NOT NULL DEFAULT 1,
+  created_at        TIMESTAMP        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_rooms_room_code (room_code),
+  KEY ix_rooms_floor_code (floor, room_code),
+  KEY ix_rooms_status (status, is_active),
+  CONSTRAINT ck_rooms_area CHECK (area_sqm &gt; 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ---------------------------------------------------------------- tenants
+CREATE TABLE tenants (
+  id                BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  room_id           BIGINT UNSIGNED NOT NULL,
+  full_name         VARCHAR(120) NOT NULL,
+  phone             CHAR(10)     NOT NULL,
+  move_in_date      DATE         NOT NULL,
+  move_out_date     DATE         NULL,
+  status            ENUM('Active','Inactive') NOT NULL DEFAULT 'Active',
+  line_user_id      VARCHAR(64)  NULL,           -- filled only by the webhook (D-29)
+  line_display_name VARCHAR(120) NULL,
+  line_linked_at    TIMESTAMP    NULL,
+  created_at        TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  -- ENG-1: at most one Active tenant per room, enforced by InnoDB (D-10)
+  active_room_id    BIGINT UNSIGNED
+        GENERATED ALWAYS AS (IF(status = 'Active', room_id, NULL)) STORED,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_tenants_active_room (active_room_id),
+  KEY ix_tenants_room_status (room_id, status),
+  KEY ix_tenants_line_user (line_user_id),
+  CONSTRAINT fk_tenants_room FOREIGN KEY (room_id) REFERENCES rooms(id),
+  CONSTRAINT ck_tenants_phone CHECK (phone REGEXP '^0[0-9]{9}$')
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ---------------------------------------------------------------- link_codes
+CREATE TABLE link_codes (
+  id         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  tenant_id  BIGINT UNSIGNED NOT NULL,
+  code       CHAR(6)   NOT NULL,
+  expires_at TIMESTAMP NOT NULL,                 -- issued_at + 7 days (D-29)
+  used_at    TIMESTAMP NULL,                     -- single use
+  created_by BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_link_codes_code (code),
+  KEY ix_link_codes_tenant (tenant_id),
+  CONSTRAINT fk_link_codes_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id),
+  CONSTRAINT fk_link_codes_user   FOREIGN KEY (created_by) REFERENCES users(id),
+  CONSTRAINT ck_link_codes_alphabet
+        CHECK (code REGEXP '^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$')
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ---------------------------------------------------------------- meter_readings
+CREATE TABLE meter_readings (
+  id               BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  room_id          BIGINT UNSIGNED NOT NULL,
+  period           CHAR(7)      NOT NULL,        -- 'YYYY-MM' (D-11)
+  utility_type     ENUM('water','electric') NOT NULL,
+  previous_reading INT UNSIGNED NOT NULL,        -- snapshot at save time (D-12)
+  current_reading  INT UNSIGNED NOT NULL,
+  units            INT UNSIGNED NOT NULL,
+  previous_period  VARCHAR(8)   NOT NULL,        -- 'baseline' or 'YYYY-MM' — NOT (7)
+  meter_replaced   TINYINT(1)   NOT NULL DEFAULT 0,
+  old_final        INT UNSIGNED NULL,
+  new_start        INT UNSIGNED NULL,
+  replace_reason   VARCHAR(200) NULL,
+  recorded_by      BIGINT UNSIGNED NOT NULL,
+  recorded_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+                                ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_readings_room_period_utility (room_id, period, utility_type),
+  KEY ix_readings_lookup (room_id, utility_type, period),
+  KEY ix_readings_period (period),
+  CONSTRAINT fk_readings_room FOREIGN KEY (room_id)     REFERENCES rooms(id),
+  CONSTRAINT fk_readings_user FOREIGN KEY (recorded_by) REFERENCES users(id),
+  CONSTRAINT ck_readings_period      CHECK (period REGEXP '^[0-9]{4}-(0[1-9]|1[0-2])$'),
+  CONSTRAINT ck_readings_prev_period CHECK (previous_period = 'baseline'
+        OR previous_period REGEXP '^[0-9]{4}-(0[1-9]|1[0-2])$'),
+  CONSTRAINT ck_readings_units CHECK (units &gt;= 0),          -- D-13, stated explicitly
+  CONSTRAINT ck_readings_replacement CHECK (
+        (meter_replaced = 0
+             AND old_final IS NULL AND new_start IS NULL AND replace_reason IS NULL
+             AND current_reading &gt;= previous_reading)
+     OR (meter_replaced = 1
+             AND old_final IS NOT NULL AND new_start IS NOT NULL
+             AND replace_reason IS NOT NULL
+             AND old_final &gt;= previous_reading
+             AND current_reading &gt;= new_start))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ---------------------------------------------------------------- rates
+CREATE TABLE rates (
+  id             BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  utility_type   ENUM('water','electric','common') NOT NULL,
+  unit_price     DECIMAL(8,2) NOT NULL,
+  effective_from DATE         NOT NULL,
+  created_by     BIGINT UNSIGNED NOT NULL,
+  created_at     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_rates_utility_effective (utility_type, effective_from),
+  CONSTRAINT fk_rates_user  FOREIGN KEY (created_by) REFERENCES users(id),
+  CONSTRAINT ck_rates_price CHECK (unit_price &gt;= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+-- Insert-only. No UPDATE, no DELETE, ever (D-17).
+
+-- ---------------------------------------------------------------- bills
+CREATE TABLE bills (
+  id                   BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  room_id              BIGINT UNSIGNED NOT NULL,
+  tenant_id            BIGINT UNSIGNED NOT NULL,
+  period               CHAR(7)      NOT NULL,
+  room_code_snapshot   VARCHAR(10)  NOT NULL,    -- D-09 reprint fidelity
+  room_area_sqm        DECIMAL(6,2) NOT NULL,
+  tenant_name_snapshot VARCHAR(120) NOT NULL,
+  total                DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  status               ENUM('Draft','Unpaid','Paid') NOT NULL DEFAULT 'Draft',
+  due_date             DATE         NOT NULL,
+  approved_by          BIGINT UNSIGNED NULL,
+  approved_at          TIMESTAMP    NULL,
+  created_at           TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at           TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+                                    ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_bills_room_period (room_id, period),   -- run idempotency (D-18)
+  KEY ix_bills_period_status (period, status),
+  KEY ix_bills_status_due (status, due_date),
+  KEY ix_bills_tenant (tenant_id),
+  CONSTRAINT fk_bills_room     FOREIGN KEY (room_id)     REFERENCES rooms(id),
+  CONSTRAINT fk_bills_tenant   FOREIGN KEY (tenant_id)   REFERENCES tenants(id),
+  CONSTRAINT fk_bills_approver FOREIGN KEY (approved_by) REFERENCES users(id),
+  CONSTRAINT ck_bills_period CHECK (period REGEXP '^[0-9]{4}-(0[1-9]|1[0-2])$'),
+  CONSTRAINT ck_bills_total  CHECK (total &gt;= 0),
+  CONSTRAINT ck_bills_approved CHECK (
+        (status =  'Draft' AND approved_at IS NULL)
+     OR (status &lt;&gt; 'Draft' AND approved_at IS NOT NULL))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ---------------------------------------------------------------- bill_items
+CREATE TABLE bill_items (
+  id               BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  bill_id          BIGINT UNSIGNED NOT NULL,
+  item_type        ENUM('water','electric','common') NOT NULL,
+  quantity         DECIMAL(10,2) NOT NULL,       -- units, or ตร.ม. for 'common'
+  unit_price       DECIMAL(8,2)  NOT NULL,       -- rate snapshot (D-17)
+  amount           DECIMAL(10,2) NOT NULL,       -- ROUND(quantity * unit_price, 2)
+  previous_reading INT UNSIGNED  NULL,
+  current_reading  INT UNSIGNED  NULL,
+  previous_period  VARCHAR(8)    NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_bill_items_bill_type (bill_id, item_type),   -- ENG-2
+  CONSTRAINT fk_bill_items_bill FOREIGN KEY (bill_id)
+        REFERENCES bills(id) ON DELETE CASCADE,
+  CONSTRAINT ck_bill_items_quantity CHECK (quantity &gt;= 0),
+  CONSTRAINT ck_bill_items_amount   CHECK (amount   &gt;= 0),
+  CONSTRAINT ck_bill_items_meter CHECK (
+        (item_type =  'common'
+             AND previous_reading IS NULL AND current_reading IS NULL
+             AND previous_period IS NULL)
+     OR (item_type &lt;&gt; 'common'
+             AND previous_reading IS NOT NULL AND current_reading IS NOT NULL
+             AND previous_period IS NOT NULL))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ---------------------------------------------------------------- payments
+CREATE TABLE payments (
+  id                  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  bill_id             BIGINT UNSIGNED NOT NULL,
+  amount              DECIMAL(10,2) NOT NULL,    -- always = bills.total (D-24)
+  paid_at             TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  received_by_user_id BIGINT UNSIGNED NOT NULL,
+  method              ENUM('cash') NOT NULL DEFAULT 'cash',
+  voided_at           TIMESTAMP NULL,
+  voided_by           BIGINT UNSIGNED NULL,
+  void_reason         VARCHAR(255) NULL,
+  -- D-26, BINDING: one live payment per bill; voided rows are all NULL here
+  active_bill_id      BIGINT UNSIGNED
+        GENERATED ALWAYS AS (IF(voided_at IS NULL, bill_id, NULL)) STORED,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_payments_active_bill (active_bill_id),
+  KEY ix_payments_bill (bill_id),
+  KEY ix_payments_paid_at (paid_at),
+  CONSTRAINT fk_payments_bill     FOREIGN KEY (bill_id) REFERENCES bills(id),
+  CONSTRAINT fk_payments_receiver FOREIGN KEY (received_by_user_id) REFERENCES users(id),
+  CONSTRAINT fk_payments_voider   FOREIGN KEY (voided_by) REFERENCES users(id),
+  CONSTRAINT ck_payments_amount CHECK (amount &gt; 0),
+  CONSTRAINT ck_payments_void CHECK (
+        (voided_at IS NULL     AND voided_by IS NULL     AND void_reason IS NULL)
+     OR (voided_at IS NOT NULL AND voided_by IS NOT NULL
+             AND CHAR_LENGTH(void_reason) &gt;= 10))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ---------------------------------------------------------------- receipts
+CREATE TABLE receipts (
+  id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  payment_id  BIGINT UNSIGNED NOT NULL,
+  receipt_no  VARCHAR(20)  NOT NULL,             -- REC-YYYYMM-NNNNNN (D-27)
+  issued_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  print_count INT UNSIGNED NOT NULL DEFAULT 0,   -- &gt;= 1 renders สำเนา
+  voided_at   TIMESTAMP    NULL,                 -- keeps its number (D-25)
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_receipts_payment (payment_id),
+  UNIQUE KEY uq_receipts_no (receipt_no),
+  CONSTRAINT fk_receipts_payment FOREIGN KEY (payment_id) REFERENCES payments(id),
+  CONSTRAINT ck_receipts_no CHECK (receipt_no REGEXP '^REC-[0-9]{6}-[0-9]{6}$')
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ---------------------------------------------------------------- announcements
+CREATE TABLE announcements (
+  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  title           VARCHAR(60)  NOT NULL,
+  body            VARCHAR(400) NOT NULL,
+  audience        ENUM('all','floors') NOT NULL DEFAULT 'all',
+  audience_floors VARCHAR(50)  NULL,             -- '2,3,4' when audience='floors'
+  created_by      BIGINT UNSIGNED NOT NULL,
+  sent_at         TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY ix_announcements_sent (sent_at),
+  CONSTRAINT fk_announcements_user FOREIGN KEY (created_by) REFERENCES users(id),
+  CONSTRAINT ck_announcements_floors CHECK (
+        (audience = 'all'    AND audience_floors IS NULL)
+     OR (audience = 'floors' AND audience_floors REGEXP '^[0-9]+(,[0-9]+)*$'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ---------------------------------------------------------------- notifications
+CREATE TABLE notifications (
+  id                BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  type              ENUM('BILL','BILL_CORRECTED','PRE_DUE','OVERDUE',
+                         'PAID','ANNOUNCEMENT') NOT NULL,
+  bill_id           BIGINT UNSIGNED NULL,
+  announcement_id   BIGINT UNSIGNED NULL,
+  tenant_id         BIGINT UNSIGNED NOT NULL,    -- the INTENDED recipient
+  recipient_user_id VARCHAR(64) NULL,
+  status            ENUM('queued','sent','failed','skipped_no_line')
+                        NOT NULL DEFAULT 'queued',
+  attempt_count     INT UNSIGNED NOT NULL DEFAULT 0,   -- auto retries stop at 3
+  retry_key         CHAR(36)     NOT NULL,            -- X-Line-Retry-Key (UUID)
+  last_error        VARCHAR(255) NULL,
+  http_status       SMALLINT UNSIGNED NULL,           -- explicit 400 =&gt; unbind
+  last_attempt_at   TIMESTAMP    NULL,
+  send_date         DATE         NOT NULL,
+  created_at        TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  -- ENG-3: the enforceable form of D-30's unique key
+  dedupe_key        VARCHAR(80) GENERATED ALWAYS AS (
+        CONCAT_WS(':', type, IFNULL(bill_id, 0), IFNULL(announcement_id, 0),
+                  tenant_id, send_date)) STORED,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_notifications_dedupe (dedupe_key),
+  KEY ix_notifications_drain (status, attempt_count, id),
+  KEY ix_notifications_bill (bill_id),
+  KEY ix_notifications_status_send_date (status, send_date),
+  CONSTRAINT fk_notifications_bill FOREIGN KEY (bill_id) REFERENCES bills(id),
+  CONSTRAINT fk_notifications_announcement FOREIGN KEY (announcement_id)
+        REFERENCES announcements(id),
+  CONSTRAINT fk_notifications_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id),
+  CONSTRAINT ck_notifications_target CHECK (
+        (type =  'ANNOUNCEMENT' AND announcement_id IS NOT NULL AND bill_id IS NULL)
+     OR (type &lt;&gt; 'ANNOUNCEMENT' AND bill_id IS NOT NULL AND announcement_id IS NULL))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ---------------------------------------------------------------- audit_log
+CREATE TABLE audit_log (
+  id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  entity_type   VARCHAR(30)     NOT NULL,        -- 'bill','payment','room',...
+  entity_id     BIGINT UNSIGNED NOT NULL,        -- polymorphic: no FK by design
+  bill_id       BIGINT UNSIGNED NULL,            -- set on every bill-attributable row
+  action        ENUM('BILL_APPROVE','BILL_REVERT','PAYMENT_CONFIRM','PAYMENT_VOID',
+                     'RATE_CHANGE','ROOM_CREATE','ROOM_EDIT','ROOM_AREA_CHANGE',
+                     'ROOM_DEACTIVATE','READING_CREATE','READING_EDIT',
+                     'METER_REPLACEMENT','TENANT_LINE_LINK','TENANT_LINE_UNLINK',
+                     'TENANCY_END','ANNOUNCEMENT_SEND') NOT NULL,
+  actor_user_id BIGINT UNSIGNED NOT NULL,
+  before_json   JSON NULL,
+  after_json    JSON NULL,
+  reason        VARCHAR(255) NULL,               -- required on revert/void/replace
+  created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY ix_audit_bill_created (bill_id, created_at),
+  KEY ix_audit_entity (entity_type, entity_id, created_at),
+  CONSTRAINT fk_audit_user FOREIGN KEY (actor_user_id) REFERENCES users(id),
+  CONSTRAINT fk_audit_bill FOREIGN KEY (bill_id)       REFERENCES bills(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ---------------------------------------------------------------- job_runs
+CREATE TABLE job_runs (
+  id           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  job_name     ENUM('daily','daily_manual') NOT NULL,
+  run_date     DATE      NOT NULL,
+  started_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  finished_at  TIMESTAMP NULL,
+  summary_json JSON      NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_job_runs_name_date (job_name, run_date)   -- D-32
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ---------------------------------------------------------------- sessions
+-- Schema owned by express-mysql-session; never touched by application code (D-37).
+CREATE TABLE sessions (
+  session_id VARCHAR(128) COLLATE utf8mb4_bin NOT NULL,
+  expires    INT UNSIGNED NOT NULL,
+  data       MEDIUMTEXT   COLLATE utf8mb4_bin,
+  PRIMARY KEY (session_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+</code></pre>
+
+<div class="callout ok">
+  <div class="title">What this schema makes impossible without a single line of JavaScript</div>
+  <ul>
+    <li>Two Active tenants in one room · two bills for one room and period · a fourth line item on a bill</li>
+    <li>Two live payments on one bill · two receipts for one payment · two receipts sharing a number</li>
+    <li>A negative unit count · a current reading below the previous one without a declared meter replacement</li>
+    <li>The same message type sent to the same tenant about the same bill twice on the same day</li>
+    <li>The daily job running twice on one date · two rate rows for one utility on one effective date</li>
+    <li>A second apartment profile · a due day of 31 · an approved bill with no <code>approved_at</code></li>
+  </ul>
+</div>
+
+<h3>5. Bill state machine</h3>
+
+<p>Three stored statuses, four displayed. <span class="badge draft">Draft ฉบับร่าง</span> <span class="badge unpaid">Unpaid รอชำระ</span> <span class="badge paid">Paid ชำระแล้ว</span> <span class="badge overdue">Overdue เกินกำหนด</span> — the fourth is derived and is never written to a column.</p>
+
+<div class="diagram">
+<pre class="mermaid">
+stateDiagram-v2
+  [*] --> Draft: generation run creates the bill, D-18
+  Draft --> Draft: reading saved, bill recalculated in place, D-12
+  Draft --> Unpaid: อนุมัติและส่งบิล — Admin only, freezes the bill, D-19 D-20
+  Unpaid --> Paid: ยืนยันรับเงินสด — Admin only, issues the receipt, D-24 D-26
+  Unpaid --> Draft: ตีกลับเป็นฉบับร่าง — Admin only, reason, newest bill only, D-22
+  Paid --> Unpaid: ยกเลิกการชำระเงิน — Admin only, cash returned first, D-25
+  Paid --> [*]
+  note right of Unpaid
+    Overdue is a DISPLAY value.
+    Unpaid plus due_date before today
+    renders Overdue. Nothing writes it,
+    no job produces it, it adds no charge.
+  end note
+</pre>
+<div class="caption">Two reverse edges, both Admin-only, both requiring a Thai reason of at least 10 characters, both audited inside the transaction that makes the change.</div>
+</div>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Transition</th><th>Trigger and actor</th><th>Guard</th><th>Database effect</th><th>Side effects, after commit</th></tr></thead>
+<tbody>
+<tr><td>— → <span class="badge draft">Draft</span></td><td>ส่งให้นิติตรวจสอบ on Meter Reading, or สร้าง/อัปเดตบิลฉบับร่าง on Monthly Billing. Staff or Admin (D-18).</td><td><code>rooms.status='Occupied'</code> and exactly one Active tenant (D-07); both readings present; <code>uq_bills_room_period</code>.</td><td>Insert bill + <strong>exactly three</strong> <code>bill_items</code>; <code>total = SUM(amount)</code>; <code>due_date</code> = due day of the period month.</td><td>None. Nothing is sent for a Draft.</td></tr>
+<tr><td><span class="badge draft">Draft</span> → <span class="badge draft">Draft</span></td><td>A reading is saved or corrected. Staff or Admin (D-12).</td><td>Bill is <code>Draft</code> or absent — otherwise the reading is read-only.</td><td>UPSERT the three items, recompute <code>total</code>, bump <code>updated_at</code>. Rate stays the period's rate (D-17).</td><td>None.</td></tr>
+<tr><td><span class="badge draft">Draft</span> → <span class="badge unpaid">Unpaid</span></td><td>อนุมัติและส่งบิล. <strong>Admin only</strong> (D-19, D-36).</td><td><code>UPDATE … WHERE id = ? AND status = 'Draft'</code>; 0 rows affected ⇒ 409.</td><td>Freeze; set <code>approved_by</code>, <code>approved_at</code>; recompute and freeze <code>due_date</code> = <code>MAX(due day of period month, approval + 3 days)</code>; write <code>BILL_APPROVE</code> audit row; queue one <code>notifications</code> row per bill — all in one transaction.</td><td><code>POST /api/notifications/drain</code> pushes the <strong>BILL</strong> message, at most 20 per call. A LINE outage cannot roll back the approval (D-30).</td></tr>
+<tr><td><span class="badge unpaid">Unpaid</span> → <span class="badge paid">Paid</span></td><td>ยืนยันรับเงินสด on Payment. <strong>Admin only</strong> (D-24).</td><td><code>UPDATE bills SET status='Paid' WHERE id = ? AND status = 'Unpaid'</code>; 0 rows ⇒ 409 <em>บิลนี้ถูกชำระไปแล้ว</em>. Then <code>uq_payments_active_bill</code> and <code>uq_receipts_payment</code>.</td><td>Insert <code>payments</code> (amount = <code>bills.total</code>, method <code>cash</code>); allocate the receipt number from <code>counters</code>; insert <code>receipts</code>; write <code>PAYMENT_CONFIRM</code> audit row.</td><td>Queue and push the <strong>PAID</strong> message carrying <code>receipt_no</code>. Receipt available at A5 print.</td></tr>
+<tr><td><span class="badge unpaid">Unpaid</span> → <span class="badge draft">Draft</span></td><td>ตีกลับเป็นฉบับร่าง on Bill Detail. <strong>Admin only</strong> (D-22).</td><td>Reason ≥ 10 characters; refused when a later bill exists: <code>SELECT 1 FROM bills WHERE room_id = ? AND period &gt; ? LIMIT 1</code>.</td><td><code>status='Draft'</code>, <code>approved_by</code> and <code>approved_at</code> cleared (required by <code>ck_bills_approved</code>); readings unfrozen; <code>BILL_REVERT</code> audit row with before/after JSON.</td><td>None on the revert itself. Re-approval sends <strong>BILL_CORRECTED</strong>, whose own <code>dedupe_key</code> lets it go out on the same day as the original BILL.</td></tr>
+<tr><td><span class="badge paid">Paid</span> → <span class="badge unpaid">Unpaid</span></td><td>ยกเลิกการชำระเงิน. <strong>Admin only</strong>, cash returned across the counter first (D-25).</td><td>Reason ≥ 10 characters (<code>ck_payments_void</code>).</td><td>Payment marked voided — <code>active_bill_id</code> becomes NULL, freeing the bill for a fresh payment; receipt marked voided but <strong>keeps its number</strong>; <code>PAYMENT_VOID</code> audit row.</td><td>No LINE message — the office explains in person. The bill is thereafter excluded from automatic <code>PRE_DUE</code>/<code>OVERDUE</code> and shows ระงับการแจ้งเตือนอัตโนมัติ (D-25, D-33).</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>The display status is one expression in SQL and one function in JavaScript, and exists nowhere else (D-21):</p>
+<pre><code>CASE WHEN b.status = 'Unpaid' AND b.due_date &lt; CURDATE()
+     THEN 'Overdue' ELSE b.status END AS display_status</code></pre>
+<p>Aggregations that deliberately mean "approved" (D-41's money tiles reading <code>status IN ('Unpaid','Paid')</code>) or "not yet settled" (D-42's arrears ageing) read the stored column directly. That is not a violation: D-21 is a display rule.</p>
+
+<h3>6. Rules, with worked examples</h3>
+
+<h4>6.1 Previous-reading resolution</h4>
+<p>One query, no special cases (D-06, D-14):</p>
+<pre><code>SELECT current_reading, period
+  FROM meter_readings
+ WHERE room_id = ? AND utility_type = ? AND period &lt; ?   -- strictly earlier
+ ORDER BY period DESC
+ LIMIT 1;</code></pre>
+<p>A row ⇒ <code>previous_reading</code> / <code>previous_period</code>. No row ⇒ the room's <code>baseline_water</code> / <code>baseline_electric</code> with <code>previous_period = 'baseline'</code>.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Case</th><th>Input</th><th>Resolves to</th><th>Units</th></tr></thead>
+<tbody>
+<tr><td>First ever reading</td><td>Room 205 water, period <code>2026-08</code>; no earlier row; <code>baseline_water = 1,192</code></td><td><code>previous_reading = 1,192</code>, <code>previous_period = 'baseline'</code></td><td><code>1,250 − 1,192 = 58</code></td></tr>
+<tr><td><strong>PRD §28 demo</strong></td><td>Room 205 water, period <code>2026-09</code>; <code>2026-08</code> row holds 1,250</td><td><code>previous_reading = 1,250</code>, <code>previous_period = '2026-08'</code></td><td><code>1,260 − 1,250 = 10</code></td></tr>
+<tr><td><strong>PRD §28 demo</strong></td><td>Room 205 electric, period <code>2026-09</code>; <code>2026-08</code> row holds 5,280</td><td><code>previous_reading = 5,280</code>, <code>previous_period = '2026-08'</code></td><td><code>5,350 − 5,280 = 70</code></td></tr>
+<tr><td>Skipped month</td><td>Period <code>2026-11</code>; rows exist for <code>2026-09</code> only</td><td><code>previous_period = '2026-09'</code>; Bill Detail and the BILL message add <em>ครอบคลุมการใช้ตั้งแต่รอบ กันยายน 2026</em></td><td>Two months' consumption on one bill; never split, never back-dated (D-14)</td></tr>
+<tr><td>Late entry</td><td><code>2026-08</code> typed <em>after</em> <code>2026-09</code> was saved</td><td>Ordering is by <code>period</code>, never by <code>recorded_at</code> — <code>2026-09</code> still resolves to <code>2026-08</code></td><td>Identical to a punctual entry</td></tr>
+<tr><td>Double submit</td><td>The <code>2026-09</code> save posted twice</td><td>The strict <code>&lt;</code> excludes the row being written, so the UPSERT cannot take itself as its own previous</td><td>Still 10 — a non-event (D-12)</td></tr>
+<tr><td>Re-let room</td><td>New tenant's first period after a tenancy ended</td><td>The departing tenant's final reading is simply the most recent earlier row</td><td>No baseline edit, no re-entry, no double billing (D-08)</td></tr>
+<tr><td>Meter replaced</td><td><code>previous_reading = 1,250</code>, <code>old_final = 1,268</code>, <code>new_start = 0</code>, <code>current_reading = 12</code></td><td>The single branch in the path (D-13)</td><td><code>(1,268 − 1,250) + (12 − 0) = 30</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>Ties are impossible under <code>uq_readings_room_period_utility</code>; gaps are legal and never block a run; readings taken while the room was vacant count. Because <code>previous_reading</code> is a snapshot, editing an old month would leave the next month's snapshot stale — which is exactly why D-22 restricts reverting to a room's <strong>most recent</strong> bill, enforced by a query rather than by a disabled button.</p>
+
+<h4>6.2 Rate versioning and resolution</h4>
+<p><code>rates</code> is append-only and effective-dated. Resolution is keyed to the <strong>period</strong>, not to the moment Generate was pressed (D-17):</p>
+<pre><code>SELECT unit_price
+  FROM rates
+ WHERE utility_type = ?
+   AND effective_from &lt;= CONCAT(?, '-01')   -- first day of the bill's period month
+ ORDER BY effective_from DESC
+ LIMIT 1;</code></pre>
+<p>Worked example. Suppose <code>rates</code> holds:</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th><code>utility_type</code></th><th><code>unit_price</code></th><th><code>effective_from</code></th><th>Applies to period 2026-09?</th></tr></thead>
+<tbody>
+<tr><td><span class="badge water">water</span></td><td>18.00</td><td>2025-10-01</td><td class="num"><strong>Yes</strong> — greatest <code>effective_from ≤ 2026-09-01</code></td></tr>
+<tr><td><span class="badge water">water</span></td><td>19.50</td><td>2026-09-15</td><td>No — later than 2026-09-01, so it first applies to period <code>2026-10</code></td></tr>
+<tr><td><span class="badge elec">electric</span></td><td>8.00</td><td>2025-10-01</td><td class="num"><strong>Yes</strong></td></tr>
+<tr><td><span class="badge fee">common</span></td><td>35.00</td><td>2025-10-01</td><td class="num"><strong>Yes</strong></td></tr>
+</tbody>
+</table>
+</div>
+<p>Room 205's September bill therefore carries 18.00 / 8.00 / 35.00 and totals <strong>1,790.00</strong> however often generation re-runs and however late the last three rooms are read. A rate saved today never disturbs an approved bill, because the resolved price is <em>copied onto</em> <code>bill_items.unit_price</code> and every screen, print view and LINE message renders from that snapshot. If Draft bills exist for a period when a rate back-dated into it is saved, Settings shows <em>มีบิลฉบับร่าง {N} ใบในรอบนี้ ยังใช้อัตราเดิมอยู่</em> with a คำนวณบิลฉบับร่างใหม่ button that recalculates <strong>Draft bills only</strong>.</p>
+
+<h4>6.3 Money: DECIMAL end to end, arithmetic in SQL</h4>
+<div class="formula">amount = ROUND(quantity × unit_price, 2)   ·   total = SUM(already-rounded amounts)   ·   no second rounding, no satang suppression</div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Line</th><th><code>quantity</code></th><th><code>unit_price</code></th><th><code>amount</code></th></tr></thead>
+<tbody>
+<tr><td><span class="badge water">water</span> ค่าน้ำ</td><td class="num">10.00</td><td class="num">18.00</td><td class="num">180.00</td></tr>
+<tr><td><span class="badge elec">electric</span> ค่าไฟ</td><td class="num">70.00</td><td class="num">8.00</td><td class="num">560.00</td></tr>
+<tr><td><span class="badge fee">common</span> ค่าส่วนกลาง</td><td class="num">30.00</td><td class="num">35.00</td><td class="num">1,050.00</td></tr>
+<tr><th colspan="3">ยอดรวม <code>bills.total</code></th><th class="num">1,790.00</th></tr>
+</tbody>
+</table>
+</div>
+<p>JavaScript never multiplies, sums or rounds money. The pool sets <code>decimalNumbers</code> off, so <code>mysql2</code> returns <code>DECIMAL</code> as a <em>string</em> and no amount can pass through a float — <code>lib/money.js</code> contains formatting and nothing else. Consequences the tester asserts: the printed receipt always equals the sum of its printed lines, and 1789.9999999 cannot occur. Rendering follows D-03: <code>1,790.00</code> in tables, on Bill Detail and on the receipt; <code>1,790 บาท</code> in LINE messages and sentence text; <code>฿1,790</code> only in this documentation set and in static mockups.</p>
+
+<h4>6.4 Receipt numbers: <code>REC-YYYYMM-NNNNNN</code></h4>
+<div class="formula">receipt_no = 'REC-' + &lt;payment month YYYYMM&gt; + '-' + String(seq).padStart(6, '0')  →  REC-202609-000852</div>
+<p>Allocated inside the payment transaction, after the conditional status update succeeds (D-26, D-27):</p>
+<pre><code>INSERT INTO counters (name, seq) VALUES ('receipt', 1)
+  ON DUPLICATE KEY UPDATE seq = LAST_INSERT_ID(seq + 1);
+SELECT LAST_INSERT_ID();          -- connection-local, so two cashiers cannot collide</code></pre>
+
+<div class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant A as Admin at the counter
+  participant S as Payment service
+  participant DB as MySQL
+  participant L as LINE Messaging API
+  A->>S: ยืนยันรับเงินสด for bill 205, period 2026-09
+  S->>DB: BEGIN
+  S->>DB: UPDATE bills SET status Paid WHERE id and status Unpaid
+  alt 0 rows affected
+    S->>DB: ROLLBACK
+    S-->>A: 409 บิลนี้ถูกชำระไปแล้ว
+  else 1 row affected
+    S->>DB: INSERT payments, amount equals bills.total
+    S->>DB: UPSERT counters seq, read back LAST_INSERT_ID
+    S->>DB: INSERT receipts REC-202609-000852
+    S->>DB: INSERT audit_log PAYMENT_CONFIRM
+    S->>DB: UPSERT notifications PAID, status queued
+    S->>DB: COMMIT
+    S->>L: push PAID with the row retry key
+    S-->>A: receipt view, ready to print A5
+  end
+</pre>
+<div class="caption">The number is allocated only on the branch that actually took the money, and the LINE push happens strictly after the commit — a LINE timeout can never roll back a payment (D-30).</div>
+</div>
+
+<p>One continuous counter that <strong>never resets</strong>; the <code>YYYYMM</code> is a label, not a scope — a monthly reset could not produce the PRD's own 000852 in a 67-room building. The sequence is <strong>unique and monotonic but not gapless</strong>: a rolled-back transaction consumes a number, and the seed starts at an offset. No document, rationale or test may claim gaplessness. The two assertions are that no two receipts share a number (<code>uq_receipts_no</code>) and that a later payment never receives a lower one.</p>
+
+<h4>6.5 UTC storage, Asia/Bangkok display</h4>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Kind</th><th>Type</th><th>Columns</th><th>Behaviour</th></tr></thead>
+<tbody>
+<tr><td>Instant</td><td><code>TIMESTAMP</code></td><td><code>created_at</code>, <code>paid_at</code>, <code>recorded_at</code>, <code>approved_at</code>, <code>issued_at</code>, <code>last_attempt_at</code>, <code>line_linked_at</code>, <code>expires_at</code>, <code>sent_at</code>, <code>started_at</code>, <code>voided_at</code></td><td>MySQL stores it internally as <strong>UTC</strong> and converts on read using the session time zone. Every connection runs <code>SET time_zone = '+07:00'</code>, so storage is UTC and every read is already Asia/Bangkok wall time — both halves of the rule with zero conversion code (ADR A-5).</td></tr>
+<tr><td>Business date</td><td><code>DATE</code></td><td><code>due_date</code>, <code>baseline_date</code>, <code>move_in_date</code>, <code>move_out_date</code>, <code>effective_from</code>, <code>send_date</code>, <code>run_date</code></td><td>Carries no timezone at all. <code>dateStrings: true</code> on the pool delivers <code>'2026-09-05'</code> as a string, so a JS <code>Date</code> constructor cannot shift it across a day boundary and move a bill into Overdue a day early.</td></tr>
+</tbody>
+</table>
+</div>
+<p>Worked example. The demo payment is committed at 14:30 Asia/Bangkok on 3 Sep 2026. <code>payments.paid_at</code> holds <code>2026-09-03 07:30:00</code> UTC on disk and returns <code>2026-09-03 14:30:00</code> to the application. <code>lib/datetime.js</code> renders it with <code>Intl.DateTimeFormat('th-TH-u-ca-gregory-nu-latn', { timeZone: 'Asia/Bangkok' })</code>: <em>3 ก.ย. 2026</em> in lists, <em>3 กันยายน 2026</em> on the receipt and in LINE, <em>14:30 น.</em> for the time. The <code>-u-ca-gregory</code> keyword is load-bearing — plain <code>th-TH</code> renders 2569 Buddhist Era, which D-03 forbids. <strong>No UTC value is ever shown to a user and no date arithmetic happens in the browser.</strong></p>
+
+<h4>6.6 History, soft delete and immutability</h4>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Table</th><th>Retirement mechanism</th><th>Why it is never a <code>DELETE</code></th></tr></thead>
+<tbody>
+<tr><td><code>users</code></td><td><code>status='Inactive'</code></td><td><code>payments.received_by_user_id</code>, <code>meter_readings.recorded_by</code> and <code>rates.created_by</code> reference it; an Inactive user cannot log in and keeps every historical attribution (D-46).</td></tr>
+<tr><td><code>rooms</code></td><td><code>is_active=0</code> (ปิดใช้งานห้อง)</td><td>Deleting a room referenced by a bill breaks D-09's reprint guarantee. A room with no bills at all may be deleted outright (D-47).</td></tr>
+<tr><td><code>tenants</code></td><td><code>status='Inactive'</code> + <code>move_out_date</code>, LINE binding cleared</td><td>Bills, payments and receipts reference it, and the outgoing tenant stays visible in the room's 12-month history (D-08, D-10).</td></tr>
+<tr><td><code>rates</code></td><td>None — a new row supersedes</td><td>Insert-only history is what makes a reprinted receipt and the yearly chart truthful (D-17).</td></tr>
+<tr><td><code>bills</code></td><td>None — status only</td><td>There is no Cancelled or Void bill status; a wrong bill is reverted, corrected and re-approved (D-22).</td></tr>
+<tr><td><code>payments</code></td><td><code>voided_at</code> / <code>voided_by</code> / <code>void_reason</code></td><td>The generated <code>active_bill_id</code> goes NULL, freeing the bill for a fresh payment while the void stays on the record (D-25, D-26).</td></tr>
+<tr><td><code>receipts</code></td><td><code>voided_at</code>, stamped ยกเลิก in red on every render</td><td>Keeping the number taken is precisely what voiding buys; deleting it would invite reuse (D-25, D-27).</td></tr>
+<tr><td><code>announcements</code></td><td>None — immutable once sent</td><td>There is no edit endpoint and no recall; the message has already left the building (D-35).</td></tr>
+<tr><td><code>notifications</code></td><td>None — UPSERTed in place</td><td>Every attempt rewrites <code>status</code> and increments <code>attempt_count</code> on the same row, so per-bill delivery state and the monthly quota are one query (D-30, D-34).</td></tr>
+<tr><td><code>audit_log</code></td><td>None — append-only</td><td>The whole point. No update path, no delete path, no global audit browser in v1 (D-38).</td></tr>
+<tr><td><code>sessions</code></td><td><code>expires</code> sweep by the library</td><td>The one table where rows genuinely disappear, and the one table application code never touches (D-37).</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Versioning that deliberately does not exist:</strong> no room-area history table, no bill version table, no reading revision table, no periods table. Reproducibility comes from the three snapshot columns on <code>bills</code> plus the quantity/price snapshot on <code>bill_items</code> — the billed data on a reprint is identical forever, while the page is not, because the letterhead renders live from Settings and a reprint carries the สำเนา mark (D-09, D-27). No test asserts byte-identity.</p>
+
+<h3>7. Seed data for the PRD §28 demo scenario</h3>
+
+<div class="callout warn">
+  <div class="title">Fixed dates here, relative dates in the shipped seed</div>
+  <p>The statements below use the PRD's literal calendar — period <code>2026-09</code>, due 5 Sep 2026, paid 3 Sep 2026, <code>REC-202609-000852</code> — because a document has to show real values. <strong>The shipped <code>db/seed.sql</code> computes every date from <code>CURDATE()</code></strong> (D-44): the current period is <code>DATE_FORMAT(CURDATE(),'%Y-%m')</code>, room 205's reading round is dated the 1st of the current month, and its bill is left <span class="badge draft">Draft</span> so the demo approves it live. The live demo reproduces the <strong>arithmetic</strong> — 10 หน่วย, 70 หน่วย, 180, 560, 1,050, <strong>1,790 บาท</strong>, room 205 at 30 ตร.ม. — never the calendar. The full seed also carries 80 rooms across 5 floors, 67 Occupied and 13 Vacant, 67 tenants of which exactly 54 are LINE-linked, and 12 periods of paid history; only room 205's slice is shown here.</p>
+</div>
+
+<pre><code>-- db/seed.sql (excerpt) — the PRD §28 demo slice. Explicit ids for readability.
+
+-- 1 · Settings: one property, due day 5, LINE test mode ON (D-04, D-20, D-34)
+INSERT INTO settings
+  (id, apartment_name, address, tax_id, phone, office_hours,
+   due_day, line_test_mode, line_test_user_id)
+VALUES
+  (1, 'ศุภาลัย เรสซิเดนซ์',
+      '99/1 ถนนพหลโยธิน แขวงจตุจักร เขตจตุจักร กรุงเทพมหานคร 10900',
+      NULL, '021234567', 'จันทร์-ศุกร์ 09:00-17:00 น.', 5, 1, NULL);
+
+-- 2 · Users. The admin hash is generated at seed time from SEED_ADMIN_PASSWORD
+--     (D-37); the 60-character literal below is a placeholder of the right shape.
+INSERT INTO users (id, username, display_name, password_hash, role, status) VALUES
+  (1, 'admin', 'นิติบุคคล',   '$2a$10$0000000000000000000000000000000000000000000000000000', 'admin', 'Active'),
+  (2, 'staff', 'เจ้าหน้าที่', '$2a$10$1111111111111111111111111111111111111111111111111111', 'staff', 'Active');
+
+-- 3 · Rates, effective from the first day of the earliest history period (D-17)
+INSERT INTO rates (utility_type, unit_price, effective_from, created_by) VALUES
+  ('water',    18.00, '2025-10-01', 1),
+  ('electric',  8.00, '2025-10-01', 1),
+  ('common',   35.00, '2025-10-01', 1);
+
+-- 4 · Room 205: 30.00 ตร.ม., floor 2, Occupied, with its opening meter values (D-06)
+INSERT INTO rooms
+  (id, room_code, floor, room_type, area_sqm,
+   baseline_water, baseline_electric, baseline_date, status, is_active)
+VALUES
+  (205, '205', 2, 'สตูดิโอ', 30.00, 1192, 5215, '2025-09-30', 'Occupied', 1);
+
+-- 5 · Its Active tenant, LINE-linked with a Useed placeholder id that is never a
+--     valid push target and that D-30's auto-unbind skips (D-44)
+INSERT INTO tenants
+  (id, room_id, full_name, phone, move_in_date, status,
+   line_user_id, line_display_name, line_linked_at)
+VALUES
+  (2050, 205, 'สมชาย ใจดี', '0812345678', '2025-10-01', 'Active',
+   'Useed0000000000000000000000002050', 'สมชาย', '2026-08-15 10:12:00');
+
+-- 6 · Previous readings. August resolves off the room baseline; September resolves
+--     off August. Both previous_period values are what D-14 would compute.
+INSERT INTO meter_readings
+  (room_id, period, utility_type,
+   previous_reading, current_reading, units, previous_period, recorded_by)
+VALUES
+  (205, '2026-08', 'water',    1192, 1250,  58, 'baseline', 2),
+  (205, '2026-08', 'electric', 5215, 5280,  65, 'baseline', 2),
+  (205, '2026-09', 'water',    1250, 1260,  10, '2026-08',  2),
+  (205, '2026-09', 'electric', 5280, 5350,  70, '2026-08',  2);
+
+-- 7 · Receipt counter seeded to 851, so the demo payment issues 000852 (D-27, D-44)
+INSERT INTO counters (name, seq) VALUES ('receipt', 851);</code></pre>
+
+<p>The September bill is <em>not</em> seeded as a row — it is produced by the generation run the demo triggers, which is what makes the demo honest. These are the exact statements <code>services/billing.js</code> executes for one room, and running them against the seed above yields 1,790.00:</p>
+
+<pre><code>-- 8 · Generation for room 205, period 2026-09 (D-18). One transaction per room.
+SET @period = '2026-09';
+SET @p1     = CONCAT(@period, '-01');    -- first day of the period month (D-17)
+SET @due    = 5;                         -- settings.due_day
+
+INSERT INTO bills
+  (room_id, tenant_id, period, room_code_snapshot, room_area_sqm,
+   tenant_name_snapshot, total, status, due_date)
+SELECT r.id, t.id, @period, r.room_code, r.area_sqm, t.full_name,
+       0.00, 'Draft',
+       LEAST(DATE_ADD(@p1, INTERVAL @due - 1 DAY), LAST_DAY(@p1))
+  FROM rooms r
+  JOIN tenants t ON t.active_room_id = r.id      -- ENG-1: exactly one, no LIMIT 1
+ WHERE r.id = 205 AND r.status = 'Occupied' AND r.is_active = 1
+ON DUPLICATE KEY UPDATE bills.id = LAST_INSERT_ID(bills.id);  -- idempotent (D-18)
+SET @bill_id = LAST_INSERT_ID();   -- the new id, or the existing bill's id
+
+-- Two metered items, rate resolved by PERIOD, amount rounded in SQL (D-16, D-17)
+INSERT INTO bill_items
+  (bill_id, item_type, quantity, unit_price, amount,
+   previous_reading, current_reading, previous_period)
+SELECT @bill_id, mr.utility_type, mr.units, rr.unit_price,
+       ROUND(mr.units * rr.unit_price, 2),
+       mr.previous_reading, mr.current_reading, mr.previous_period
+  FROM meter_readings mr
+  JOIN rates rr
+    ON rr.utility_type = mr.utility_type
+   AND rr.effective_from = (SELECT MAX(r2.effective_from) FROM rates r2
+                             WHERE r2.utility_type = mr.utility_type
+                               AND r2.effective_from &lt;= @p1)
+ WHERE mr.room_id = 205 AND mr.period = @period
+ON DUPLICATE KEY UPDATE                       -- LHS qualified: both sides have
+       bill_items.quantity         = mr.units,        -- columns of the same name
+       bill_items.unit_price       = rr.unit_price,
+       bill_items.amount           = ROUND(mr.units * rr.unit_price, 2),
+       bill_items.previous_reading = mr.previous_reading,
+       bill_items.current_reading  = mr.current_reading,
+       bill_items.previous_period  = mr.previous_period;
+
+-- The third item, always written, even at 0.00 (D-18, D-41)
+INSERT INTO bill_items (bill_id, item_type, quantity, unit_price, amount)
+SELECT @bill_id, 'common', b.room_area_sqm, rr.unit_price,
+       ROUND(b.room_area_sqm * rr.unit_price, 2)
+  FROM bills b
+  JOIN rates rr
+    ON rr.utility_type = 'common'
+   AND rr.effective_from = (SELECT MAX(r2.effective_from) FROM rates r2
+                             WHERE r2.utility_type = 'common'
+                               AND r2.effective_from &lt;= @p1)
+ WHERE b.id = @bill_id
+ON DUPLICATE KEY UPDATE
+       bill_items.quantity   = b.room_area_sqm,
+       bill_items.unit_price = rr.unit_price,
+       bill_items.amount     = ROUND(b.room_area_sqm * rr.unit_price, 2);
+
+-- The total is the SUM of already-rounded items. No second rounding (D-16).
+UPDATE bills b
+   SET b.total = (SELECT COALESCE(SUM(bi.amount), 0)
+                    FROM bill_items bi WHERE bi.bill_id = b.id)
+ WHERE b.id = @bill_id;</code></pre>
+
+<p>Verification — this is the assertion that must never go red (ADR §6.9 tier 1):</p>
+<pre><code>SELECT item_type, quantity, unit_price, amount
+  FROM bill_items WHERE bill_id = @bill_id
+ ORDER BY FIELD(item_type, 'water', 'electric', 'common');
+-- water     10.00  18.00    180.00
+-- electric  70.00   8.00    560.00
+-- common    30.00  35.00   1050.00
+
+SELECT total, status, due_date FROM bills WHERE id = @bill_id;
+-- 1790.00   Draft   2026-09-05</code></pre>
+
+<p>Approving on 1 Sep 2026 freezes the due date at <code>MAX(5 Sep 2026, 1 Sep + 3 days)</code> = <strong>5 Sep 2026</strong>, matching PRD §28 exactly (D-20). In a live demo the same expression yields <code>approval_date + 3</code>, which is the correct behaviour and not a defect:</p>
+<pre><code>UPDATE bills
+   SET status      = 'Unpaid',
+       approved_by = ?, approved_at = NOW(),
+       due_date    = GREATEST(
+           LEAST(DATE_ADD(CONCAT(period,'-01'), INTERVAL ? - 1 DAY),
+                 LAST_DAY(CONCAT(period,'-01'))),
+           DATE_ADD(CURDATE(), INTERVAL 3 DAY))
+ WHERE id = ? AND status = 'Draft';</code></pre>
+
+<p>Paying on 3 Sep 2026 then allocates <code>seq = 852</code> from the seeded counter and writes <code>receipt_no = 'REC-202609-000852'</code>, closing the demo on the PRD's own number.</p>
+
+<h3>8. Assumptions recorded by this section</h3>
+<ol>
+  <li><strong>Money stays <code>DECIMAL(10,2)</code></strong>, per D-16 and ADR §6.4, against the section brief's <code>DECIMAL(12,2)</code>. Recorded above as a callout so a reviewer can find it.</li>
+  <li><strong>No <code>line_accounts</code> table and no separate <code>CommonAreaRates</code> table.</strong> PRD §21's list is descriptive; ADR A-12 and D-17 are normative. The LINE binding is three columns on <code>tenants</code>; all three rates live in one <code>rates</code> table.</li>
+  <li><strong>A revert clears <code>approved_by</code> and <code>approved_at</code>.</strong> D-22 does not say so explicitly; <code>ck_bills_approved</code> requires it, and the approval history survives in <code>audit_log</code> where D-38 puts it.</li>
+  <li><strong>Column widths not fixed by a decision are chosen here</strong> and are binding on sibling sections: names 120, addresses 255, reasons 200–255, <code>last_error</code> 255, <code>announcements.title</code> 60 and <code>body</code> 400 (the D-35 form limits), <code>settings.office_hours</code> 60.</li>
+  <li><strong><code>ck_readings_units</code> is deliberately redundant</strong> against <code>INT UNSIGNED</code>. D-13 names the constraint; keeping it documents the invariant where a reader looks for it, at zero cost.</li>
+  <li><strong><code>REGEXP</code> inside <code>CHECK</code></strong> is used for <code>period</code>, <code>phone</code>, <code>receipt_no</code>, <code>audience_floors</code> and the link-code alphabet. It is deterministic and legal from MySQL 8.0.16. If a managed provider ever rejects one, the fallback is the same rule in the matching <code>zod</code> schema plus a note in the runbook — every one of these five is already validated at layer 2 (ADR §6.8).</li>
+  <li><strong><code>ON DELETE CASCADE</code> appears exactly once</strong>, on <code>fk_bill_items_bill</code>. Bills are never deleted in production; the cascade exists so the integration tier can drop a scratch bill in one statement.</li>
+  <li><strong><code>audit_log.entity_id</code> carries no foreign key</strong> because it points at four different tables. <code>ix_audit_entity</code> covers the lookup; <code>bill_id</code>, the column that actually drives a screen, <em>is</em> a foreign key.</li>
+  <li><strong>Sizing.</strong> 80 rooms × 12 periods ≈ 960 bills, 2,880 bill items, 1,920 readings and roughly 3,000 notification rows a year. The whole database is under 50 MB after five years, which is why no index exists that is not named in §3.12 and why partitioning, archiving and read replicas are all out of scope.</li>
+</ol>
+
+</section>

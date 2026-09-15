@@ -1,0 +1,1204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Product Decisions &amp; Scope · Juristic Platform</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Thai:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ---------- Document design tokens (NOT the product UI; product UI lives under .screen) ---------- */
+:root{
+  --bg:#f6f7f9; --surface:#ffffff; --surface-2:#f0f2f5; --border:#e2e5ea; --border-strong:#c9ced6;
+  --text:#1b2129; --text-2:#3f4753; --muted:#6b7280; --link:#0b5fd7;
+  --accent:#0b5fd7; --accent-soft:#e7efff;
+  --ok:#137a3a; --ok-soft:#e3f5e9; --warn:#9a5b00; --warn-soft:#fff3dc; --bad:#b42318; --bad-soft:#fdecea; --info:#0b6b8f; --info-soft:#e2f3fa;
+  --water:#0b7fab; --water-soft:#e0f2fa; --elec:#c27400; --elec-soft:#fff1d6; --fee:#6b4fbb; --fee-soft:#ece7fa;
+  --draft:#6b7280; --unpaid:#c27400; --paid:#137a3a; --overdue:#b42318;
+  --radius:10px; --radius-sm:6px;
+  --shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.08);
+  --font:"Inter","Noto Sans Thai",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Sarabun",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --toc-w:260px; --content-w:1080px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1318; --surface:#161b22; --surface-2:#1e252e; --border:#2a323d; --border-strong:#3b4552;
+    --text:#e6e9ee; --text-2:#c3c9d2; --muted:#8b94a1; --link:#6ea3ff;
+    --accent:#6ea3ff; --accent-soft:#17263f;
+    --ok:#4fd07f; --ok-soft:#10301c; --warn:#f2b447; --warn-soft:#332507; --bad:#ff7b6b; --bad-soft:#3a1512; --info:#5cc3ea; --info-soft:#0e2a35;
+    --water:#4fb8e0; --water-soft:#0e2a35; --elec:#f0a93a; --elec-soft:#332507; --fee:#a992ee; --fee-soft:#231c3d;
+    --draft:#8b94a1; --unpaid:#f0a93a; --paid:#4fd07f; --overdue:#ff7b6b;
+    --shadow:0 1px 2px rgba(0,0,0,.4);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f1318; --surface:#161b22; --surface-2:#1e252e; --border:#2a323d; --border-strong:#3b4552;
+  --text:#e6e9ee; --text-2:#c3c9d2; --muted:#8b94a1; --link:#6ea3ff;
+  --accent:#6ea3ff; --accent-soft:#17263f;
+  --ok:#4fd07f; --ok-soft:#10301c; --warn:#f2b447; --warn-soft:#332507; --bad:#ff7b6b; --bad-soft:#3a1512; --info:#5cc3ea; --info-soft:#0e2a35;
+  --water:#4fb8e0; --water-soft:#0e2a35; --elec:#f0a93a; --elec-soft:#332507; --fee:#a992ee; --fee-soft:#231c3d;
+  --draft:#8b94a1; --unpaid:#f0a93a; --paid:#4fd07f; --overdue:#ff7b6b;
+  --shadow:0 1px 2px rgba(0,0,0,.4);
+}
+
+/* ---------- Base ---------- */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+a{color:var(--link);text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{line-height:1.25;font-weight:600;color:var(--text);margin:0}
+h1{font-size:30px;letter-spacing:-.01em}
+h2{font-size:22px;margin-top:56px;padding-top:16px;border-top:1px solid var(--border)}
+h2:first-child{margin-top:0;border-top:0;padding-top:0}
+h3{font-size:17px;margin-top:32px}
+h4{font-size:15px;margin-top:20px;color:var(--text-2)}
+p{margin:10px 0}
+ul,ol{padding-left:22px;margin:8px 0}
+li{margin:3px 0}
+hr{border:0;border-top:1px solid var(--border);margin:32px 0}
+small,.muted{color:var(--muted)}
+strong{font-weight:600}
+code{font-family:var(--mono);font-size:.88em;background:var(--surface-2);border:1px solid var(--border);border-radius:4px;padding:1px 5px}
+pre{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 16px;overflow-x:auto;font-family:var(--mono);font-size:13px;line-height:1.5}
+pre code{background:none;border:0;padding:0;font-size:inherit}
+blockquote{margin:12px 0;padding:8px 16px;border-left:3px solid var(--border-strong);color:var(--text-2)}
+img,svg{max-width:100%}
+details{border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 14px;margin:10px 0;background:var(--surface)}
+summary{cursor:pointer;font-weight:500}
+
+/* ---------- Layout ---------- */
+.doc-header{background:var(--surface);border-bottom:1px solid var(--border);padding:22px 32px}
+.doc-header .crumbs{font-size:13px;color:var(--muted);margin-bottom:6px}
+.doc-header .meta{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:13px;color:var(--muted);margin-top:8px}
+.doc-header .meta b{color:var(--text-2);font-weight:500}
+.layout{display:grid;grid-template-columns:var(--toc-w) minmax(0,1fr);gap:0;max-width:calc(var(--toc-w) + var(--content-w) + 64px);margin:0 auto}
+.toc{position:sticky;top:0;align-self:start;max-height:100vh;overflow-y:auto;padding:24px 16px 40px 24px;font-size:13px;border-right:1px solid var(--border)}
+.toc .toc-title{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+.toc ul{list-style:none;padding:0;margin:0}
+.toc ul ul{padding-left:12px}
+.toc li{margin:0}
+.toc a{display:block;padding:4px 8px;border-radius:4px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.toc a:hover{background:var(--surface-2);text-decoration:none}
+.toc a.active{color:var(--accent);background:var(--accent-soft)}
+.content{padding:32px 32px 96px;min-width:0}
+@media (max-width:960px){.layout{grid-template-columns:1fr}.toc{position:static;max-height:none;border-right:0;border-bottom:1px solid var(--border)}.content{padding:24px 16px 64px}.doc-header{padding:18px 16px}}
+
+/* ---------- Components ---------- */
+table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden}
+th,td{padding:8px 12px;border-bottom:1px solid var(--border);vertical-align:top;text-align:left}
+th{background:var(--surface-2);font-weight:600;font-size:13px;color:var(--text-2)}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even) td{background:color-mix(in srgb,var(--surface-2) 45%,transparent)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.table-wrap{overflow-x:auto;margin:14px 0}
+.table-wrap table{margin:0}
+.callout{border:1px solid var(--border);border-left:4px solid var(--accent);background:var(--surface);border-radius:var(--radius-sm);padding:12px 16px;margin:16px 0}
+.callout .title{font-weight:600;margin-bottom:4px;font-size:14px}
+.callout.note{border-left-color:var(--info);background:var(--info-soft)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.ok{border-left-color:var(--ok);background:var(--ok-soft)}
+.callout.decision{border-left-color:var(--fee);background:var(--fee-soft)}
+.badge{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600;line-height:1.5;border:1px solid transparent;white-space:nowrap}
+.badge.draft{background:var(--surface-2);color:var(--draft);border-color:var(--border-strong)}
+.badge.unpaid{background:var(--elec-soft);color:var(--unpaid)}
+.badge.paid{background:var(--ok-soft);color:var(--paid)}
+.badge.overdue{background:var(--bad-soft);color:var(--overdue)}
+.badge.ok{background:var(--ok-soft);color:var(--ok)}
+.badge.warn{background:var(--warn-soft);color:var(--warn)}
+.badge.bad{background:var(--bad-soft);color:var(--bad)}
+.badge.info{background:var(--info-soft);color:var(--info)}
+.badge.neutral{background:var(--surface-2);color:var(--text-2);border-color:var(--border)}
+.badge.water{background:var(--water-soft);color:var(--water)}
+.badge.elec{background:var(--elec-soft);color:var(--elec)}
+.badge.fee{background:var(--fee-soft);color:var(--fee)}
+.badge.p0{background:var(--bad-soft);color:var(--bad)} .badge.p1{background:var(--warn-soft);color:var(--warn)} .badge.p2{background:var(--surface-2);color:var(--text-2)}
+.kv{display:grid;grid-template-columns:max-content 1fr;gap:6px 18px;margin:12px 0;font-size:14px}
+.kv dt{color:var(--muted);font-weight:500}
+.kv dd{margin:0}
+.grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));margin:16px 0}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h3,.card h4{margin-top:0}
+.diagram{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin:16px 0;overflow-x:auto}
+.diagram .caption{font-size:13px;color:var(--muted);margin-top:8px;text-align:center}
+pre.mermaid{background:transparent;border:0;padding:0;text-align:center;font-family:var(--font);font-size:14px}
+.tree{font-family:var(--mono);font-size:13px;line-height:1.55;white-space:pre}
+.tree .c{color:var(--muted)}
+.steps{counter-reset:step;list-style:none;padding:0;margin:14px 0}
+.steps li{position:relative;padding-left:40px;margin:10px 0}
+.steps li::before{counter-increment:step;content:counter(step);position:absolute;left:0;top:1px;width:26px;height:26px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-weight:600;font-size:13px;display:flex;align-items:center;justify-content:center}
+.formula{font-family:var(--mono);background:var(--surface-2);border:1px dashed var(--border-strong);border-radius:var(--radius-sm);padding:10px 14px;margin:10px 0;font-size:14px}
+.tag-row{display:flex;flex-wrap:wrap;gap:6px}
+.checklist{list-style:none;padding-left:0}
+.checklist li{padding-left:26px;position:relative}
+.checklist li::before{content:"";position:absolute;left:2px;top:7px;width:14px;height:14px;border:1.5px solid var(--border-strong);border-radius:3px}
+
+/* ---------- Device frames for UI mockups (mockup content itself is styled by tokens.css under .screen) ---------- */
+.device{margin:20px auto;background:var(--surface);border:1px solid var(--border);box-shadow:0 8px 30px rgba(16,24,40,.12);overflow:hidden}
+.device.phone{width:390px;max-width:100%;border-radius:36px;border:8px solid #1b1f24;background:#1b1f24}
+.device.phone .screen{border-radius:28px;min-height:760px;background:#fff;overflow:hidden}
+.device.desktop{width:100%;max-width:1200px;border-radius:10px}
+.device.desktop .chrome{height:34px;background:var(--surface-2);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;padding:0 12px}
+.device.desktop .chrome i{width:11px;height:11px;border-radius:50%;background:#d1d5db;display:inline-block}
+.device.desktop .chrome i:nth-child(1){background:#ff5f57}.device.desktop .chrome i:nth-child(2){background:#febc2e}.device.desktop .chrome i:nth-child(3){background:#28c840}
+.device.desktop .chrome .url{margin-left:10px;flex:1;height:20px;border-radius:5px;background:var(--surface);border:1px solid var(--border);font-size:11px;color:var(--muted);padding:0 8px;line-height:20px;font-family:var(--mono)}
+.device.desktop .screen{min-height:720px;background:#fff;overflow:hidden}
+.device.print{width:100%;max-width:420px;border-radius:4px;background:#fff}
+.device.print .screen{background:#fff;padding:0}
+.screen{color:#1b2129;font-family:"Noto Sans Thai","Inter",sans-serif;font-size:14px;line-height:1.45;text-align:left}
+.annotations{counter-reset:ann;margin:12px 0 28px}
+.annotations li{margin:6px 0}
+.ann{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;font-size:11px;font-weight:700;margin-right:6px;vertical-align:middle;font-family:var(--font)}
+.screen .ann{position:absolute;box-shadow:0 0 0 2px #fff}
+.screen-meta{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:var(--muted);margin:6px 0 10px}
+.screen-meta b{color:var(--text-2);font-weight:500}
+
+/* ---------- Print ---------- */
+@media print{
+  body{background:#fff;color:#000;font-size:12px}
+  .toc{display:none}
+  .layout{display:block;max-width:none}
+  .content{padding:0}
+  .doc-header{padding:0 0 12px;border-bottom:1px solid #000}
+  h2{break-before:page}
+  h2:first-child{break-before:auto}
+  .device,.card,.callout,.diagram{break-inside:avoid;box-shadow:none}
+  a{color:#000}
+}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+</head>
+<body>
+<header class="doc-header">
+  <div class="crumbs">Juristic Platform · Documentation</div>
+  <h1>Product Decisions &amp; Scope</h1>
+  <div class="meta"><span><b>Owner:</b> Lead of Product</span><span><b>Date:</b> 2026-09-06</span><span><b>Status:</b> Approved v1.0</span><span><b>Version:</b> 1.0</span></div>
+</header>
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="Table of contents"><div class="toc-title">Contents</div></nav>
+  <main class="content" id="content">
+<section id="purpose">
+<h2>Purpose &amp; how to read</h2>
+<p>This document is the product contract for <b>Juristic Platform</b>. The PRD says what the system is for;
+this document decides every question the PRD leaves open, so that the engineering specification, the UI design
+and the test plan can be written against one answer instead of three guesses. Every later document cites
+decisions by id (<code>D-01</code> … <code>D-47</code>) rather than restating them.</p>
+
+<h3>Precedence</h3>
+<ol>
+<li><b>PRD</b> — scope, objectives and the §24 exclusion list. Nothing here widens the PRD's scope.</li>
+<li><b>This document</b> — wherever the PRD is silent, ambiguous or self-contradictory. One place overrides
+literal PRD text: PRD §12 lets เจ้าหน้าที่ press Confirm Cash Payment, which contradicts §4; §4 wins
+(<a href="#d-36">D-36</a>).</li>
+<li><b>Engineering spec, UI design, test plan</b> — implementation of the above. A downstream document that
+needs to contradict a decision must get the decision changed, not work around it.</li>
+</ol>
+
+<h3>How a decision is written</h3>
+<div class="kv">
+<dt>ID</dt><dd>Stable for the life of the project. New decisions get new ids; existing ids are never reused or renumbered.</dd>
+<dt>Question</dt><dd>The open question, phrased as the reviewer who found it asked it.</dd>
+<dt>Decision</dt><dd>Binding. Exact strings, column names, formulas and Thai copy in a decision are to be copied verbatim, not paraphrased.</dd>
+<dt>Rationale</dt><dd>Why this option and not the obvious alternative — read this before proposing a change.</dd>
+<dt>Affects</dt><dd>Which downstream role must act on it: <span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></dd>
+</div>
+
+<div class="callout note"><div class="title">Read these first</div>
+<p><a href="#d-11">D-11</a> (a billing period is the billing month, and there is no period lock) and
+<a href="#d-21">D-21</a> (three stored statuses, four displayed, one shared helper) are load-bearing for
+almost everything else. Four decisions carry exact strings that must be copied character for character:
+<a href="#d-02">D-02</a> Thai UI labels, <a href="#d-27">D-27</a> receipt fields and numbering,
+<a href="#d-28">D-28</a> the paper ใบแจ้งค่าใช้จ่าย, and <a href="#d-31">D-31</a> the LINE message templates.</p></div>
+
+<div class="callout warn"><div class="title">Conventions that bind every document</div>
+<p>Documentation prose is English; all product UI copy, button labels and LINE messages are Thai, because the
+users are Thai. Bill statuses are exactly <span class="badge draft">Draft</span>
+<span class="badge unpaid">Unpaid</span> <span class="badge paid">Paid</span>
+<span class="badge overdue">Overdue</span>. Currency is THB, timezone Asia/Bangkok, years Gregorian
+(2026), never Buddhist Era. Full formatting rules are in <a href="#d-03">D-03</a>.</p></div>
+</section>
+<section id="product-summary">
+<h2>Product summary</h2>
+
+<h3>Elevator pitch</h3>
+<blockquote>Juristic Platform is a web application that lets an apartment's juristic person manage the three
+charges a tenancy actually generates every month — water, electricity and the common area fee — without
+touching rent. Staff walk the building with a phone and type each room's water and electricity meter
+readings; the system subtracts last month's reading to get the units used and prices them automatically,
+then calculates the common area fee from the room's floor area multiplied by the rate per square metre. The
+three charges are combined into a monthly bill for the juristic person to review and approve, after which the
+bill is delivered to the tenant through the apartment's LINE Official Account. When the tenant brings cash to
+the office, the counter confirms receipt in one action: the bill flips to Paid, a numbered receipt is issued
+and printed, and a confirmation message goes back out on LINE. A dashboard and four reports show what was
+billed, what was collected, who is in arrears and how much water and electricity each room has used over the
+past twelve months.</blockquote>
+<p class="muted">Adapted from PRD §29, in English, for the documentation set. The Thai wording the team speaks
+aloud stays as written in the PRD.</p>
+
+<h3>Official project titles</h3>
+<div class="kv">
+<dt>ภาษาไทย</dt><dd>การพัฒนาเว็บแอปพลิเคชันสำหรับจัดการค่าสาธารณูปโภคและค่าส่วนกลางของอพาร์ตเมนต์ พร้อมระบบแจ้งเตือนผ่าน LINE Official Account</dd>
+<dt>English</dt><dd>Development of a Web-Based Apartment Utility and Common Area Fee Management System with LINE Official Account Notifications</dd>
+</div>
+<p class="muted">Both titles are taken verbatim from the PRD and are not changed by any decision here.</p>
+
+<h3>Product name</h3>
+<div class="grid">
+  <div class="card">
+    <h4>Juristic Platform <span class="badge ok">chosen</span></h4>
+    <p>The single product name in English. Used in every document title, the repository, the code, the login
+    page and the browser tab title. The login page pairs it with the Thai subtitle
+    ระบบจัดการค่าน้ำ ค่าไฟ และค่าส่วนกลาง.</p>
+  </div>
+  <div class="card">
+    <h4>UtilityHub <span class="badge bad">deleted</span></h4>
+    <p>The short name at the top of the PRD is superseded by <i>Juristic platform</i> at the bottom of the same
+    PRD, and by the template, repository and directory names that already exist. It is removed rather than
+    reconciled, and must not appear in any artifact.</p>
+  </div>
+  <div class="card">
+    <h4>What the tenant sees</h4>
+    <p>Neither name. The receipt letterhead carries only the apartment's own name, address, phone and — when
+    Settings holds one — tax ID, because the receipt is issued by the juristic person. LINE messages carry no
+    product branding and are signed <code>— นิติบุคคล {apartment_name}</code>.</p>
+  </div>
+</div>
+<p>Full decision and reasoning: <a href="#d-01">D-01</a>.</p>
+</section>
+<section id="scope">
+<h2>Scope</h2>
+<h3>In scope — the 30 functions of PRD §18</h3>
+<p>Every function below is delivered in v1. The right-hand column names the decisions that determine how it behaves; where that column is empty the PRD alone is sufficient.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th style="width:44px">#</th><th style="width:24%">Function (PRD §18)</th><th>What it means here</th><th style="width:150px">Decisions</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>Login</td><td>Session login for two roles; no tenant login exists.</td><td><span class="muted">D-36, D-37</span></td></tr>
+<tr><td>2</td><td>Role Management</td><td>Exactly two roles, admin and staff, on one column.</td><td><span class="muted">D-36</span></td></tr>
+<tr><td>3</td><td>จัดการผู้ใช้งานระบบ</td><td>Users page: create, deactivate, reset another user's password.</td><td><span class="muted">D-46</span></td></tr>
+<tr><td>4</td><td>จัดการข้อมูลห้อง</td><td>Room code, floor, type, area, opening meter readings.</td><td><span class="muted">D-47, D-06</span></td></tr>
+<tr><td>5</td><td>จัดการข้อมูลผู้เช่า</td><td>One Active tenant per room; ending a tenancy is a settlement.</td><td><span class="muted">D-10, D-08</span></td></tr>
+<tr><td>6</td><td>บันทึกขนาดพื้นที่ห้อง</td><td>DECIMAL(6,2), Admin only, snapshotted onto every bill.</td><td><span class="muted">D-47, D-09</span></td></tr>
+<tr><td>7</td><td>ตั้งอัตราค่าน้ำ</td><td>Insert-only effective-dated rate rows.</td><td><span class="muted">D-17</span></td></tr>
+<tr><td>8</td><td>ตั้งอัตราค่าไฟ</td><td>Insert-only effective-dated rate rows.</td><td><span class="muted">D-17</span></td></tr>
+<tr><td>9</td><td>ตั้งอัตราค่าส่วนกลาง</td><td>Per square metre, same rate table.</td><td><span class="muted">D-17</span></td></tr>
+<tr><td>10</td><td>กรอกเลขมิเตอร์น้ำ</td><td>Phone round, per-room save, previous value read-only.</td><td><span class="muted">D-15, D-12, D-13</span></td></tr>
+<tr><td>11</td><td>กรอกเลขมิเตอร์ไฟ</td><td>Same screen, same row shape, separate utility_type.</td><td><span class="muted">D-15, D-12, D-13</span></td></tr>
+<tr><td>12</td><td>คำนวณหน่วยน้ำอัตโนมัติ</td><td>current − previous, integers, never negative.</td><td><span class="muted">D-14, D-16</span></td></tr>
+<tr><td>13</td><td>คำนวณหน่วยไฟอัตโนมัติ</td><td>Same rule; a replaced meter uses the two-segment formula.</td><td><span class="muted">D-14, D-13</span></td></tr>
+<tr><td>14</td><td>คำนวณค่าน้ำ</td><td>units × rate, rounded per item, DECIMAL only.</td><td><span class="muted">D-16, D-17</span></td></tr>
+<tr><td>15</td><td>คำนวณค่าไฟ</td><td>units × rate, rounded per item.</td><td><span class="muted">D-16, D-17</span></td></tr>
+<tr><td>16</td><td>คำนวณค่าส่วนกลางตามขนาดห้อง</td><td>area × rate, both snapshotted onto the bill item.</td><td><span class="muted">D-09, D-17</span></td></tr>
+<tr><td>17</td><td>สร้างบิลรายเดือน</td><td>Idempotent generation per period; always three line items.</td><td><span class="muted">D-18, D-11, D-41</span></td></tr>
+<tr><td>18</td><td>ตรวจสอบและอนุมัติบิล</td><td>One approval gate, single or bulk; freezes the bill and the due date.</td><td><span class="muted">D-19, D-20, D-22</span></td></tr>
+<tr><td>19</td><td>ส่งบิลผ่าน LINE OA</td><td>Push per recipient after the commit; delivery state per bill.</td><td><span class="muted">D-29, D-30, D-31</span></td></tr>
+<tr><td>20</td><td>แจ้งเตือนวันครบกำหนด</td><td>PRE_DUE at due − 2 days, 09:00 Asia/Bangkok.</td><td><span class="muted">D-32, D-33</span></td></tr>
+<tr><td>21</td><td>แจ้งเตือนยอดค้างชำระ</td><td>OVERDUE at +1, +8, +15 days; nothing after day 15.</td><td><span class="muted">D-21, D-33</span></td></tr>
+<tr><td>22</td><td>รับชำระเงินสด</td><td>Cash at the counter, full amount, one live payment per bill.</td><td><span class="muted">D-24, D-26</span></td></tr>
+<tr><td>23</td><td>เปลี่ยนสถานะ Paid / Unpaid</td><td>Conditional update; Overdue is a display value, not a stored one.</td><td><span class="muted">D-21, D-24, D-25</span></td></tr>
+<tr><td>24</td><td>ออกใบเสร็จ</td><td>Non-tax receipt, continuous number, A5 print, สำเนา on reprints.</td><td><span class="muted">D-27, D-28</span></td></tr>
+<tr><td>25</td><td>ดูประวัติการชำระ</td><td>Per-room 12-month report including receipt numbers.</td><td><span class="muted">D-42</span></td></tr>
+<tr><td>26</td><td>ดูประวัติมิเตอร์</td><td>Reading rows are immutable history once their bill is approved.</td><td><span class="muted">D-12, D-42</span></td></tr>
+<tr><td>27</td><td>ส่งประกาศผ่าน LINE OA</td><td>All tenants or selected floors, multicast, immutable once sent.</td><td><span class="muted">D-35, D-34</span></td></tr>
+<tr><td>28</td><td>Dashboard</td><td>Period-scoped tiles with binding formulas that reconcile on screen.</td><td><span class="muted">D-41</span></td></tr>
+<tr><td>29</td><td>รายงาน</td><td>Four reports, each with a CSV export.</td><td><span class="muted">D-42</span></td></tr>
+<tr><td>30</td><td>ดูข้อมูลการใช้น้ำและไฟย้อนหลัง</td><td>12-month charts and the per-room history report.</td><td><span class="muted">D-42, D-41</span></td></tr>
+</tbody>
+</table>
+</div>
+<p>The PRD §3 objectives map onto these functions one to one, with two additions this document makes measurable: objective 10 (historical water, electricity and payment data) is delivered by the per-room 12-month report in <a href="#d-42">D-42</a>, and the vague objectives about reducing errors and effort are replaced by the five stopwatch targets in <a href="#d-45">D-45</a>.</p>
+<h3>Out of scope</h3>
+<p>The PRD §24 list is absolute and must never be reintroduced in a document, a mockup, a test case or a seed row. The v1 limitations below it are decided here and carry the same weight — each is a decision someone would have to overturn, not a gap someone may fill in. The full list is restated in <a href="#d-05">D-05</a> and must appear in the Limitations section of every document that has one.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th style="width:26%">Excluded</th><th style="width:110px">Source</th><th>What that means in practice</th></tr></thead>
+<tbody>
+<tr><td>ค่าเช่าห้อง</td><td><span class="badge bad">PRD §24</span></td><td>The system bills utilities and the common fee only. Rent never appears in a bill, a report or a receipt.</td></tr>
+<tr><td>ระบบสัญญาเช่า</td><td><span class="badge bad">PRD §24</span></td><td>Move-in and move-out dates are stored for reference; no contract, deposit or term is modelled.</td></tr>
+<tr><td>Mobile Application</td><td><span class="badge bad">PRD §24</span></td><td>The staff phone surface is the responsive web app; nothing is installed.</td></tr>
+<tr><td>Payment Gateway / Credit Card / Online Banking</td><td><span class="badge bad">PRD §24</span></td><td>Cash at the office is the only payment method.</td></tr>
+<tr><td>Upload Slip / QR Payment</td><td><span class="badge bad">PRD §24</span></td><td>No transfer evidence is uploaded, stored or verified.</td></tr>
+<tr><td>IoT Meter / อ่านมิเตอร์อัตโนมัติ</td><td><span class="badge bad">PRD §24</span></td><td>Staff enter every reading by hand.</td></tr>
+<tr><td>AI / Machine Learning</td><td><span class="badge bad">PRD §24</span></td><td>The two anomaly flags are fixed arithmetic rules, not a model.</td></tr>
+<tr><td>Proration for mid-period move-in or move-out</td><td><span class="badge warn">D-08</span></td><td>The Active tenant on the generation date is billed the whole period; ending a tenancy is gated on a settled final bill instead.</td></tr>
+<tr><td>Partial payment</td><td><span class="badge warn">D-24</span></td><td>A bill is paid in full or not at all, which is what removes overpayment and refunds from the system.</td></tr>
+<tr><td>Late fee, interest, penalty</td><td><span class="badge warn">D-21</span></td><td>Overdue changes the badge and the reminders, never the amount.</td></tr>
+<tr><td>Refund, credit note or balance</td><td><span class="badge warn">D-25</span></td><td>A mis-keyed payment is voided and the cash is returned across the counter.</td></tr>
+<tr><td>Multi-building / multi-property</td><td><span class="badge warn">D-04</span></td><td>One apartment profile, one set of rooms; the room code reserves a prefix for later.</td></tr>
+<tr><td>VAT / ใบกำกับภาษี</td><td><span class="badge warn">D-27</span></td><td>The document issued is a non-tax ใบเสร็จรับเงิน.</td></tr>
+<tr><td>Tenant web login</td><td><span class="badge warn">D-05</span></td><td>Tenants only ever receive LINE messages; there is no tenant account.</td></tr>
+<tr><td>Email or SMS channel</td><td><span class="badge warn">D-05</span></td><td>LINE Official Account and printed paper are the only channels.</td></tr>
+<tr><td>Detecting a tenant who blocked the OA</td><td><span class="badge warn">D-30</span></td><td>LINE returns success and drops the message; the office learns of a block from the tenant.</td></tr>
+<tr><td>Gapless receipt numbering</td><td><span class="badge warn">D-27</span></td><td>Numbers are unique and monotonic; rolled-back transactions and the seed offset leave gaps.</td></tr>
+<tr><td>Enforcing the LINE message quota</td><td><span class="badge warn">D-34</span></td><td>The monthly count is displayed against the 500-message free allowance but never throttled.</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="actors">
+<h2>Actors &amp; roles</h2>
+<div class="grid">
+  <div class="card">
+    <h4>Admin / นิติบุคคล <span class="badge info">admin</span></h4>
+    <p>The juristic person's office. Works on a desktop browser, occasionally on a phone. Owns every money
+    action: rates, approval, cash, receipts, voids, announcements, reports and settings. Also operates the
+    cash counter — PRD §12's sentence giving that to เจ้าหน้าที่ is a drafting error corrected by
+    <a href="#d-36">D-36</a>.</p>
+  </div>
+  <div class="card">
+    <h4>Staff / เจ้าหน้าที่ · ช่าง <span class="badge info">staff</span></h4>
+    <p>Walks the building with a phone and records meter readings, including a meter replacement when a
+    meter has been changed. Sees room counts and reading progress and nothing else — no amount, no rate, no
+    payment, no receipt, no tenant record. Money is absent from the API responses a staff session receives,
+    not merely hidden in the navigation.</p>
+  </div>
+  <div class="card">
+    <h4>Tenant / ผู้เช่า · ลูกบ้าน <span class="badge neutral">no login</span></h4>
+    <p>Never opens the web application and installs nothing. Adds the apartment's LINE Official Account as a
+    friend and sends a one-time code to bind their room, then receives the bill, the reminders, the payment
+    confirmation and building announcements. A tenant with no binding is handed a printed A5
+    ใบแจ้งค่าใช้จ่าย at the office.</p>
+  </div>
+</div>
+
+<h3>Capability matrix</h3>
+<p>Binding for the authorization middleware, the navigation and the test plan. A staff session opening an
+Admin URL directly gets a Thai 403 page, never a silent redirect (<a href="#d-40">D-40</a>), which is what
+makes this table testable row by row.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Capability</th><th style="width:110px">Admin</th><th style="width:150px">Staff</th><th style="width:140px">Tenant (LINE)</th></tr></thead>
+<tbody>
+<tr><td>เข้าสู่ระบบ (Login)</td><td><span class="badge ok">✓</span></td><td><span class="badge ok">✓</span></td><td><span class="badge bad">✗</span></td></tr>
+<tr><td>ภาพรวม — money tiles</td><td><span class="badge ok">✓</span></td><td><span class="badge bad">✗</span></td><td><span class="badge bad">✗</span></td></tr>
+<tr><td>ภาพรวม — room counts &amp; reading progress</td><td><span class="badge ok">✓</span></td><td><span class="badge ok">✓</span></td><td><span class="badge bad">✗</span></td></tr>
+<tr><td>ห้องพัก — view</td><td><span class="badge ok">✓</span></td><td><span class="badge info">read-only, no amounts</span></td><td><span class="badge bad">✗</span></td></tr>
+<tr><td>ห้องพัก — create / edit / area / deactivate</td><td><span class="badge ok">✓</span></td><td><span class="badge bad">✗</span></td><td><span class="badge bad">✗</span></td></tr>
+<tr><td>ผู้เช่า — all actions</td><td><span class="badge ok">✓</span></td><td><span class="badge bad">✗</span></td><td><span class="badge bad">✗</span></td></tr>
+<tr><td>จดมิเตอร์ — record and edit readings</td><td><span class="badge ok">✓</span></td><td><span class="badge ok">✓</span></td><td><span class="badge bad">✗</span></td></tr>
+<tr><td>จดมิเตอร์ — record a meter replacement</td><td><span class="badge ok">✓</span></td><td><span class="badge ok">✓</span></td><td><span class="badge bad">✗</span></td></tr>
+<tr><td>ส่งให้นิติตรวจสอบ (generate Draft bills)</td><td><span class="badge ok">✓</span></td><td><span class="badge ok">✓</span></td><td><span class="badge bad">✗</span></td></tr>
+<tr><td>อนุมัติและส่งบิล (single or bulk)</td><td><span class="badge ok">✓</span></td><td><span class="badge bad">✗</span></td><td><span class="badge bad">✗</span></td></tr>
+<tr><td>ตีกลับเป็นฉบับร่าง (revert to Draft)</td><td><span class="badge ok">✓</span></td><td><span class="badge bad">✗</span></td><td><span class="badge bad">✗</span></td></tr>
+<tr><td>รับชำระเงินสด / ออกใบเสร็จ</td><td><span class="badge ok">✓</span></td><td><span class="badge bad">✗</span></td><td><span class="badge bad">✗</span></td></tr>
+<tr><td>ยกเลิกการชำระเงิน (void)</td><td><span class="badge ok">✓</span></td><td><span class="badge bad">✗</span></td><td><span class="badge bad">✗</span></td></tr>
+<tr><td>ประกาศ — compose and send</td><td><span class="badge ok">✓</span></td><td><span class="badge bad">✗</span></td><td><span class="badge bad">✗</span></td></tr>
+<tr><td>รายงาน and CSV export</td><td><span class="badge ok">✓</span></td><td><span class="badge bad">✗</span></td><td><span class="badge bad">✗</span></td></tr>
+<tr><td>ตั้งค่า, rates, manual job trigger</td><td><span class="badge ok">✓</span></td><td><span class="badge bad">✗</span></td><td><span class="badge bad">✗</span></td></tr>
+<tr><td>ผู้ใช้งานระบบ (Users)</td><td><span class="badge ok">✓</span></td><td><span class="badge bad">✗</span></td><td><span class="badge bad">✗</span></td></tr>
+<tr><td>Receive bill, reminders, payment confirmation, announcements</td><td><span class="badge neutral">n/a</span></td><td><span class="badge neutral">n/a</span></td><td><span class="badge ok">✓</span></td></tr>
+<tr><td>Link a LINE account with a one-time code</td><td><span class="badge info">issues the code</span></td><td><span class="badge bad">✗</span></td><td><span class="badge info">sends the code</span></td></tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="flow">
+<h2>End-to-end business flow</h2>
+<p>PRD §25's full flow, annotated with the decision ids that change a step. Two branches the PRD does not draw are included because they are the normal case rather than the exception: a tenant with no LINE binding is handed paper, and an unpaid bill is chased by the daily job instead of stalling the flow.</p>
+<div class="diagram">
+<pre class="mermaid">
+flowchart TD
+  A["เจ้าหน้าที่เข้าสู่ระบบ"] --> B["เลือกรอบเดือน · D-11"]
+  B --> C["เดินจดมิเตอร์รายห้อง · D-15"]
+  C --> D{"เลขปัจจุบันไม่ต่ำกว่าเดือนก่อน? · D-13"}
+  D -->|"ไม่ผ่าน"| E["บล็อกการบันทึก หรือบันทึกการเปลี่ยนมิเตอร์ · D-13"]
+  E --> C
+  D -->|"ผ่าน"| F["คำนวณหน่วยจากรอบก่อนหน้า · D-14"]
+  F --> G["สร้างบิลฉบับร่าง 3 รายการ · D-18 · D-41"]
+  G --> H["นิติบุคคลตรวจสอบบิล · D-19"]
+  H --> I["อนุมัติและส่งบิล · ตรึงยอดและกำหนดชำระ · D-19 · D-20 · D-22"]
+  I --> J{"ผู้เช่าผูก LINE แล้วหรือไม่ · D-29"}
+  J -->|"ผูกแล้ว"| K["ส่งบิลผ่าน LINE OA · D-30 · D-31"]
+  J -->|"ยังไม่ผูก"| L["พิมพ์ใบแจ้งค่าใช้จ่าย A5 · D-28"]
+  K --> M["ผู้เช่าได้รับยอด"]
+  L --> M
+  M --> N{"ชำระภายในกำหนด?"}
+  N -->|"ยังไม่ชำระ"| O["แจ้งเตือนอัตโนมัติ 09:00 น. · D-32 · D-33"]
+  O --> N
+  N -->|"นำเงินสดมาชำระ"| P["ยืนยันรับเงินสดเต็มจำนวน · D-24 · D-26"]
+  P --> Q["สถานะเปลี่ยนเป็น ชำระแล้ว · D-21"]
+  Q --> R["ออกใบเสร็จและพิมพ์ A5 · D-27 · D-28"]
+  R --> S["ส่งข้อความยืนยันการชำระ · D-31"]
+  S --> T["ภาพรวมและรายงาน · D-41 · D-42"]
+</pre>
+<div class="caption">PRD §25 end-to-end flow, annotated with the decisions that govern each step. Reading, generation and approval are one gate (D-19); money and messaging are independent (D-30).</div>
+</div>
+<h3>What each stage guarantees</h3>
+<ul>
+<li><b>Reading round</b> — a room is จดแล้ว only when both utilities are saved; units can never be negative;
+the previous value is resolved by greatest earlier period, or the room's opening baseline.
+(<a href="#d-15">D-15</a>, <a href="#d-13">D-13</a>, <a href="#d-14">D-14</a>, <a href="#d-06">D-06</a>)</li>
+<li><b>Generation</b> — idempotent on <code>UNIQUE(room_id, period)</code>; re-running creates only missing
+bills and recalculates Draft ones; approved bills are never touched; every bill carries exactly three line
+items. (<a href="#d-18">D-18</a>, <a href="#d-23">D-23</a>, <a href="#d-41">D-41</a>)</li>
+<li><b>Approval</b> — one gate, Admin only; freezes readings, units, rates, area, tenant name, amounts and the
+due date; commits in one fast transaction and drains the LINE queue afterwards.
+(<a href="#d-19">D-19</a>, <a href="#d-20">D-20</a>, <a href="#d-22">D-22</a>)</li>
+<li><b>Delivery</b> — never blocks approval; one notifications row per recipient with a retry counter; an
+unlinked tenant is a badge and a printed bill. (<a href="#d-30">D-30</a>, <a href="#d-28">D-28</a>)</li>
+<li><b>Counter</b> — full amount only, one live payment per bill, enforced by a unique index and a conditional
+update, with the receipt number allocated inside the same transaction.
+(<a href="#d-24">D-24</a>, <a href="#d-26">D-26</a>)</li>
+<li><b>Correction</b> — the only way back is Admin reverting a room's most recent bill to Draft with a written
+reason; a Paid bill is corrected only after the cash is returned and the payment voided.
+(<a href="#d-22">D-22</a>, <a href="#d-25">D-25</a>)</li>
+</ul>
+</section>
+<section id="decision-log">
+<h2>Decision log</h2>
+<p>47 decisions across 10 topics, each answering a question raised while reviewing the PRD against the demo scenario. Ids are stable. Where a decision names an exact string, a column definition, a formula or a piece of Thai copy, that text is binding and must be copied rather than paraphrased.</p>
+<h3>The five most consequential</h3>
+<div class="callout decision"><div class="title">D-11 · Meter readings</div>
+<p>A billing period is the billing month, a plain &lt;code&gt;YYYY-MM&lt;/code&gt; string on readings and bills. There is no periods table, no open/close action and no closed state anywhere in the product — a reading is editable exactly while its room's bill for that period is Draft or absent.</p>
+<p class="muted"><b>Why it is load-bearing:</b> Billing-month periods are the only reading that reproduces the PRD §28 demo exactly. Dropping the open/close state machine removes a table, two Admin actions and a whole class of "period is closed" bugs, because the bill status already answers every question the lock would have answered — and a derived completeness line gives the operator the signal the lock was standing in for.</p></div>
+<div class="callout decision"><div class="title">D-21 · Billing &amp; statuses</div>
+<p>Overdue is derived from the due date, never stored. &lt;code&gt;bills.status&lt;/code&gt; holds only Draft, Unpaid and Paid; one SQL expression and one JS helper produce the fourth display value, and there is no late fee, interest or penalty of any kind.</p>
+<p class="muted"><b>Why it is load-bearing:</b> A stored status that depends on a cron job on free-tier hosting reads as a broken feature the moment the instance sleeps; a derived status is always correct, survives a demo on a laptop, and makes the expected value in every test deterministic. Stating the rule as a display rule rather than an absolute ban keeps it from being ignored where it matters.</p></div>
+<div class="callout decision"><div class="title">D-22 · Billing &amp; statuses</div>
+<p>Approval freezes the bill. The single correction path is Admin reverting a room's most recent bill to Draft with a written reason; a Paid bill is corrected only after the cash goes back across the counter and the payment is voided. The system never holds a refund, credit or balance.</p>
+<p class="muted"><b>Why it is load-bearing:</b> One reversible path covers both cases, keeps exactly four statuses, and makes the write guard a single check on bill.status in the middleware. Restricting the revert to the newest bill is the one rule that keeps the previous-reading chain honest, and routing the refund across the counter is what lets the system stay free of money it does not hold.</p></div>
+<div class="callout decision"><div class="title">D-30 · LINE &amp; notifications</div>
+<p>Money state and messaging state are independent. Bills commit first and send afterwards, every attempt is one row per recipient with a retry counter, and an unlinked or failed tenant is a badge and a printable paper bill — never a blocked approval.</p>
+<p class="muted"><b>Why it is load-bearing:</b> On day one almost no tenant is linked, so the unlinked case is the common case. Recording delivery per recipient is what makes ส่งบิลผ่าน LINE OA verifiable, gives the demo an honest failure path, and lets one table serve bills and announcements; an UPSERT with a counter is what makes the retry policy the decision already promised actually expressible.</p></div>
+<div class="callout decision"><div class="title">D-44 · Platform</div>
+<p>The seed computes every date from the run date. PRD §28's calendar values (5 ก.ย. 2026, 3 ก.ย. 2026, REC-202609-000852) are documentation and mockup values; the live demo reproduces the arithmetic — 10 หน่วย, 70 หน่วย, 180, 560, 1,050, 1,790 บาท — never the calendar.</p>
+<p class="muted"><b>Why it is load-bearing:</b> The demo is the deliverable that gets graded, so its data is a product decision. Relative dates are the only way the graded demo shows a payable bill instead of an overdue one with a wrong receipt number; a uniform 30 ตร.ม. block makes the PRD's own headline Dashboard number come out exactly right without an examiner asking why vacant rooms are larger; and stating plainly which PRD figures are arithmetically impossible stops three documents being written against numbers the system can never produce.</p></div>
+<h3>Naming &amp; scope <span class="muted" style="font-weight:400;font-size:14px">— D-01, D-02, D-03, D-04, D-05</span></h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th style="width:62px">ID</th><th style="width:20%">Question</th><th>Decision</th><th style="width:22%">Rationale</th><th style="width:96px">Affects</th></tr></thead>
+<tbody>
+<tr id="d-01"><td><b>D-01</b></td><td>Is the product called UtilityHub or Juristic Platform, and which name appears in the UI header, LINE messages, the receipt letterhead and the document set? (merges Q-P-01)</td><td>"Juristic Platform" is the single product name in English, used in every document title, the repo, the code, the login screen and the browser tab title. "UtilityHub" is deleted from the PRD and never used again. The Thai/English thesis titles in the PRD are unchanged. In the running app the top-left header shows the apartment name from Settings (demo seed: "ศุภาลัย เรสซิเดนซ์") with the system name "Juristic Platform" in 11px muted text underneath; the login page shows "Juristic Platform" as the H1 plus the Thai subtitle "ระบบจัดการค่าน้ำ ค่าไฟ และค่าส่วนกลาง". The receipt letterhead carries ONLY the apartment's own name, address, tax ID and phone from Settings — never the software name, because the receipt is issued by the juristic person, not by the software. LINE messages carry no product branding at all; where a signature is needed they are signed "— นิติบุคคล {apartment_name}" (one space after นิติบุคคล), because the tenant sees the apartment's Official Account, not a product.</td><td>The HTML template, the repo directory and every existing artifact already say Juristic Platform, so one edit in the PRD is cheaper than renaming everything else. Separating the software name from the letterhead is not cosmetic: a receipt headed with a software brand is not usable by the tenant.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-02"><td><b>D-02</b></td><td>Is the UI Thai-only, and how do the English page identifiers and the four bill statuses appear to users? (merges Q-P-16)</td><td>Thai-only UI, no language switcher, no i18n framework — Thai strings are written directly in the templates. English survives only as identifiers in the database, routes, API payloads, test selectors and this documentation set. Fixed mapping, to be used verbatim everywhere. Statuses: Draft = ฉบับร่าง, Unpaid = รอชำระ, Paid = ชำระแล้ว, Overdue = เกินกำหนด. Pages: Login = เข้าสู่ระบบ, Dashboard = ภาพรวม, Rooms = ห้องพัก, Tenants = ผู้เช่า, Meter Reading = จดมิเตอร์, Monthly Billing = บิลประจำเดือน, Bill Detail = รายละเอียดบิล, Payment = รับชำระเงิน, Receipt = ใบเสร็จ, Announcements = ประกาศ, Reports = รายงาน, Settings = ตั้งค่า, Users = ผู้ใช้งานระบบ (D-46). Primary buttons: Approve &amp; Send = อนุมัติและส่งบิล, Confirm Cash Payment = ยืนยันรับเงินสด, Print Receipt = พิมพ์ใบเสร็จ, Save = บันทึก. Every element that renders a status must carry a stable test hook data-status="Draft|Unpaid|Paid|Overdue" so tests assert on the English identifier while the human reads Thai.</td><td>Users are Thai; the English page names in the PRD are engineering identifiers, not user-facing copy. The data-status hook gives QA stable selectors for free and removes the only real argument for a bilingual UI.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-03"><td><b>D-03</b></td><td>What are the binding currency, number, date and timezone formats?</td><td>Timezone Asia/Bangkok everywhere; the server sets TZ=Asia/Bangkok and MySQL time_zone='+07:00'; no UTC is ever shown to a user. Gregorian years only (2026), never Buddhist Era, in UI, LINE and receipt. Money: thousands separator, two decimals in tables, on Bill Detail and on the receipt (1,790.00); the unit is written "บาท" after the number in LINE messages and in sentence text (1,790 บาท) and trailing ".00" is dropped there. The ฿ glyph is permitted in this documentation set and in static mockups where space is tight; the running application and every LINE message write the number followed by "บาท", because the glyph renders inconsistently in the LINE client — this narrows the doc-set convention, it does not forbid it. Table money columns are right-aligned with font-variant-numeric: tabular-nums. Meter readings and units are integers with thousands separators (1,260 / 10 หน่วย). Room area is written 30 ตร.ม. Dates: UI lists and forms use d MMM yyyy Thai short (3 ก.ย. 2026); LINE messages and the receipt use full Thai month (3 กันยายน 2026); the database and every API payload use ISO 8601 (2026-09-03); the billing period key is YYYY-MM (2026-09) and is displayed as "กันยายน 2026". Time of day is 24-hour with the suffix น. (14:30 น.).</td><td>Three documents, three screens and one LINE template will otherwise each invent their own format. Fixing it once makes every example in the doc set and every test assertion copy-pasteable.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-04"><td><b>D-04</b></td><td>One building, several buildings, or multiple properties? (merges Q-P-17)</td><td>Exactly one property and one building. Settings holds a single apartment profile (name, address, tax ID, phone, office hours, due day). Rooms are keyed by a room code that is a free VARCHAR(10) unique across the system — the seed uses plain numbers (205), but the column tolerates "A-205" so a future building prefix needs no migration. There is no building table, no building column, no building filter, and no property scoping in any query. Multi-building and multi-property are explicit non-goals recorded in the limitations list (D-05).</td><td>Matches the single ข้อมูลอพาร์ตเมนต์ section in PRD §12 and the 80-room Dashboard example. Reserving the room-code format costs nothing and keeps the door open without paying for it now.</td><td><span class="badge info">engineer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-05"><td><b>D-05</b></td><td>What is the authoritative list of things the system deliberately does not do?</td><td>The PRD §24 exclusions stand absolutely and must never be reintroduced in any document, mockup, test case or seed row: no rent, no lease contracts, no mobile app, no payment gateway, no cards, no online banking, no slip upload, no QR payment, no IoT or automatic meters, no AI/ML. In addition, these v1 limitations are decided here and must be listed verbatim in the Limitations section of every document that has one: (1) no proration for mid-period move-in/move-out (D-08); (2) no partial payment — a bill is paid in full or not at all (D-24); (3) no late fee, no interest, no penalty of any kind (D-21); (4) no refund, credit note or balance inside the system — a mis-keyed payment is voided and the cash is returned across the counter (D-25); (5) no multi-building support (D-04); (6) no VAT and no tax invoice — the receipt is a non-tax ใบเสร็จรับเงิน (D-27); (7) no tenant-facing web login — tenants only ever receive LINE messages; (8) no email or SMS channel; (9) the system cannot tell a delivered LINE message from one silently dropped because the tenant blocked the Official Account — LINE reports both as success (D-30); (10) receipt numbers are unique and monotonic but NOT gapless (D-26, D-27); (11) a receipt printed from the browser's own menu instead of the พิมพ์ใบเสร็จ button carries no สำเนา mark (D-27); (12) the LINE free plan's 500-message monthly allowance is displayed but never enforced — exhausting it silently stops delivery (D-34).</td><td>An out-of-scope list that lives in one PRD section gets quietly re-expanded by whichever document is written last. Naming the derived limitations here makes each one a decision someone would have to overturn, not an omission someone can fill in.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+</tbody>
+</table>
+</div>
+<h3>Rooms &amp; tenants <span class="muted" style="font-weight:400;font-size:14px">— D-06, D-07, D-08, D-09, D-10, D-47</span></h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th style="width:62px">ID</th><th style="width:20%">Question</th><th>Decision</th><th style="width:22%">Rationale</th><th style="width:96px">Affects</th></tr></thead>
+<tbody>
+<tr id="d-06"><td><b>D-06</b></td><td>Where does the previous reading come from for the first period, a newly created room, or a re-occupied room? (merges Q-E-02, Q-U-08)</td><td>Opening readings live on the room record, never in meter_readings. The Rooms create/edit form carries three mandatory fields written to rooms: baseline_water INT UNSIGNED (เลขมิเตอร์น้ำเริ่มต้น), baseline_electric INT UNSIGNED (เลขมิเตอร์ไฟเริ่มต้น) and one shared baseline_date DATE (วันที่เริ่มต้น). No synthetic reading row is ever written, so nothing can collide with the room's first real reading under UNIQUE(room_id, period, utility_type), no room is ever billed off a placeholder row, and no zero-usage flag fires on a new room. The previous-reading lookup (D-14) therefore has exactly one code path: the most recent earlier reading if one exists, otherwise the room's baseline for that utility with previous_period = 'baseline'. The Meter Reading screen always shows Previous as read-only text. Baselines are Admin-only and editable only while the room has no meter_readings row at all. A re-let room needs no baseline edit — its departing tenant's final reading is already the most recent earlier reading and D-14 finds it (D-08).</td><td>Two columns on rooms delete the entire class of first-period special cases without inventing a reading row that the unique key would later overwrite. This is the difference between billing 10 units and billing 1,260 units in month one — the most visible possible failure.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-07"><td><b>D-07</b></td><td>Are vacant rooms billed, in particular for the common area fee? (merges Q-P-11, Q-E-08, Q-U-09)</td><td>Vacant rooms are skipped entirely by the billing run: no bill, no meter reading requirement, no common area fee, no owner invoice, no LINE recipient. A room is billable if and only if rooms.status = 'Occupied' AND it has exactly one tenant row with status = 'Active' on the generation date. Room status is derived from the tenant link and is not independently editable: linking an active tenant sets Occupied, ending the tenancy sets Vacant (D-08, D-10). Vacant rooms still appear on the Rooms page (badge ว่าง) and in the Dashboard room counts, and staff may still record readings for them voluntarily through the ห้องว่าง filter on the Meter Reading page (D-15) — those readings are stored and used as the previous value when the room is re-let, but never produce a bill.</td><td>This is the only reading consistent with the PRD §16 arithmetic (ค่าส่วนกลาง 70,350 = 2,010 sqm = 67 occupied rooms × 30 sqm, not 80 rooms) and it removes an entire class of bills that have no recipient, no payer and no LINE target.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-08"><td><b>D-08</b></td><td>Who is billed when a tenant moves in or out mid-period, and is anything prorated? (merges Q-P-10)</td><td>No proration of any kind: the tenant whose tenancy is Active on the bill generation date receives the entire period's bill — full water, full electricity, full common area fee — and is the LINE recipient. Ending a tenancy is a settlement, not a status flip. The action สิ้นสุดสัญญาเช่า (Admin only) is BLOCKED unless (a) a final reading exists for both utilities for that room, dated on or after the last period the room was billed for, and (b) the bill covering that reading exists and is Paid. Order of operations, written out step by step in <a href="#op-move-out">Operating Procedures § d</a>: record the final reading → run generation for that room, which creates its bill in the current period (D-18) → approve and send → take cash at the counter and issue the receipt → only then end the tenancy. The LINE binding is cleared at that last step and not before, so the departing tenant still receives both their final bill and their payment confirmation. Tenants carry วันที่เข้าอยู่ and วันที่ย้ายออก, shown on the Tenants page and in the per-room history, but neither date influences any amount. The outgoing tenant's bills, payments and receipts stay attached to that tenant forever and remain visible in the room's 12-month history (D-42). No consumption ever crosses a tenancy: the departing tenant's final reading is the incoming tenant's previous reading through the ordinary D-14 lookup, so nothing is re-entered and nothing is billed twice.</td><td>Proration plus off-cycle settlement bills roughly doubles the billing logic for a semester project, and prorating a common fee is lease-contract logic that PRD §24 puts out of scope. Gating the end of a tenancy on a settled final bill is what makes the office rule executable instead of aspirational — without it the departing tenant's last month is skipped by the run and silently charged to the next tenant.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-09"><td><b>D-09</b></td><td>If a room's area changes, does it rewrite bills and receipts already issued? (merges Q-P-12)</td><td>No. At bill generation the bill row snapshots room_code, room_area_sqm and tenant_name_snapshot, and the common area bill item snapshots both the area and the rate used. Every screen, print view and LINE message renders these from the bill's own snapshot and never joins live to rooms or tenants. Changing a room's area therefore affects only bills generated afterwards. The guarantee is stated precisely: the BILLED DATA on a reprint — units, rates, area, tenant name, line amounts, total, receipt number, payment date — is identical forever; the page is not, because the letterhead is rendered live from Settings (D-01) and a reprint carries the สำเนา mark (D-27). No test asserts byte-identity. Area is DECIMAL(6,2), Admin only, and every change is audited (D-38). There is no versioned room-area table.</td><td>Three snapshot columns make reprints reproducible by construction. Effective-dated area versioning adds a table for an event that happens roughly once a year and can always be added later.</td><td><span class="badge info">engineer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-10"><td><b>D-10</b></td><td>What exactly is a tenant record, how many per room, and who may create and end one?</td><td>One room has at most one Active tenant at a time; a tenant record belongs to exactly one room. Fields: ชื่อ-นามสกุล (required), เบอร์โทรศัพท์ (required, Thai mobile format 0XXXXXXXXX validated), LINE User ID (read-only, filled only by the linking flow in D-29 — never typed by staff), ห้อง (required), วันที่เข้าอยู่ (required), วันที่ย้ายออก (nullable, not hand-editable), สถานะ (Active / Inactive). Status is SET BY AN ACTION, never derived from a date and never future-dated: สิ้นสุดสัญญาเช่า (D-08) sets status='Inactive', writes วันที่ย้ายออก = the date the action was taken, clears the LINE binding and sets rooms.status='Vacant' in the same transaction, so no scheduled job is needed and D-07's billable-room test always reads a settled value. Admin only may create, edit or end a tenancy; Staff cannot see the Tenants page at all (D-36). A tenant record is never deleted — bills, payments and receipts reference it. Re-letting a room creates a new tenant record even if the same person returns.</td><td>The PRD names the fields and nothing else; without the one-active-tenant rule the LINE recipient for a bill is ambiguous, and a status derived from a future date would silently change the billable-room set with nothing running to make it happen.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-47"><td><b>D-47</b></td><td>What exactly is a room record, where does the floor come from, and can a room be deleted?</td><td>rooms holds: room_code VARCHAR(10) UNIQUE (D-04); floor TINYINT NOT NULL, entered on the form and NEVER parsed from the room code — D-15's floor grouping and D-35's floor audience both read this column, and a code like "A-205" cannot be parsed; room_type VARCHAR(20) nullable and display-only, which is where PRD §5's ประเภทห้อง lives — it is a label and never affects any amount; area_sqm DECIMAL(6,2), Admin only, audited (D-09, D-38); baseline_water, baseline_electric, baseline_date (D-06); status derived from the tenant link (D-07). A room is never deleted once any bill references it, because that would break D-09's reprint guarantee: the form offers ปิดใช้งานห้อง instead, which excludes the room from billing and from every list except an explicit ปิดใช้งาน filter. A room with no bills at all may be deleted outright.</td><td>Four other decisions consume fields that no decision created. Storing the floor instead of parsing it is one column against a class of bugs on the day someone types a lettered room code, and deactivation rather than deletion is the same guarantee D-10 already gives tenants.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+</tbody>
+</table>
+</div>
+<h3>Meter readings <span class="muted" style="font-weight:400;font-size:14px">— D-11, D-12, D-13, D-14, D-15, D-16</span></h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th style="width:62px">ID</th><th style="width:20%">Question</th><th>Decision</th><th style="width:22%">Rationale</th><th style="width:96px">Affects</th></tr></thead>
+<tbody>
+<tr id="d-11"><td><b>D-11</b></td><td>What identifies a billing period, and is there an open/close state machine? (merges Q-P-06, Q-E-01, Q-U-01)</td><td>A billing period is the BILLING month, a plain YYYY-MM string stored on meter_readings and bills — there is no periods table, no Admin "open period" action, no period lock and NO CLOSED STATE; the word "closed" appears in no document, screen or test. The office reads meters in the first days of month M and those readings, the bills and the due date all belong to period M; the consumption they cover is whatever accrued since the previous reading (D-14). The demo therefore reads on the 1st, period = that month, due on the 5th, paid on the 3rd, one receipt number — all four labels agree, which is only true under this definition. Bills carry UNIQUE(room_id, period). The Meter Reading and Monthly Billing pages have a month picker defaulting to the current calendar month in Asia/Bangkok. Data is protected not by a period state machine but by the bill status guard in D-12/D-22: a reading is editable exactly while its room's bill for that period is Draft or does not yet exist. Progress is shown, not stored: Monthly Billing renders one derived completeness line for the selected period — "บิลครบทุกห้อง {billed}/{billable} · อนุมัติแล้ว {approved} · ชำระแล้ว {paid}".</td><td>Billing-month periods are the only reading that reproduces the PRD §28 demo exactly. Dropping the open/close state machine removes a table, two Admin actions and a whole class of "period is closed" bugs, because the bill status already answers every question the lock would have answered — and a derived completeness line gives the operator the signal the lock was standing in for.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-12"><td><b>D-12</b></td><td>What is the shape of a reading row, when may it be edited, and by whom? (merges Q-E-05, Q-U-05)</td><td>One row per room per period per utility: UNIQUE(room_id, period, utility_type) where utility_type is 'water' or 'electric'. The row stores previous_reading, current_reading and units as a snapshot computed at save time, plus previous_period (the period the previous value came from, or 'baseline'), recorded_by, recorded_at. A double-submitted save is an UPSERT on the unique key, so it is harmless — the lookup in D-14 excludes the row being written by construction, so a re-save can never take itself as its own previous. Because previous_reading is a snapshot, editing an old month's reading would leave the NEXT month's previous_reading stale; that is exactly why D-22 permits reverting only a room's most recent bill, which is the one guard that keeps the chain intact. Edit rights: Staff and Admin may create and edit a reading while the room's bill for that period is Draft or absent; saving recalculates that Draft bill in place immediately (D-18). Once the bill is approved (Unpaid/Paid, or displaying as Overdue) the reading is frozen for everyone — the only way back is Admin reverting the bill to Draft (D-22). The Meter Reading form shows the frozen state as read-only fields with the note "บิลอนุมัติแล้ว แก้ไขไม่ได้".</td><td>The unique key makes double-submit a non-event and the snapshot makes a printed bill reproducible — but a snapshot chain is only safe if nothing upstream of an approved bill can move, which is why the edit window and the revert window are the same window.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-13"><td><b>D-13</b></td><td>What happens when the current reading is below the previous one, and are implausible-but-valid readings flagged? (merges Q-P-14, Q-E-03, Q-U-03)</td><td>Hard block, plus one explicit replacement path, plus two soft flags. (1) Hard block, applied ONLY when the meter-replacement checkbox is off: if current_reading &lt; previous_reading the Save button is disabled and the inline Thai error "เลขมิเตอร์ปัจจุบันน้อยกว่าเดือนก่อน ({previous_reading}) กรุณาตรวจสอบ" is shown; the API rejects it with 422 for every role. units can never be negative — a database CHECK as well as a form rule. (2) Meter replacement, available to BOTH roles because staff are the ones standing at the meter: the checkbox "เปลี่ยนมิเตอร์ในรอบนี้" reveals two integer fields, เลขสุดท้ายของมิเตอร์เดิม (old_final) and เลขเริ่มต้นของมิเตอร์ใหม่ (new_start, defaults to 0), plus a required Thai reason. With the box ticked the current-below-previous block does not apply; the validation is instead old_final ≥ previous_reading AND current_reading ≥ new_start, and units = (old_final − previous_reading) + (current_reading − new_start), which keeps units ≥ 0. Both extra values and the reason are stored on the reading row and audited with the entering user's name (D-38); Admin reviews it at approval, the gate that already exists. There is no automatic rollover detection — a rolled dial is entered as a meter replacement. (3) Soft flags, non-blocking, shown as a warn badge on the reading row, on Bill Detail and as a count on Monthly Billing: ใช้สูงผิดปกติ fires only when that room's previous-period usage for the same utility was ≥ 10 units AND current usage exceeds 3× it — below that floor, and for a room with no previous usage at all, no flag is shown; ไม่มีการใช้งาน fires on 0 units for a room with an Active tenant.</td><td>One hard invariant (units ≥ 0) stops the bug the project exists to prevent, the two replacement fields are cheaper than a meters table and more honest than guessing a digit count, and the usage floor stops the 3× flag firing on every room returning from a vacant month — a badge that cries wolf trains the office to ignore it.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-14"><td><b>D-14</b></td><td>How is the previous reading resolved when a month was missed? (merges Q-E-06)</td><td>previous_reading = the current_reading of the row with the GREATEST period among rows for the same room_id and utility_type whose period is strictly less than the period being saved. Ordering is by period, never by recorded_at, so a month entered late resolves the same way it would have on time; ties are impossible under UNIQUE(room_id, period, utility_type); and the row being written is excluded by construction, so an UPSERT can never take itself as its own previous. If no such row exists, the room's baseline for that utility applies with previous_period = 'baseline' (D-06). Readings taken while the room was vacant count. Periods are not required to be contiguous and a gap never blocks a billing run. When the resolved previous_period is not the immediately preceding month, the reading row and the bill item record it, Bill Detail shows "ครอบคลุมการใช้ตั้งแต่รอบ {previous_period_th}", and the bill's LINE message gets one extra line saying the same (D-31). Units are never split or back-dated across the skipped months, and no bill is created for a skipped period. Reports plot a missing month as a gap in the line, not as zero.</td><td>Never blocking a month-end is worth more than a back-dating engine nobody asked for; ordering by period rather than by entry time is what makes a late catch-up entry produce the same arithmetic as a punctual one; and one line of Thai copy is what turns a doubled amount from a billing dispute into an explained charge.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-15"><td><b>D-15</b></td><td>How does the phone reading round work — which rooms, saved how, with what progress indicator? (merges Q-U-02)</td><td>The Meter Reading page lists rooms for the selected period, grouped by floor (rooms.floor, D-47) with a sticky floor header, ordered by room code. Four filter chips: ทั้งหมด / ยังไม่จด / จดแล้ว / ห้องว่าง, defaulting to ยังไม่จด. The first three cover billable rooms only (D-07) and drive the counter; ห้องว่าง lists vacant rooms with the badge ไม่ออกบิล so a voluntary reading can be recorded (D-07) without entering the counter. A room counts as จดแล้ว only when BOTH water and electricity are saved for that period. Each room is one card holding Previous (read-only) and Current (numeric input, inputmode="numeric") for water and for electricity, and its own บันทึก button that saves that room alone via one request; the card then collapses to a จดแล้ว summary row. A sticky bottom bar shows "จดแล้ว 42/67 ห้อง" recomputed from the server response after each save. Losing connectivity mid-round loses at most the room being typed: the failed save shows an inline retry that preserves the typed values (D-40). The round is complete when the counter reads Y/Y — the state the acceptance target in D-45 measures.</td><td>Per-room save is the only design that survives a stairwell with no signal, and the X/Y counter converts "the round is done" from a feeling into a measurable acceptance criterion — which only works if จดแล้ว has one definition and vacant rooms cannot pollute the denominator.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-16"><td><b>D-16</b></td><td>What numeric types hold readings and money, and where is rounding applied? (merges Q-P-02, Q-E-04)</td><td>Readings and units: INT UNSIGNED, whole units only; the input rejects decimals and negatives. Rates: DECIMAL(8,2) — 18.00, 8.00, 35.00 today, and 7.50 is legal. Room area: DECIMAL(6,2). All money: DECIMAL(10,2). FLOAT and DOUBLE are forbidden anywhere in the schema. Rounding: each bill item amount = ROUND(quantity × unit_price, 2) half-up, stored rounded; the bill total = the sum of the already-rounded items, so the printed receipt always equals the sum of its printed lines. There is no second rounding at the total, no rounding to whole baht, and no satang suppression — which is why the receipt's Thai amount in words must handle satang (D-27). JavaScript never does money arithmetic on a total it can recompute — amounts always come from the API as strings formatted by one shared helper (D-03).</td><td>One rounding rule applied in one place is testable on every surface at once; storing money as DECIMAL removes the 1789.9999999 class of demo-day defect, and constraining rates rather than adding a second rounding rule is how the office avoids satang if it wants to.</td><td><span class="badge info">engineer</span> <span class="badge warn">tester</span></td></tr>
+</tbody>
+</table>
+</div>
+<h3>Rates <span class="muted" style="font-weight:400;font-size:14px">— D-17</span></h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th style="width:62px">ID</th><th style="width:20%">Question</th><th>Decision</th><th style="width:22%">Rationale</th><th style="width:96px">Affects</th></tr></thead>
+<tbody>
+<tr id="d-17"><td><b>D-17</b></td><td>Which rate applies when a rate changes, and is it stored on the bill? (merges Q-P-13, Q-E-07, Q-U-19)</td><td>Both: effective-dated rate history AND a snapshot on the bill. The rates table holds (utility_type ENUM('water','electric','common'), unit_price DECIMAL(8,2), effective_from DATE, created_by, created_at) with UNIQUE(utility_type, effective_from) so a same-day tie is impossible; saving a rate in Settings INSERTs a new row with effective_from = today by default (Admin may set a future date) and never UPDATEs an existing row, so history is complete and auditable. Rate resolution is keyed to the PERIOD, not to the moment the button was pressed: generation picks, per utility, the row with the greatest effective_from ≤ the FIRST DAY OF THE BILL'S PERIOD MONTH, and copies unit_price onto the bill item together with the quantity (units, or area for the common fee). Every bill in one period therefore carries the same rate no matter how often or how late generation is re-run (D-18, D-23), so the Dashboard tiles and the monthly report are explainable against a single figure. Every screen, print view and LINE message renders from the bill item's own snapshot; approved bills are never affected by a later rate change. If Draft bills exist for the current period when a rate back-dated into that period is saved, Settings shows "มีบิลฉบับร่าง {N} ใบในรอบนี้ ยังใช้อัตราเดิมอยู่" with a button "คำนวณบิลฉบับร่างใหม่" that recalculates only Draft bills. Defaults seeded with effective_from = the first day of the seed's earliest history period: น้ำ 18.00 บาท/หน่วย, ไฟ 8.00 บาท/หน่วย, ส่วนกลาง 35.00 บาท/ตร.ม. Rates are Admin-only; Staff never see them (D-36).</td><td>The snapshot is what makes a reprinted receipt and the yearly chart truthful; insert-only history is the same amount of code as an update and gives Settings a defensible audit story. Keying resolution to the period rather than the click is the one line that stops a single month carrying two electricity rates because three rooms were read late.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+</tbody>
+</table>
+</div>
+<h3>Billing &amp; statuses <span class="muted" style="font-weight:400;font-size:14px">— D-18, D-19, D-20, D-21, D-22, D-23</span></h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th style="width:62px">ID</th><th style="width:20%">Question</th><th>Decision</th><th style="width:22%">Rationale</th><th style="width:96px">Affects</th></tr></thead>
+<tbody>
+<tr id="d-18"><td><b>D-18</b></td><td>What triggers bill generation, and what happens when generation runs twice or a reading is corrected afterwards? (merges Q-E-09, Q-U-07, part of Q-P-06)</td><td>Trigger: the Meter Reading page's primary action "ส่งให้นิติตรวจสอบ" (Staff and Admin, enabled once at least one room in the period has both readings) runs generation for that period; Admin can re-run it any time from Monthly Billing via "สร้าง/อัปเดตบิลฉบับร่าง". This one button satisfies PRD §4's ส่งข้อมูลให้นิติตรวจสอบ and §25's flow without adding a submitted state. Idempotency: bills carry UNIQUE(room_id, period). A run creates a Draft bill for every billable room (D-07) that has both readings and no bill; it recalculates in place every existing Draft bill for the period; it never touches a bill that is Unpaid or Paid. Every generated bill always carries exactly three bill_items — water, electric, common — even at 0 units and 0.00 THB (D-41). Saving a corrected reading recalculates that room's Draft bill immediately on save. The run returns and displays a summary: "สร้างบิลใหม่ {a} ใบ · อัปเดต {b} ใบ · ข้าม (อนุมัติแล้ว) {c} ใบ · ยังไม่ได้จด {d} ห้อง".</td><td>A unique key plus in-place recalculation makes pressing Generate twice — a near-certainty during a demo — a no-op instead of a double-billed room, without a versioning scheme or a delete-and-recreate path that could destroy an approved bill.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-19"><td><b>D-19</b></td><td>How many approval gates are there, can Admin approve many bills at once, and how does a 67-room send avoid a three-minute request? (merges Q-U-06, Q-U-07)</td><td>Exactly one gate. There is no separate reading-approval step: reviewing the readings and approving the bill are the same act, performed on Bill Detail (single bill) or on Monthly Billing (bulk). Only Admin may approve. Monthly Billing gains a row checkbox column, a select-all-in-view checkbox, and a primary button "อนุมัติและส่งบิล ({N} ห้อง)" enabled only when at least one selected bill is Draft; the confirm dialog (D-39) states "อนุมัติและส่งบิล {N} ห้อง ผ่าน LINE — ยกเลิกไม่ได้". Approval and delivery are TWO round trips. (1) The approve call commits every selected bill to Unpaid in one transaction, freezes each bill (D-22), writes one notifications row per bill with status='queued' (D-30) and returns in under five seconds with the result screen. (2) That screen then calls a send endpoint repeatedly, each call pushing at most 20 queued messages and returning running counts, so no single request exceeds roughly twenty seconds and a dropped connection loses nothing — the queued rows survive and the daily job would finish them anyway (D-32). The result summary stays on screen: "อนุมัติ {N} ใบ · ส่ง LINE สำเร็จ {x} · ยังไม่ได้ส่ง (ไม่มี LINE) {y} · ส่งไม่สำเร็จ {z}", with the failed and unsent rooms listed and linked. Bill Detail keeps its single "อนุมัติและส่งบิล" button for the scripted demo of room 205.</td><td>The four statuses the PRD fixes support exactly one gate — a second gate would need a status the convention forbids. Bulk approval is not a luxury at 67 rooms, but a three-minute synchronous request on free-tier hosting fails in the worst possible way: money committed, browser showing an error, operator re-pressing the button. Queue-then-drain keeps the commit fast and makes the send resumable.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-20"><td><b>D-20</b></td><td>How is the due date derived, and what protects a late approval from producing an unpayable window? (merges Q-P-07)</td><td>Settings holds วันครบกำหนด as a day of month, default 5, Admin-editable, range 1–28. At generation a Draft bill's due_date = that day of its own period month; the Draft screen labels it "กำหนดชำระ 5 ก.ย. 2026 (ยืนยันเมื่ออนุมัติ)". At Approve &amp; Send the due date is recomputed once and frozen as due_date = MAX(day-of-month of the period month, approval_date + 3 days). The PRD §28 example satisfies this exactly: period 2026-09, approval 1 Sep 2026, MAX(5 Sep, 4 Sep) = 5 Sep 2026 — in a live demo the same expression produces approval_date + 3, which is the correct behaviour, not a defect (D-44). The day is clamped to the last day of the month if the month is shorter (the 1–28 range means this cannot bite, but the clamp is written anyway). The due date is never editable by hand — there is no per-bill due date field — and every bill in one approval batch approved on the same day gets the same due date.</td><td>Tenants expect the same date every month, and the single MAX() expression guarantees at least three days to pay without a month-rolling rule, which is what keeps the D−2 reminder in D-33 from ever being scheduled in the past.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-21"><td><b>D-21</b></td><td>Exactly when does a bill become Overdue, who makes it happen, and does it add a charge? (merges Q-P-08, Q-E-11, Q-U-11)</td><td>Overdue is DERIVED, never stored, and there is no late fee, interest or penalty of any kind. bills.status stores only 'Draft', 'Unpaid', 'Paid'. One shared helper — a single SQL expression CASE WHEN status='Unpaid' AND due_date &lt; CURDATE() THEN 'Overdue' ELSE status END, and one JS function billStatus(bill) — produces the four-value display status. The rule is a DISPLAY rule: any surface that shows a status to a human, or filters or counts by a status a human can see, must go through the helper. Aggregation that deliberately means "approved" or "not yet settled" — D-41's money tiles reading status IN ('Unpaid','Paid'), D-42's arrears report ageing every Unpaid bill — reads the stored column directly and is not a defect. The transition is instantaneous at 00:00 Asia/Bangkok on the day after the due date, with no job, no drift and nothing to fail. Paying an overdue bill sets status='Paid' and the display status follows. The daily job (D-32) sends overdue reminders but changes no status.</td><td>A stored status that depends on a cron job on free-tier hosting reads as a broken feature the moment the instance sleeps; a derived status is always correct, survives a demo on a laptop, and makes the expected value in every test deterministic. Stating the rule as a display rule rather than an absolute ban keeps it from being ignored where it matters.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-22"><td><b>D-22</b></td><td>What is frozen at approval, and what is the sanctioned way to correct a bill already sent or already paid? (merges Q-P-04, Q-P-05 correction half, Q-E-10)</td><td>At Approve &amp; Send the bill is frozen: readings, units, unit prices, room area, tenant name, line amounts, total and due date are all snapshots and none may be edited afterwards through any endpoint. Correcting an Unpaid or Overdue bill: Admin presses "ตีกลับเป็นฉบับร่าง" on Bill Detail, supplies a Thai reason (min 10 characters), the system writes an audit row with before/after JSON and sets the bill back to Draft, unfreezing its readings (D-12). The button is available ONLY on a room's most recent bill; where a later bill exists for the same room it is disabled with "มีบิลรอบถัดไปแล้ว ไม่สามารถแก้ไขย้อนหลังได้ — กรุณาแก้ในรอบล่าสุด", because a later bill's previous_reading is a snapshot of the value being edited (D-12). After editing and re-approving, the LINE bill is re-sent as BILL_CORRECTED (D-31). Correcting a PAID bill is a counter transaction, not a system transaction: the cash goes back across the counter first, then Admin voids the payment (D-25) — whose dialog reads "คืนเงินสด {amount} บาท ให้ผู้เช่าก่อนยืนยันการยกเลิก" — the old receipt is stamped ยกเลิก, the bill returns to Unpaid, is reverted to Draft, corrected, re-approved, and paid fresh at the full corrected amount with a new receipt number; the corrected LINE message carries the extra line "ยอดที่ชำระไว้เดิมได้คืนเป็นเงินสดแล้ว กรุณาชำระตามยอดใหม่". The system never holds a credit, a refund or a balance. There is no Cancelled or Void bill status, no adjustment line item, and no credit carried to the next month.</td><td>One reversible path covers both cases, keeps exactly four statuses, and makes the write guard a single check on bill.status in the middleware. Restricting the revert to the newest bill is the one rule that keeps the previous-reading chain honest, and routing the refund across the counter is what lets the system stay free of money it does not hold.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-23"><td><b>D-23</b></td><td>What happens to an occupied room whose readings are missing when the run executes? (merges part of Q-P-14, Q-U-09)</td><td>The room is simply excluded from that run — no bill, no zero-unit bill, no placeholder. Monthly Billing shows a persistent warn callout at the top of the period whenever any billable room lacks a bill: "ยังไม่ได้จดมิเตอร์ {N} ห้อง: 108, 312, 405 — ยังไม่ได้สร้างบิล", the room codes linking straight to the Meter Reading page for that room. Approval is NOT blocked: the office may approve the bills that exist. When the missing rooms are read later, re-running generation (D-18) creates only their bills, at the same rate as the rest of the period (D-17); they are approved in a second, smaller batch and get their own due date under D-20. The count of billable rooms without a bill is the single figure that drives both this banner and the completeness line in D-11, and it is the tester's assertion for "ทุกห้องที่มีผู้เช่าได้รับบิล": it must reach 0. Nothing is "closed" — there is no such state (D-11).</td><td>A hard block would stop the office billing 66 rooms because one meter is behind a locked door. The banner makes the gap impossible to miss, the idempotent re-run makes filling it a one-click operation, and one shared count means the banner and the acceptance criterion can never disagree.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+</tbody>
+</table>
+</div>
+<h3>Payments &amp; receipts <span class="muted" style="font-weight:400;font-size:14px">— D-24, D-25, D-26, D-27, D-28</span></h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th style="width:62px">ID</th><th style="width:20%">Question</th><th>Decision</th><th style="width:22%">Rationale</th><th style="width:96px">Affects</th></tr></thead>
+<tbody>
+<tr id="d-24"><td><b>D-24</b></td><td>Does the counter record the exact bill total, is a partial payment allowed, and is change shown? (merges Q-P-03, Q-U-12)</td><td>Full payment only, one live payment per bill. The stored payment amount is fixed at the bill total and is not an input — the Payment screen shows ยอดที่ต้องชำระ 1,790.00 บาท as read-only text, with the room and the billing period in the header. Above the confirm button there is an optional cashier aid: a numeric field รับเงิน that computes เงินทอน on screen live (รับเงิน 2,000 → เงินทอน 210.00); neither value is stored, printed on the receipt, or sent to the API. Confirm Cash Payment (Admin only, D-36) writes one payments row (bill_id, amount, paid_at, received_by_user_id, method='cash'), flips the bill to Paid, issues the receipt (D-27) and queues the LINE confirmation (D-31) — one transaction, one button, no second screen. Partial payment is a documented v1 limitation (D-05): a tenant who is short is asked to return with the full amount; the bill stays รอชำระ / เกินกำหนด.</td><td>PRD §12 models exactly one button and one status flip; keeping the amount non-editable means Paid always means fully paid, no fifth status is needed, no SUM appears in any query, and overpayment cannot exist — which is what lets D-25 be a simple void with no refund or credit machinery inside the system.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-25"><td><b>D-25</b></td><td>How is a payment recorded against the wrong room or the wrong month undone? (merges Q-P-05, Q-U-13)</td><td>Admin only, from Bill Detail or the Receipt view: "ยกเลิกการชำระเงิน" with a required Thai reason (min 10 characters). The cash is returned across the counter FIRST — the dialog says so explicitly (D-39). The effect: the payment row is marked voided (voided_at, voided_by, void_reason) and never deleted; the receipt row is marked voided and never deleted, so it KEEPS ITS NUMBER — that, and not gaplessness, is what voiding rather than deleting buys (D-27) — and every view or print of it is stamped ยกเลิก in red across the header; the bill returns to Unpaid and therefore displays as Overdue automatically if the due date has passed (D-21); an audit row is written. No LINE message is sent on the void itself — the office explains in person. A bill whose most recent payment was voided is EXCLUDED from automatic PRE_DUE and OVERDUE sends (D-33) and shows the badge ระงับการแจ้งเตือนอัตโนมัติ, so the system never sends ⚠️ เลยกำหนดชำระแล้ว to a tenant who paid and did nothing wrong; Admin may still use the per-bill manual resend once the situation has been explained. Because the payment amount always equals the bill total (D-24) there is no overpayment, no refund inside the system and no credit note anywhere.</td><td>Mis-keying a room number at a cash counter is a weekly event and was otherwise only fixable by editing the database. Voiding rather than deleting keeps the audit trail and the receipt number intact, and suppressing the automated chase is one WHERE clause that stops the system contradicting its own policy of silence.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-26"><td><b>D-26</b></td><td>How are a double-clicked confirm, two cashiers on one bill, and concurrent receipt numbering prevented from producing duplicates? (merges Q-E-19)</td><td>Correctness lives in the database, not the browser. MySQL 8 has no partial indexes, so the one-live-payment-per-bill rule is enforced with a stored generated column: payments.active_bill_id BIGINT UNSIGNED AS (IF(voided_at IS NULL, bill_id, NULL)) STORED, with UNIQUE(active_bill_id). MySQL permits repeated NULLs in a unique index, so any number of voided payments coexist with at most one live payment per bill and D-25's void-then-repay path works unchanged. This mechanism is binding: it must not be "simplified" into a filtered index (which does not exist) or a plain UNIQUE(bill_id) (which would make a corrected bill unpayable forever). Also: UNIQUE(payment_id) on receipts; the status change is a conditional update — UPDATE bills SET status='Paid' WHERE id=? AND status='Unpaid' — failing with the Thai message "บิลนี้ถูกชำระไปแล้ว" if 0 rows are affected; receipt numbers come from a single counters row allocated inside the same transaction with INSERT INTO counters (name, seq) VALUES ('receipt',1) ON DUPLICATE KEY UPDATE seq = LAST_INSERT_ID(seq+1), read back with LAST_INSERT_ID(). The UI additionally disables the button and shows a spinner on submit — a courtesy, never the guarantee. A rolled-back transaction may consume a number and leave a gap; gaps are accepted and documented (D-27), duplicates are not.</td><td>Two receipts for one payment, or a Dashboard reporting 3,580 collected on a 1,790 bill, is the kind of defect that cannot be argued away in a demo. A generated column, a conditional update and an atomic counter make it impossible using only constructs the chosen database actually has.</td><td><span class="badge info">engineer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-27"><td><b>D-27</b></td><td>Is the receipt a tax invoice, what must it carry, and how are numbers allocated? (merges Q-P-18, Q-U-16)</td><td>A non-tax ใบเสร็จรับเงิน. No VAT, no VAT breakdown, no ใบกำกับภาษี, no toggle. Required fields in order: apartment name / address / โทร from Settings, plus เลขประจำตัวผู้เสียภาษี which is OPTIONAL and renders only when Settings holds one (letterhead, D-01); the title ใบเสร็จรับเงิน; เลขที่ REC-202609-000852; วันที่ชำระ 3 กันยายน 2026; ห้อง 205; ชื่อผู้เช่า (snapshot); รอบบิล กันยายน 2026; the three line items, always all three (D-41), each with quantity, unit price and amount (ค่าน้ำ 10 หน่วย × 18.00 = 180.00 / ค่าไฟ 70 หน่วย × 8.00 = 560.00 / ค่าส่วนกลาง 30 ตร.ม. × 35.00 = 1,050.00); ยอดรวม 1,790.00 บาท plus the Thai amount in words; ชำระโดย เงินสด; ผู้รับเงิน (the Admin's ชื่อที่แสดง, D-46); a signature line ลงชื่อผู้รับเงิน. Amount in words has two forms and one shared helper: an integer total renders "{words}บาทถ้วน" (หนึ่งพันเจ็ดร้อยเก้าสิบบาทถ้วน), a total carrying satang renders "{words}บาท{satang words}สตางค์" — satang is reachable because rates may be 7.50 (D-16). The helper is a named deliverable with one unit test covering 0, 1,790.00, 1,790.50 and 1,000,000.00. Numbering: REC-&lt;payment month YYYYMM&gt;-&lt;6-digit zero-padded sequence&gt;, one continuous counter that NEVER resets, allocated inside the payment transaction (D-26). The sequence is UNIQUE and MONOTONIC but NOT GAPLESS — gaps arise legitimately from rolled-back transactions and from the seed's starting offset (D-44), and no document, rationale or test may claim otherwise; the tester's two assertions are that no two receipts share a number and that a later payment never receives a lower one. Copies are button-driven, not browser-driven: the receipt route renders the original while print_count = 0, and the primary button พิมพ์ใบเสร็จ POSTs to increment print_count before calling window.print(); every render at print_count ≥ 1 carries the สำเนา mark and the button reads พิมพ์สำเนา. Printing from the browser's own menu bypasses the counter and yields an unmarked copy — an accepted limitation (D-05). A voided receipt prints stamped ยกเลิก (D-25).</td><td>Matches the PRD's own example number, which a monthly reset could not produce in a 67-room building, and avoids issuing tax documents a student project cannot substantiate. A button-driven copy mark is the only version a tester can pass or fail, and stating plainly that the sequence is not gapless stops a QA case that would fail on the seed before the app is even opened.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-28"><td><b>D-28</b></td><td>What paper size and print mechanism, and what does the paper bill look like? (merges Q-U-15)</td><td>A5 portrait through the browser's own print dialog: window.print() on a dedicated route with @page { size: A5 portrait; margin: 10mm } and a print stylesheet that hides the app chrome. No PDF library, no server-side rendering, no thermal-printer layout, no printer driver assumptions. The receipt must fit on exactly one A5 page with the three line items, the total and the number — a QA check. The same route serves the on-screen view (framed with .device.print in the documentation) and the printed page. The paper bill uses the same machinery: ใบแจ้งค่าใช้จ่าย is the D-27 layout on the same A5 route, titled ใบแจ้งค่าใช้จ่าย, carrying the letterhead, ห้อง, ชื่อผู้เช่า, รอบบิล, กำหนดชำระ {due_date} and the same three line items with units, rate and amount — and NO receipt number, no payment date, no ผู้รับเงิน and no signature line. It is available on Bill Detail (button พิมพ์ใบแจ้งหนี้) for any bill that is not Draft, and is the hand-over path for tenants with no LINE binding (D-30).</td><td>Zero dependencies and zero hardware assumptions; A5 comfortably holds the content, and a print stylesheet is a few rules against a PDF pipeline that would need its own Thai font embedding. Specifying the invoice here rather than leaving it as a clause matters because on day one it is the common case, not the fallback.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+</tbody>
+</table>
+</div>
+<h3>LINE &amp; notifications <span class="muted" style="font-weight:400;font-size:14px">— D-29, D-30, D-31, D-32, D-33, D-34, D-35</span></h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th style="width:62px">ID</th><th style="width:20%">Question</th><th>Decision</th><th style="width:22%">Rationale</th><th style="width:96px">Affects</th></tr></thead>
+<tbody>
+<tr id="d-29"><td><b>D-29</b></td><td>How does a tenant's LINE User ID actually reach the Tenants record? (merges Q-E-13)</td><td>Messaging API webhook plus a one-time code — no LIFF, no app, no manual pasting of user IDs. Flow: (1) Admin presses "สร้างรหัสผูก LINE" on the tenant's row; the system generates a 6-character code from the alphabet ABCDEFGHJKLMNPQRSTUVWXYZ23456789 (no O/0/I/1), valid 7 days, single use, displayed and printable on a slip with the OA QR code. (2) The tenant adds the Official Account as a friend; the follow event stores the userId in a pending table with the display name. (3) The tenant sends the code as a chat message; the webhook matches it, binds userId to the tenant, expires the code, and replies "✅ ผูกบัญชีสำเร็จ\nคุณจะได้รับบิลและประกาศของห้อง {room_code} ผ่าน LINE นี้". A wrong or expired code gets "❌ ไม่พบรหัสนี้ หรือรหัสหมดอายุแล้ว กรุณาติดต่อสำนักงานนิติบุคคล". Any other inbound message gets one fixed auto-reply pointing at the office; the OA is not a chatbot. Uniqueness is on the TENANT, not on the LINE account: UNIQUE(tenant_id) on the binding, so one LINE account may be bound to several Active tenants — a parent renting two rooms, or a couple sharing a phone — and every template names the room, so nothing is ambiguous; a message to a userId bound to two tenants is two notifications rows, one per bill. A code sent from an already-bound account gets the normal success reply naming the new room. The Tenants page shows the binding (LINE display name + linked date) and a "ยกเลิกการผูก" action for Admin; ending a tenancy unbinds only that tenancy (D-08). Webhook route: POST /line/webhook, exempt from session auth and CSRF, verified by X-Line-Signature, and it returns 200 BEFORE doing any work so a cold start still ACKs inside LINE's timeout (D-43).</td><td>A tenant cannot read their own userId anywhere in LINE, so staff literally cannot type it — this flow is the only self-service option that uses nothing but the Messaging API, and the printed code makes the room binding verified rather than guessed. Keying uniqueness to the tenant is what stops the second room in a family silently stealing the first room's binding.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-30"><td><b>D-30</b></td><td>What happens at Approve &amp; Send when the tenant has no linked LINE account or the send fails? (merges Q-P-19, Q-E-14, Q-E-16, Q-U-10)</td><td>Money state and messaging state are independent. The status change is committed FIRST and the send happens after, outside the transaction — a LINE outage can never prevent billing and never rolls anything back (D-19). One notifications table covers bills AND announcements: (id, type, bill_id NULL, announcement_id NULL, tenant_id, recipient_user_id, status ENUM('queued','sent','failed','skipped_no_line'), attempt_count INT NOT NULL DEFAULT 0, last_error, http_status, last_attempt_at, send_date) with UNIQUE(type, bill_id, announcement_id, tenant_id, send_date). One row per RECIPIENT, never one per API call, so a 54-recipient multicast writes 54 rows and D-35's per-announcement result and D-34's monthly count are the same query. Retries UPDATE the row rather than needing a new one: every attempt — first send, daily retry, manual ส่งซ้ำ — is an UPSERT that increments attempt_count and rewrites status; automatic retries stop at attempt_count = 3, the Admin's manual button is never capped. A corrected bill re-sent the same day writes type='BILL_CORRECTED', its own key. Per-bill delivery state, badged on Monthly Billing and Bill Detail: ส่งแล้ว (ok), ยังไม่ได้ส่ง — ไม่มี LINE (neutral, skipped_no_line), ส่งไม่สำเร็จ (bad, error on hover). Unbinding happens ONLY on an explicit 400 invalid-userId from the push endpoint, and never for the seed's placeholder IDs (D-44); a tenant who has BLOCKED the Official Account is not reported to us at all — LINE returns 200 and drops the message — so the word "blocked" appears in no badge, report or test case, and the gap is a listed limitation (D-05). Bills never delivered are handed over on paper: Bill Detail's พิมพ์ใบแจ้งหนี้ (D-28). Approval is never blocked by delivery.</td><td>On day one almost no tenant is linked, so the unlinked case is the common case. Recording delivery per recipient is what makes ส่งบิลผ่าน LINE OA verifiable, gives the demo an honest failure path, and lets one table serve bills and announcements; an UPSERT with a counter is what makes the retry policy the decision already promised actually expressible.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-31"><td><b>D-31</b></td><td>What is the exact Thai text of every outbound message?</td><td>Seven plain-text templates, no Flex Messages, no images, no rich menu. Every template uses BRACED PLACEHOLDERS ONLY — no room number, month, amount or date is ever hard-coded — and each is followed in the design document by one clearly labelled worked example rendered with the PRD §28 values. Settings values are placeholders too: office hours and apartment name are never literals. (1) BILL — "🔔 ค่าใช้จ่ายประจำเดือน {period_th}\nห้อง {room_code}\n\n💧 ค่าน้ำ {water_units} หน่วย × {water_rate} บาท = {water_amount} บาท\n⚡ ค่าไฟ {elec_units} หน่วย × {elec_rate} บาท = {elec_amount} บาท\n🏢 ค่าส่วนกลาง {area} ตร.ม. × {common_rate} บาท = {common_amount} บาท\n\n💰 ยอดรวม {total} บาท\n📅 กรุณาชำระภายในวันที่ {due_date_th}\n\nชำระเงินสดที่สำนักงานนิติบุคคล เวลา {office_hours}" — a gap-covering bill (D-14) appends "หมายเหตุ: ยอดนี้ครอบคลุมการใช้ตั้งแต่รอบ {previous_period_th}". (2) BILL_CORRECTED — the BILL body prefixed with "🔄 แก้ไขบิล (ยกเลิกยอดเดิม)", and where the correction followed a voided payment (D-22) it also carries "ยอดที่ชำระไว้เดิมได้คืนเป็นเงินสดแล้ว กรุณาชำระตามยอดใหม่". (3) PRE_DUE — "⏰ แจ้งเตือนก่อนครบกำหนด\nห้อง {room_code} มียอดค้างชำระ {total} บาท\nกรุณาชำระภายในวันที่ {due_date_th} (อีก 2 วัน)\n\nชำระเงินสดที่สำนักงานนิติบุคคล". (4) OVERDUE — "⚠️ เลยกำหนดชำระแล้ว\nห้อง {room_code} ยอดค้างชำระ {total} บาท\nครบกำหนดวันที่ {due_date_th} (เลยมาแล้ว {days_overdue} วัน)\n\nกรุณาติดต่อสำนักงานนิติบุคคล". (5) PAID — "✅ ยืนยันการชำระเงิน\nห้อง {room_code}\nได้รับชำระค่าใช้จ่ายจำนวน {total} บาท เรียบร้อยแล้ว\nวันที่ {paid_date_th}\nเลขที่ใบเสร็จ {receipt_no}\n\nขอบคุณครับ/ค่ะ". (6) ANNOUNCEMENT — "📢 {title}\n\n{body}\n\n— นิติบุคคล {apartment_name}". (7) LINK_OK / LINK_FAIL exactly as specified in D-29. Every template is one function in one module; no message text is written inline at a call site.</td><td>These strings are the only part of the system a tenant ever reads, and they appear in the PRD, the UI mockups, the test plan and the demo script — one source of truth prevents four different versions. Braces everywhere prevent the second-worst outcome: a designer mocking up ห้อง 205 for every room and a tester asserting on a literal that only one room can satisfy.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-32"><td><b>D-32</b></td><td>What actually runs the scheduled reminders on free-tier hosting, and how is duplicate sending prevented? (merges Q-E-12, part of Q-U-11)</td><td>One authenticated endpoint plus one external cron. POST /internal/jobs/daily, guarded by a shared secret in the X-Job-Token header (env var), called every day at 09:00 Asia/Bangkok by a free external scheduler (cron-job.org, or a Render Cron Job). No node-cron inside the process. Keeping the instance awake is a SEPARATE schedule and not this job's business: a 10-minute GET /healthz ping (D-43). Idempotency has two layers: a job_runs table with UNIQUE(job_name, run_date) so a repeated ping the same day is a no-op, and the notifications key from D-30 so no bill receives the same message type twice in one day. The job_runs guard applies ONLY to the scheduled path: Settings carries an Admin button "รันงานแจ้งเตือนตอนนี้" that calls the identical code with job_name='daily_manual' and does not consult job_runs at all, so a demo held at 14:00 can still trigger reminders after the 09:00 cron has already run — safety comes from the notifications key, which is enough. The button reports what it sent: "ส่งแจ้งเตือนก่อนครบกำหนด {a} ราย · เลยกำหนด {b} ราย · ส่งซ้ำที่ล้มเหลว {c} ราย". The job also drains any notifications rows left queued by a bulk approval (D-19). It never changes a bill status (D-21).</td><td>An in-process scheduler silently never fires on a sleeping free service, which would make the headline automatic-notification feature undemonstrable. One endpoint plus two unique keys gives real automation and protection against a retrying scheduler — but the demo button must not inherit the daily guard, or the feature is undemonstrable for a second reason.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-33"><td><b>D-33</b></td><td>On which days and at what hour do reminders fire, how often do they repeat, and is there a manual send? (merges Q-P-09)</td><td>The daily job at 09:00 Asia/Bangkok sends, per bill, at most four automatic messages in its entire life: PRE_DUE on due_date − 2 days; OVERDUE on due_date + 1 day, + 8 days and + 15 days (the condition is literally days_overdue IN (1, 8, 15)). Nothing is sent after day 15, nothing is sent to a Paid bill, nothing is sent outside 09:00 — no evening or weekend send — and nothing is sent for a bill whose most recent payment was voided (D-25), which is one extra WHERE clause and one tester assertion. In addition Admin has a per-bill manual "ส่งแจ้งเตือนอีกครั้ง" button on Bill Detail; it is not capped, because it is the tool of last resort on exactly the day an automatic send failed (D-30). Announcements are unaffected by this schedule and are sent on demand (D-35).</td><td>Two automatic touches plus two capped weekly nudges is what an office needs for arrears follow-up; a ceiling of four messages and a single fixed hour keeps tenants from blocking the Official Account, which would also destroy bill delivery invisibly (D-30). The IN (1,8,15) condition is one line and one obvious test.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-34"><td><b>D-34</b></td><td>Which LINE API is used for which message, and how does the design stay inside the message quota? (merges Q-E-15)</td><td>Push API for everything personalised (bill, corrected bill, pre-due, overdue, payment confirmation, link replies) — one call per recipient, because the content differs per room. Multicast API in chunks of at most 500 userIds for announcements, which share identical text; one notifications row per recipient regardless (D-30). Broadcast is never used, because it would reach every OA follower including ex-tenants. Quota visibility rather than quota machinery: the LINE OA free plan allows 500 push/multicast messages per month, and Settings shows one line, "ส่งข้อความเดือนนี้: {N}/500", where N = COUNT(*) over notifications WHERE status='sent' for the current month — failed and skipped_no_line rows never inflate it — rendered in warn colour above 450. Nothing is throttled or blocked; exhausting the allowance silently stops delivery and is a listed limitation (D-05). โหมดทดสอบ LINE in Settings redirects every outbound message to a single whitelisted userId with the intended recipient still recorded on the notifications row, and it DEFAULTS TO ON in every environment — it is switched off only for the rehearsed demo path, which sends to the two or three real accounts the team owns.</td><td>Multicast cuts announcement API calls from 67 to 1. Naming the 500 ceiling turns a vague worry into a number the office can watch, counting only successful sends keeps it honest, and defaulting test mode ON is what stops a single rehearsal spending the month's allowance and wiping the seeded bindings (D-44).</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-35"><td><b>D-35</b></td><td>Who receives an announcement, is it previewed, and can it be recalled? (merges Q-U-17)</td><td>Audience selector with two options only: ทุกห้องที่มีผู้เช่า (default) or เลือกชั้น (a multi-select over rooms.floor, D-47). No per-room selection, no unpaid-only audience, no scheduling. The form is หัวข้อ (max 60 chars) + เนื้อหา (max 400 chars, keeping the whole message far under LINE's 5,000-character limit), with a live preview rendered exactly as the ANNOUNCEMENT template in D-31 and a live recipient count "จะส่งถึง {rooms} ห้อง (ผู้เช่าที่ผูก LINE แล้ว {linked} ราย)" — the second number matters, because unlinked tenants receive nothing. Admin only. The confirm dialog states the count and that it cannot be undone (D-39). Delivery is recorded one notifications row per recipient tenant against announcement_id (D-30), so the Announcements list shows each announcement's sent time, audience, recipient count and delivery result, and the monthly message count (D-34) includes announcements. A sent announcement is immutable history: viewable, never editable, resendable or recallable. LINE offers no recall and the UI must not imply otherwise.</td><td>The one real-world case beyond a building-wide notice is a floor-scoped water shut-off, and floor filtering is a WHERE clause over a column the Rooms table already holds. Showing the linked count next to the room count stops the office believing 67 people were told when only 54 were, and per-recipient rows are what make that number a fact rather than an estimate.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+</tbody>
+</table>
+</div>
+<h3>Roles &amp; security <span class="muted" style="font-weight:400;font-size:14px">— D-36, D-37, D-38, D-39, D-40, D-46</span></h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th style="width:62px">ID</th><th style="width:20%">Question</th><th>Decision</th><th style="width:22%">Rationale</th><th style="width:96px">Affects</th></tr></thead>
+<tbody>
+<tr id="d-36"><td><b>D-36</b></td><td>How many roles exist and exactly what may each one do — in particular, may Staff take cash? (merges Q-P-15, Q-E-18)</td><td>Two roles, admin and staff, on a single users.role column. The PRD §12 sentence "เจ้าหน้าที่กด Confirm Cash Payment" is a drafting error and is corrected: the counter is operated by an Admin login, matching §4, which grants รับชำระเงิน and ออกใบเสร็จ to Admin only. Permission matrix, binding for the middleware, the navigation and the test plan — admin: every page and every action, including rates, bill generation, approval, revert to Draft, payment, void payment, receipts, announcements, tenants, users, reports, settings and the manual job trigger. staff: ภาพรวม (a reduced Dashboard showing only room counts and this period's reading progress), ห้องพัก (read-only list and detail, no rates and no amounts), จดมิเตอร์ (create and edit readings per D-12, record a meter replacement per D-13, and press ส่งให้นิติตรวจสอบ per D-18), and the reading history of a room. Staff never see a bill amount, a rate, a payment, a receipt, the Tenants page, the Users page or Settings — money is not merely hidden in the navigation, it is absent from the API responses staff receive. There is no third role and no per-user permission table.</td><td>Two roles is the smallest matrix that still separates the person who reads a meter from the person who approves the money built from it, and it is exactly the role list PRD §4 defines. One middleware plus one documented table replaces a third of the guesswork in the test plan.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-37"><td><b>D-37</b></td><td>Session or JWT, and where does session state live on a free instance that restarts? (merges Q-E-17)</td><td>express-session with a MySQL-backed session store (express-mysql-session), cookie httpOnly, SameSite=Lax, Secure in production, rolling 8-hour expiry. No JWT, no refresh tokens, no localStorage tokens. Passwords hashed with bcrypt, cost 10; no self-service password reset in v1 — Admin resets another user's password from the Users page (D-46). The seeded admin password is NOT committed: seed.sql reads it from the environment variable SEED_ADMIN_PASSWORD and seeding fails if it is unset; <a href="02-engineering-spec.html#runbook-deploy">02 · Operations Runbook — deploy</a> documents the variable, never a value, and first login forces a change. A locked-out user is reset by another Admin (<a href="#op-who-can-do-what">Operating Procedures § h</a>); a lost last Admin is <a href="02-engineering-spec.html#runbook-lost-admin">a runbook database operation</a>. Logout deletes the session row. The LINE webhook route is exempt from session auth and CSRF and is authenticated by X-Line-Signature; the internal job endpoint is exempt and authenticated by X-Job-Token (D-32); /healthz is public. Every other POST is protected by a CSRF token. Rate limiting: 10 failed logins per IP per 15 minutes, with app.set('trust proxy', 1) so the limiter keys on the real client IP behind Render's TLS-terminating proxy rather than bucketing every visitor together; the limiter never applies to the webhook, the job endpoint or /healthz.</td><td>Revocation and logout come free, the MySQL instance is already provisioned, and a DB-backed store survives the free-tier restarts that would log everyone out mid-demo. The two operational lines matter more than they look: without trust proxy one wrong password locks the whole demo out, and a committed admin password on a public HTTPS URL is a working credential in a public repo.</td><td><span class="badge info">engineer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-38"><td><b>D-38</b></td><td>Which actions are audited, and in what structure? (merges Q-E-20)</td><td>One audit_log table: (id, entity_type, entity_id, bill_id NULL, action, actor_user_id, before_json, after_json, reason, created_at), written through a single helper called inside the same transaction as the change. Audited actions, exactly these twelve: bill approve, bill revert to Draft (with reason), payment confirm, payment void (with reason), rate change, room create/edit, room AREA change (called out separately because it silently changes every future common-area fee, D-09), room deactivate, meter reading create, meter reading edit, meter replacement (with reason), tenant LINE link/unlink, announcement send. Not audited: logins, page views, report exports, Settings profile edits. bill_id is set on every row attributable to a bill — approve, revert, payment confirm, payment void, and reading edits made while that bill was Draft — so Bill Detail's Admin-only timeline is exactly SELECT * FROM audit_log WHERE bill_id = ? ORDER BY created_at, with no cross-entity join to invent and one obvious test. The columns the PRD names explicitly stay where they are: payments.received_by_user_id, meter_readings.recorded_by, rates.created_by. There is no global audit browser screen in v1.</td><td>One generic table plus one insert helper answers "who changed the electricity rate before this bill was approved" — precisely the business-logic question a demo reviewer asks — for far less than per-table tracking columns. The bill_id column is what turns the timeline from an invented query into a one-line one, and auditing area changes closes the only unlogged path to future money.</td><td><span class="badge info">engineer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-39"><td><b>D-39</b></td><td>Which actions need a confirmation dialog and what must it say? (merges Q-U-14)</td><td>One shared dialog component, six call sites, never the browser's native confirm(). Every dialog states the exact effect with counts and names the irreversibility in Thai; the primary button repeats the verb rather than saying ตกลง. The six: (1) Approve &amp; Send single — "อนุมัติและส่งบิลห้อง {room_code} ผ่าน LINE — ยกเลิกไม่ได้" / button อนุมัติและส่ง; (2) bulk approve — "อนุมัติและส่งบิล {N} ห้อง ผ่าน LINE — ยกเลิกไม่ได้"; (3) Confirm Cash Payment — "ยืนยันรับเงินสด {total} บาท · ห้อง {room_code} · รอบ {period_th} และออกใบเสร็จ", the billing period included because a room in arrears has several unpaid bills and paying the wrong month is precisely the mistake D-25 exists to undo; (4) send announcement — "ส่งประกาศถึง {N} ห้อง ผ่าน LINE — เรียกคืนไม่ได้"; (5) void payment — "คืนเงินสด {total} บาท ให้ผู้เช่าก่อนยืนยันการยกเลิก", reason field required before the primary button enables; (6) end a tenancy / deactivate a room — reason field required, and the dialog states what will be kept ("ประวัติบิลและใบเสร็จจะยังคงอยู่"). No typed-name confirmations anywhere. No toast-with-undo pattern anywhere, because an undo window would force outbound LINE messages into a queue.</td><td>These are exactly the actions that reach real phones or real cash and cannot be taken back. One component gives the designer a single spec, the engineer six call sites and the tester six one-line assertions.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-40"><td><b>D-40</b></td><td>What is the standard treatment for unauthorized access, empty lists and failed saves? (merges Q-U-04)</td><td>Unauthorized: a staff user opening an Admin URL directly gets a Thai 403 page — "ไม่มีสิทธิ์เข้าถึงหน้านี้ · บัญชีของคุณเป็นเจ้าหน้าที่ กรุณาติดต่อนิติบุคคล" with a button back to จดมิเตอร์ — never a silent redirect, so the permission matrix is testable row by row; the API returns 403 with a JSON error code. Empty states: one shared component (a muted icon, one Thai sentence, and where relevant one primary action), specified for all eight list surfaces — ห้องพัก "ยังไม่มีข้อมูลห้อง" + เพิ่มห้อง; ผู้เช่า "ยังไม่มีผู้เช่า"; จดมิเตอร์ "ยังไม่มีห้องที่ต้องจดในรอบนี้"; บิลประจำเดือน "ยังไม่มีบิลในรอบนี้" + สร้างบิลฉบับร่าง; รับชำระเงิน "ค้นหาห้องเพื่อรับชำระเงิน"; ประกาศ "ยังไม่เคยส่งประกาศ"; รายงาน "ยังไม่มีข้อมูลในช่วงเวลานี้"; the arrears list "ไม่มีห้องค้างชำระ 🎉". Failed save: an inline error above the form that preserves every typed value and offers ลองอีกครั้ง — never a redirect, never a lost form, and on the phone reading screen never a full-page reload. Loading: skeleton rows for lists, a spinner with a disabled button for actions.</td><td>An explicit 403 turns the permission matrix into a checklist a tester can walk; one empty-state component prevents eight blank white areas appearing in front of the examiners; preserving values on a failed save is the difference between a usable and an unusable phone screen in a stairwell.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-46"><td><b>D-46</b></td><td>What is on the Users page, and how does a locked-out account get back in?</td><td>Users = ผู้ใช้งานระบบ (added to the page mapping in D-02), Admin only, satisfying PRD §18 function 3. Fields: ชื่อผู้ใช้ (unique), ชื่อที่แสดง — which is what prints as ผู้รับเงิน on the receipt (D-27) — บทบาท (admin/staff), สถานะ (Active/Inactive), and the action ตั้งรหัสผ่านใหม่, which is the ONLY password recovery path in v1 (D-37). Users are never deleted, only set Inactive, because payments.received_by_user_id, meter_readings.recorded_by and rates.created_by reference them. No email address, no self-service reset, no invitation flow. An Inactive user cannot log in and keeps every historical attribution.</td><td>Three decisions already depended on a Users page that no decision had created, leaving the designer without a label, the engineer without a field list and the tester without a permission row — and a staff account locked out during the demo with no way back in.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+</tbody>
+</table>
+</div>
+<h3>Dashboard &amp; reports <span class="muted" style="font-weight:400;font-size:14px">— D-41, D-42</span></h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th style="width:62px">ID</th><th style="width:20%">Question</th><th>Decision</th><th style="width:22%">Rationale</th><th style="width:96px">Affects</th></tr></thead>
+<tbody>
+<tr id="d-41"><td><b>D-41</b></td><td>What is the exact formula and time scope of every Dashboard figure? (merges Q-U-18)</td><td>Every KPI is scoped to a selected billing period, defaulting to the current calendar month, chosen by one month picker at the top of the page. Every generated bill always carries exactly three bill_items — water, electric, common — even at 0 units and 0.00 THB (D-18), so the tiles always sum to the total, the receipt always prints three lines, and D-42's split columns are never null; a bill with fewer than three items is a defect with its own assertion. Formulas, binding: ห้องทั้งหมด = COUNT(rooms); มีผู้เช่า = COUNT(rooms WHERE status='Occupied'); ห้องว่าง = the difference. ยอดค่าน้ำเดือนนี้ / ยอดค่าไฟเดือนนี้ / ยอดค่าส่วนกลาง = SUM(bill_items.amount) by type over approved bills of that period. ยอดเรียกเก็บทั้งหมด = SUM(bills.total) over approved bills of that period, where approved means the STORED status is Unpaid or Paid — Draft bills are excluded from every money figure on this page, and reading the stored column for this purpose is explicitly not a violation of D-21. รับชำระแล้ว = SUM(bills.total) WHERE status='Paid' for that period (counted by billing period, not by payment date). ค้างชำระ = ยอดเรียกเก็บทั้งหมด − รับชำระแล้ว, which by construction equals the sum of the Unpaid and Overdue bills of that period, so the three tiles always reconcile on screen. One additional tile, explicitly all-time: ค้างชำระสะสมทุกงวด = SUM(total) over every Unpaid bill of every period. Charts: 12-month water units, 12-month electricity units, 12-month revenue collected, and a Paid vs Unpaid+Overdue count for the selected period. Staff see only the room-count tiles and the reading progress (D-36).</td><td>Eight numbers with no formulas is eight arguments between developers and zero possible test assertions. Billed minus collected must equal outstanding on screen, and that identity only holds when all three read the same period, exclude Draft, and every bill carries all three items.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-42"><td><b>D-42</b></td><td>What is the minimum report set and is it exportable? (merges Q-P-20)</td><td>Exactly four reports, each on screen and each with a CSV export produced by one shared helper (UTF-8 with BOM so Excel opens Thai correctly, filename pattern report-{name}-{period}.csv). (1) สรุปการเรียกเก็บและรับชำระรายเดือน — per period: billed, collected, outstanding, each split water / electricity / common fee, plus bill counts by status. (2) รายการค้างชำระ — every Unpaid bill across all periods, aged into non-overlapping buckets 1-7 / 8-30 / 31-60 / 61+ วัน, sorted by days overdue descending, showing room, tenant, phone, period, amount, due date, days late; the four bucket counts must sum to the row count and the four bucket amounts to the report total — one assertion each. (3) ประวัติรายห้อง 12 เดือน — one room, 12 periods: water units, electricity units, each amount, total, status, payment date, receipt number — the screen the office opens when a tenant disputes a reading. (4) ห้องที่ใช้น้ำ/ไฟสูงสุด — top 10 by units for the selected period, with each room's own previous-month comparison. No PDF export, no report builder, no ad-hoc column chooser. Admin only.</td><td>These four cover exactly the month-end job the PRD describes — what was billed, what was collected, who owes and for how long, and one room's history — and report 3 is what makes PRD §3 objective 10 demonstrable. CSV is one endpoint that stops the office re-typing figures into Excel.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+</tbody>
+</table>
+</div>
+<h3>Platform <span class="muted" style="font-weight:400;font-size:14px">— D-43, D-44, D-45</span></h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th style="width:62px">ID</th><th style="width:20%">Question</th><th>Decision</th><th style="width:22%">Rationale</th><th style="width:96px">Affects</th></tr></thead>
+<tbody>
+<tr id="d-43"><td><b>D-43</b></td><td>Where does the app run, how does the webhook get a stable HTTPS URL, and what is the backup plan? (merges Q-E-21)</td><td>Render free web service running a single long-lived Node.js + Express process (server-rendered EJS pages plus Chart.js, no separate frontend build) — one fixed HTTPS URL for the LINE webhook for the life of the project, which is the requirement Vercel's serverless model cannot meet. Database: a free managed MySQL 8 (Aiven or Clever Cloud), connection string in environment variables. Staying awake is its own schedule: a free external scheduler pings GET /healthz every 10 MINUTES — the 09:00 daily job (D-32) is not a keep-alive, because a Render free service spins down after roughly 15 minutes of inactivity and a once-a-day request keeps it up for one minute. Belt and braces: /line/webhook returns 200 before doing any work, so even a cold start ACKs inside LINE's timeout and the endpoint is never auto-disabled for repeated delivery failures — which would silently kill the linking flow in D-29, the only way a userId ever reaches the system. <a href="02-engineering-spec.html#runbook-webhook">02 · Operations Runbook — the webhook URL</a> adds one line: re-verify the webhook URL in the LINE console after every deploy and before the demo. Recovery: seed.sql is committed and recreates the entire demo dataset from an empty database in one command (D-44); a mysqldump is taken and committed before every milestone and on the day before the final demo; the LINE channel secret and access token live only in environment variables and a password-protected team note, never in the repo. Documented fallback for demo day if the hosted DB is unreachable: run the same app locally against a local MySQL restored from seed.sql, webhook disabled, LINE test mode on (D-34).</td><td>A stable webhook URL and a real long-lived process are hard requirements the LINE integration cannot work without, and both are free on Render. Separating the uptime ping from the reminder job is the difference between a webhook that answers and one that cold-starts into a timeout; a committed seed.sql means the graded demo can be rebuilt in minutes if the free database vanishes.</td><td><span class="badge info">engineer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-44"><td><b>D-44</b></td><td>What seed data must exist for the demo, and how do the PRD §16 and §28 figures relate to it?</td><td>seed.sql computes every date RELATIVE TO THE RUN DATE, because three other decisions make fixed dates wrong on any real demo day: D-20 freezes due_date = MAX(due day, approval + 3 days), D-21 derives Overdue from CURDATE(), D-27 builds the receipt number from the payment month. The current period is DATE_FORMAT(CURDATE(),'%Y-%m'); the twelve history periods are the eleven preceding months plus the current one; room 205's reading round is dated the 1st of the current month; its bill is left DRAFT so the demo approves it live; the receipt counter is seeded so room 205's payment issues REC-&lt;current YYYYMM&gt;-000852. BINDING ON EVERY DOCUMENT: the fixed dates of PRD §28 — 5 ก.ย. 2026, 3 ก.ย. 2026, REC-202609-000852 — are documentation and mockup values; the live demo reproduces the ARITHMETIC (10 หน่วย, 70 หน่วย, 180, 560, 1,050, 1,790 บาท, room 205 at 30 ตร.ม.), never the calendar. Contents: 80 rooms across 5 floors, 101-116 … 501-516, ALL of them 30.00 ตร.ม. (a uniform studio block, so nothing looks contrived and 67 × 30 × 35 = 70,350.00 still reproduces the PRD §16 headline); 67 Occupied, 13 Vacant. 67 active tenants with fictional Thai names and phone numbers, of which EXACTLY 54 carry a LINE binding — the number D-35's preview string quotes — and 13 deliberately do not, so D-30's ไม่มี LINE path is visible. Seeded bindings are placeholder IDs of the form Useed0000…{tenant_id}; they are never valid push targets, D-30's auto-unbind skips the Useed prefix, and LINE test mode defaults ON (D-34), so a stray send can never wipe the seeded state — the assertion is that after a full bulk approve against the seed the linked-tenant count is still 54. Rates effective from the first day of the earliest history period: 18.00 / 8.00 / 35.00; due day 5. History fully paid except the current period. One completed tenancy is seeded so the two riskiest flows are demonstrable: room 312 has an Inactive tenant whose final reading, final bill and Paid receipt sit in the previous period and a new Active tenant who moved in on the 1st of the current month, which exercises D-06, D-08 and D-14's gap note. Two users: admin/นิติบุคคล and staff/เจ้าหน้าที่, the admin password taken from SEED_ADMIN_PASSWORD (D-37). ALSO BINDING: the PRD §16 water (18,500) and electricity (62,500) totals are illustrative and NOT reproducible — 18,500 is not divisible by 18 and 62,500 is not divisible by 8 — and PRD §19's 35 ตร.ม. example row is illustrative in the same way; no document, mockup or test may treat any of the three as an expected value. Only the room counts (80/67/13) and the common area total (70,350) are reproduced.</td><td>The demo is the deliverable that gets graded, so its data is a product decision. Relative dates are the only way the graded demo shows a payable bill instead of an overdue one with a wrong receipt number; a uniform 30 ตร.ม. block makes the PRD's own headline Dashboard number come out exactly right without an examiner asking why vacant rooms are larger; and stating plainly which PRD figures are arithmetically impossible stops three documents being written against numbers the system can never produce.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+<tr id="d-45"><td><b>D-45</b></td><td>What measurable targets and device targets do we commit to? (merges Q-U-20)</td><td>Five committed numbers, each verifiable with a stopwatch against the D-44 seed: (1) a 67-room reading round completed on a phone in ≤ 15 minutes, measured from opening จดมิเตอร์ to the counter reading 67/67; (2) any list page renders in ≤ 2 seconds against the full seed (80 rooms × 12 periods ≈ 800 bills); (3) a single Approve &amp; Send delivers the LINE bill within ≤ 30 seconds; (4) a 67-bill bulk approval COMMITS in ≤ 5 seconds and is fully delivered within ≤ 3 minutes, the two halves measured separately because they are two round trips (D-19); (5) Confirm Cash Payment to a printable receipt on screen in ≤ 5 seconds. Device targets: the phone surface (Login, จดมิเตอร์, and the reduced ภาพรวม) must work on Chrome for Android at 360 × 640 minimum with tap targets of at least 44 × 44 px and numeric keypads on every meter input; the Admin surface targets current Chrome and Edge on desktop at 1280 px and above and is not required to be usable below 768 px. Thai text renders in Noto Sans Thai with a system fallback on both. No uptime, concurrency or load-testing commitments are made.</td><td>PRD §3 objectives such as "ลดขั้นตอนการทำงาน" can never be passed or failed; these five numbers are what a capstone is actually judged on and each is measurable in a single sitting. Splitting target 4 matches how the feature is actually built and keeps a slow LINE API from failing an approval target it does not control.</td><td><span class="badge info">engineer</span> <span class="badge fee">designer</span> <span class="badge warn">tester</span></td></tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="assumptions">
+<h2>Assumptions</h2>
+<p>Each of these is a statement about the world that the decisions above rely on. If one turns out to be false, the decisions it supports have to be revisited — that is the point of writing them down rather than leaving them implicit.</p>
+<ol>
+<li>The apartment operates one reading round per calendar month, walked in the first few days of the month. If the real building reads mid-month the model still holds — only the month picker default changes.</li>
+<li>PRD §12's sentence granting Confirm Cash Payment to เจ้าหน้าที่ contradicts §4 and is treated as a drafting error; §4 wins (D-36). This is the single place where a decision overrides literal PRD text, and it must be flagged in the document set.</li>
+<li>PRD §16's ยอดค่าน้ำ 18,500 and ยอดค่าไฟ 62,500, and PRD §19's 35 ตร.ม. example room, are illustrative and not reproducible at the stated rates and seed; only the room counts and the 70,350 common area total are treated as reproducible (D-44).</li>
+<li>PRD §28's calendar values (5 ก.ย. 2026, 3 ก.ย. 2026, REC-202609-000852) are documentation and mockup values. Every document uses them verbatim in examples; the live demo reproduces the arithmetic against relative dates, because due date, overdue display and receipt number are all functions of the run date (D-44).</li>
+<li>'UtilityHub' at the top of the PRD is superseded by 'Juristic platform' at the bottom and by the existing template, repo and directory names; it is deleted rather than reconciled (D-01).</li>
+<li>The juristic office is not VAT-registered for these charges and issues a plain ใบเสร็จรับเงิน; the tenant does not require a tax invoice (D-27). If a tax ID is unavailable the letterhead simply omits that line, which is why it is the one optional field on the receipt.</li>
+<li>The receipt example REC-202609-000852 implies a continuous counter, since a 67-room building cannot reach 852 receipts within one month; the seed reproduces the 852 by starting the counter at an offset, which is one documented source of gaps in the sequence (D-27, D-44).</li>
+<li>Water and electricity meters in the building are whole-unit mechanical meters with no fractional dial, so readings are integers (D-16). Switching to DECIMAL later is a single migration.</li>
+<li>The team can register one LINE Official Account and enable the Messaging API. The free plan allows 500 push/multicast messages per month, which a 67-room building exceeds in normal operation; the demo stays inside it because test mode defaults ON and the graded run sends to at most three real accounts (D-34).</li>
+<li>The office hands tenants a printed slip with the OA QR code and their one-time linking code; there is no other channel to distribute it (D-29).</li>
+<li>Free-tier hosting sleeps and restarts; no scheduled work may live inside the Node process, no state may live in process memory, and staying awake requires its own 10-minute ping (D-32, D-37, D-43).</li>
+<li>Approval of a period's bills happens within a few days of the reading round, which is what makes the MAX(due day, approval + 3 days) rule produce the office's usual due date rather than a shifted one (D-20).</li>
+<li>Tenants pay in cash at the office during posted office hours; a tenant who cannot pay in full returns later — the counter never takes a part payment, and a refund after a voided payment is handed over in cash at the counter, never recorded as a system balance (D-24, D-25).</li>
+<li>At most one person operates the counter at a time in practice; the concurrency guards in D-26 exist because a double click is certain, not because two cashiers are expected.</li>
+<li>The team is 3-4 students over one semester with no dedicated QA, so every decision above was chosen to be implementable and testable by the same person who designed it.</li>
+<li>Thai names, phone numbers and all seed content are fictional; no real tenant data enters the repository or the demo database.</li>
+</ol>
+</section>
+<section id="deferred">
+<h2>Deferred items</h2>
+<p>These are deliberately <b>not decided now</b>. They are not forgotten and they are not forbidden forever — but v1 ships without them, and any document that quietly assumes one of them is wrong. Anything in the PRD §24 list is a harder no than these and lives in <a href="#scope">Scope</a> instead.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th style="width:20%">Deferred</th><th style="width:110px">Governed by</th><th>Why not now</th><th style="width:24%">What would make us revisit</th></tr></thead>
+<tbody>
+<tr><td>Proration and off-cycle settlement bills</td><td><span class="muted">D-08 · D-05</span></td><td>Doubles the billing logic for a case the office already handles by settling the last bill in cash before the key is returned.</td><td>The building starts letting rooms mid-month routinely, or a landlord requires day-based charges.</td></tr>
+<tr><td>Partial and instalment payments</td><td><span class="muted">D-24</span></td><td>Would add a fifth conceptual state, a SUM in every money query and an overpayment path, and would break the one-payment-per-bill uniqueness that keeps the counter honest.</td><td>The office reports tenants regularly paying in two visits.</td></tr>
+<tr><td>Any non-cash payment method</td><td><span class="muted">PRD §24</span></td><td>Explicitly out of scope; a gateway also drags in reconciliation, refunds and PCI questions a capstone cannot answer.</td><td>Never in v1. A later version would start with bank transfer plus manual reconciliation, not a gateway.</td></tr>
+<tr><td>Effective-dated room area history</td><td><span class="muted">D-09</span></td><td>Area changes roughly once a year and the bill already snapshots the area used, so a version table buys nothing today.</td><td>A renovation programme changes many rooms and old bills need re-explaining.</td></tr>
+<tr><td>A global audit browser screen</td><td><span class="muted">D-38</span></td><td>The audit rows exist and Bill Detail shows the timeline that matters; a searchable browser is a screen nobody asked for.</td><td>An auditor or examiner asks to trace activity across bills.</td></tr>
+<tr><td>Self-service password reset</td><td><span class="muted">D-37 · D-46</span></td><td>Requires an email channel the product does not have; Admin resetting a password is one button.</td><td>The team adds email for any other reason.</td></tr>
+<tr><td>PDF export and a report builder</td><td><span class="muted">D-42</span></td><td>CSV plus browser print covers month-end; a PDF pipeline needs Thai font embedding and its own failure modes.</td><td>The office needs an archival document the browser cannot produce.</td></tr>
+<tr><td>Flex Messages, rich menu, LINE chatbot replies</td><td><span class="muted">D-31 · D-29</span></td><td>Plain text renders in the chat-list preview, is trivially testable, and costs nothing to build. The OA is a broadcast channel, not a support desk.</td><td>Tenants start replying in volume and the office wants self-service balance lookup.</td></tr>
+<tr><td>Meter photo attachment</td><td><span class="muted">not decided</span></td><td>Storage, upload on a weak stairwell connection and a moderation question, for a dispute path the 12-month history report already covers.</td><td>Disputes over readings become common enough to justify the upload cost.</td></tr>
+<tr><td>Offline-first reading round (service worker, local queue)</td><td><span class="muted">D-15 · D-40</span></td><td>Per-room save plus an inline retry that preserves typed values already limits a dropout to one room.</td><td>The building has floors with no signal at all rather than weak signal.</td></tr>
+<tr><td>Per-user permissions beyond the two roles</td><td><span class="muted">D-36</span></td><td>Two roles are the whole matrix PRD §4 defines; a permission table is configuration for a value that never changes.</td><td>A third real job appears — for example a bookkeeper who may read money but not approve it.</td></tr>
+<tr><td>ประเภทห้อง affecting price</td><td><span class="muted">D-47</span></td><td>Room type is kept as a display label only; letting it drive a rate would create a second pricing axis alongside area.</td><td>The building introduces genuinely different fee classes.</td></tr>
+<tr><td>Multi-building and multi-property</td><td><span class="muted">D-04</span></td><td>One profile, one room set. The room code already tolerates a prefix so nothing has to be migrated later.</td><td>A second building is taken on by the same juristic person.</td></tr>
+<tr><td>Uptime, concurrency and load commitments</td><td><span class="muted">D-45</span></td><td>Free-tier hosting cannot honour them and no examiner asks for them; the five stopwatch targets are what gets measured.</td><td>The system is used by a real building in production.</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="operating-procedures">
+<h2>Operating Procedures</h2>
+
+<p>Everything above decides <em>what the system does</em>. This section is the other half — <em>what the office
+does</em>. It is the eight procedures the apartment staff actually follow at the counter, on the reading round
+and at the month end, written for the person doing the job rather than the person building it: each one names
+the screen and its route, gives the steps in the order they must happen, quotes the Thai control to press, and
+states what has to be true before it starts and what is true after it finishes. Nothing here is new policy.
+Every rule is a decision that already exists above, and the <code>D-xx</code> in each step is where to go when
+someone asks why.</p>
+
+<div class="callout note"><div class="title">Where the other half lives</div>
+<p>This section covers what the <b>office</b> does. What the <b>team</b> does to the running system — deploying,
+re-verifying the LINE webhook after every deploy, replacing a revoked channel token, recovering a lost Admin
+account, restoring the database, the demo-day check and the daily job — is the
+<a href="02-engineering-spec.html#runbook">Operations Runbook</a>, a section of the engineering specification.
+Those are the only two places operating instructions live. There is no separate user manual and no separate
+runbook file to go looking for.</p></div>
+
+<h3 id="op-monthly-cycle">a · The monthly cycle — the Admin checklist</h3>
+
+<p><b>Screens:</b> จดมิเตอร์ <code>/readings</code> · บิลประจำเดือน <code>/bills</code> · รายละเอียดบิล
+<code>/bills/:id</code> · รับชำระเงิน <code>/payments</code> · รายงาน <code>/reports</code>.
+<b>Runs:</b> once a calendar month, starting in the first days of the month.
+<b>Before:</b> nothing — there is no period to open. <b>After:</b> every occupied room has one bill for the
+month, approved, sent and either settled or being chased.</p>
+
+<ol class="steps">
+<li><b>Choose the month.</b> Open จดมิเตอร์ or บิลประจำเดือน and set the month picker; it defaults to the current
+calendar month in Asia/Bangkok. There is no "open period" action, no lock and no closed state — a billing period
+is just the month string the readings and the bills carry (<a href="#d-11">D-11</a>).</li>
+
+<li><b>Run the reading round.</b> Staff (or Admin) walk the floors on จดมิเตอร์ with the ยังไม่จด filter, one
+card per room, water and electricity, บันทึก per room. A room counts as จดแล้ว only when <em>both</em> utilities
+are saved; the sticky bar reads จดแล้ว {x}/{y} ห้อง and the round is finished when the two numbers match. Vacant
+rooms are not in that count and are never billed, though a voluntary reading may still be recorded for them
+under the ห้องว่าง filter (<a href="#d-15">D-15</a>, <a href="#d-07">D-07</a>). A current reading below the
+previous one is blocked outright unless เปลี่ยนมิเตอร์ในรอบนี้ is ticked and the replacement fields filled in
+(<a href="#d-13">D-13</a>).</li>
+
+<li><b>Review the round before generating.</b> Open <code>/readings?view=review</code> for the same month. Look
+at three things: the rooms still ยังไม่จด (they will produce no bill and appear in the run summary as
+ยังไม่ได้จด), the ใช้สูงผิดปกติ flags, and every meter replacement recorded on the round with its Thai reason.
+Correcting a reading now costs one save; correcting it after approval costs a revert with a written reason
+(<a href="#d-13">D-13</a>, <a href="#d-22">D-22</a>).</li>
+
+<li><b>Generate the drafts.</b> Press ส่งให้นิติตรวจสอบ on จดมิเตอร์, or สร้าง/อัปเดตบิลฉบับร่าง on
+บิลประจำเดือน. The run is safe to repeat: it creates a Draft bill for every billable room that has both readings
+and no bill yet, recalculates the Draft bills that already exist, and never touches an approved one. Read the
+summary line it returns — สร้างบิลใหม่ {a} ใบ · อัปเดต {b} ใบ · ข้าม (อนุมัติแล้ว) {c} ใบ · ยังไม่ได้จด {d} ห้อง
+— and go back to step 2 if {d} is not zero (<a href="#d-18">D-18</a>, <a href="#d-23">D-23</a>).</li>
+
+<li><b>Review the drafts.</b> On บิลประจำเดือน the completeness line reads บิลครบทุกห้อง {billed}/{billable} ·
+อนุมัติแล้ว {approved} · ชำระแล้ว {paid}. Open any flagged room on รายละเอียดบิล. Editing a reading now
+recalculates that Draft bill immediately on save — this is the last free moment
+(<a href="#d-12">D-12</a>, <a href="#d-11">D-11</a>).</li>
+
+<li><b>Approve &amp; send.</b> Admin only. Tick the rows (or select-all-in-view) and press
+อนุมัติและส่งบิล ({N} ห้อง); the dialog says อนุมัติและส่งบิล {N} ห้อง ผ่าน LINE — ยกเลิกไม่ได้. Approval freezes
+readings, units, unit prices, room area, tenant name, every line amount, the total and the due date. Delivery
+happens afterwards and can never block or undo the approval; the result summary lists the rooms that received
+nothing, and those get paper (procedure <a href="#op-no-line">f</a>)
+(<a href="#d-19">D-19</a>, <a href="#d-22">D-22</a>, <a href="#d-30">D-30</a>).</li>
+
+<li><b>Take the cash and print the receipts</b> as tenants come to the counter over the following days —
+procedure <a href="#op-counter">b</a>. Meanwhile the daily job at 09:00 sends the reminder ladder by itself:
+PRE_DUE two days before the due date, then OVERDUE on day 1, day 8 and day 15 past it, and nothing after that
+(<a href="#d-33">D-33</a>, <a href="#d-32">D-32</a>).</li>
+
+<li><b>Close the month on รายงาน.</b> สรุปการเรียกเก็บและรับชำระรายเดือน for the period's billed, collected and
+outstanding split by utility; รายการค้างชำระ aged 1-7 / 8-30 / 31-60 / 61+ วัน for the phone calls; each with a
+CSV export (<a href="#d-42">D-42</a>, <a href="#d-41">D-41</a>).</li>
+</ol>
+
+<div class="callout warn"><div class="title">The calendar rule for the due date — read this once</div>
+<p>ตั้งค่า holds วันครบกำหนด as a <b>day of the month</b>, default <b>5</b>, Admin-editable, range 1–28. A Draft
+bill displays กำหนดชำระ {day} of its own period month, labelled (ยืนยันเมื่ออนุมัติ). At Approve &amp; Send the
+date is computed once and frozen:</p>
+<p style="margin:8px 0"><code>due_date = MAX(day-of-month of the bill's own period month, approval date + 3 days)</code></p>
+<p>Approve the September bills on 1 Sep with due day 5 and every one of them is due <b>5 ก.ย.</b> Approve them
+late, on the 4th, and they are due the <b>7th</b> — the tenant always gets three days, and that is correct
+behaviour rather than a defect. Every bill approved in the same batch on the same day carries the same due date,
+the day is clamped to the last day of a short month, and there is no per-bill due-date field anywhere: it is
+never editable by hand (<a href="#d-20">D-20</a>). A bill becomes เกินกำหนด by itself at 00:00 the day after —
+no job runs, no status is stored, and no late fee, interest or penalty of any kind is ever added
+(<a href="#d-21">D-21</a>).</p></div>
+
+<h3 id="op-counter">b · The counter — cash, receipt, void and reprint</h3>
+
+<p><b>Screens:</b> รับชำระเงิน <code>/payments</code> · ประวัติการรับชำระ <code>/payments/history</code> ·
+ใบเสร็จ <code>/receipts/:id</code> · รายละเอียดบิล <code>/bills/:id</code>.
+<b>Who:</b> Admin only — รับชำระเงิน and ออกใบเสร็จ are Admin actions, and Staff cannot reach the screen at all
+(<a href="#d-36">D-36</a>). <b>Before:</b> the bill is รอชำระ or เกินกำหนด. <b>After:</b> the bill is ชำระแล้ว,
+one numbered receipt exists, and the tenant has had a LINE confirmation if they are linked.</p>
+
+<ol class="steps">
+<li><b>Find the bill.</b> รับชำระเงิน, search by room. A ฉบับร่าง bill cannot be paid — it has not been approved
+— and a ชำระแล้ว bill has no confirm button.</li>
+
+<li><b>Count the cash against the screen.</b> ยอดที่ต้องชำระ 1,790.00 บาท is read-only text, not a field: the
+amount is the bill total and cannot be typed over. The รับเงิน box beside the button is an optional aid that
+computes เงินทอน live — รับเงิน 2,000 → เงินทอน 210.00 — and neither number is stored, printed on the receipt or
+sent anywhere (<a href="#d-24">D-24</a>).</li>
+
+<li><b>Refuse a partial payment.</b> There is no field to enter a smaller amount into, and this is deliberate.
+A tenant who is short is asked to come back with the full amount; nothing is recorded, the bill stays รอชำระ or
+เกินกำหนด and keeps its due date. Do not take part of the money and hold it — the system has no place to record
+a balance, no credit note and no refund, and the only way to undo a payment is to void it and hand the whole
+sum back (<a href="#d-24">D-24</a>, <a href="#d-25">D-25</a>, <a href="#d-05">D-05</a> limitation 2).</li>
+
+<li><b>Confirm.</b> ยืนยันรับเงินสด. One press does everything in one transaction: writes the payment against
+your own login, flips the bill to ชำระแล้ว, allocates the receipt number and queues the LINE confirmation. A
+double-click is harmless — the second attempt loses the race in the database and answers
+บิลนี้ถูกชำระไปแล้ว, and two cashiers on one bill produce one payment and one receipt number
+(<a href="#d-24">D-24</a>, <a href="#d-26">D-26</a>).</li>
+
+<li><b>Print the receipt.</b> The receipt opens on <code>/receipts/:id</code>; press พิมพ์ใบเสร็จ, which prints
+A5 portrait through the browser's own dialog. It carries the letterhead, เลขที่ REC-202609-000852, วันที่ชำระ,
+ห้อง 205, ชื่อผู้เช่า, รอบบิล, the three line items, ยอดรวม 1,790.00 บาท with the amount in Thai words,
+ชำระโดย เงินสด, your own ชื่อที่แสดง as ผู้รับเงิน and a signature line. It is a non-tax ใบเสร็จรับเงิน — no
+VAT, no ใบกำกับภาษี (<a href="#d-27">D-27</a>, <a href="#d-28">D-28</a>).</li>
+
+<li><b>Reprint.</b> Always use the button, never the browser's own File → Print. The first button-driven print is
+the original; from then on the button reads พิมพ์สำเนา and every sheet is marked สำเนา. Later reprints are found
+on ประวัติการรับชำระ — search by room code or by receipt number, then พิมพ์สำเนา. The number never changes on a
+reprint. Printing from the browser menu bypasses the counter and produces an unmarked copy, which is a listed
+limitation rather than a bug (<a href="#d-27">D-27</a>, <a href="#d-05">D-05</a> limitation 11).</li>
+
+<li><b>Void a mistaken payment</b> — wrong room, wrong month, wrong bill. Admin only, from รายละเอียดบิล or from
+the receipt: ยกเลิกการชำระเงิน with a Thai reason of at least 10 characters.
+<b>Hand the cash back across the counter first</b> — the dialog says so in as many words:
+คืนเงินสด {amount} บาท ให้ผู้เช่าก่อนยืนยันการยกเลิก (<a href="#d-25">D-25</a>,
+<a href="#d-39">D-39</a>).</li>
+
+<li><b>Know what the void does to the receipt number.</b> Nothing is deleted. The payment row is marked voided
+and kept; the receipt row is marked voided and kept, so it <b>keeps its number</b>, and every view and every
+print of it from then on is stamped ยกเลิก in red across the header. Keeping the number is the entire point of
+voiding rather than deleting: the evidence that money was taken and returned survives. The bill goes back to
+รอชำระ and displays as เกินกำหนด by itself if the due date has passed; no LINE message is sent on the void, so
+the office explains in person; and the bill is excluded from the automatic PRE_DUE and OVERDUE sends and badged
+ระงับการแจ้งเตือนอัตโนมัติ so nobody chases a tenant who did nothing wrong. Taking the money again is an
+ordinary payment and issues a <b>new</b> receipt with a <b>new</b> number
+(<a href="#d-25">D-25</a>, <a href="#d-27">D-27</a>, <a href="#d-33">D-33</a>).</li>
+</ol>
+
+<div class="callout note"><div class="title">Receipt numbers, and why a gap is not a mistake</div>
+<p>Numbers are <code>REC-&lt;payment month YYYYMM&gt;-&lt;6 digits&gt;</code> from one counter that never resets.
+They are unique and always increasing, but they are <b>not gapless</b> — an abandoned transaction and the seed's
+starting offset both leave holes legitimately. Two things are guaranteed and are the only two worth checking: no
+two receipts share a number, and a later payment never gets a lower one
+(<a href="#d-26">D-26</a>, <a href="#d-27">D-27</a>, <a href="#d-05">D-05</a> limitation 10).</p></div>
+
+<h3 id="op-move-in">c · Tenant move-in and the LINE link-code slip</h3>
+
+<p><b>Screens:</b> ผู้เช่า <code>/tenants</code> · the printable slip
+<code>/tenants/:id/link-code/slip</code>. <b>Who:</b> Admin only — Staff cannot see the Tenants page
+(<a href="#d-36">D-36</a>). <b>Before:</b> the room is ว่าง. <b>After:</b> the room is มีผู้เช่า, and the tenant
+is holding a slip that turns into a LINE binding the moment they use it.</p>
+
+<ol class="steps">
+<li><b>Check the room is free.</b> One room has at most one Active tenant, enforced in the database — a second
+one is refused with ห้องนี้มีผู้เช่าอยู่แล้ว กรุณาสิ้นสุดสัญญาเช่าเดิมก่อน. If the previous tenant is still
+Active, run procedure <a href="#op-move-out">d</a> first (<a href="#d-10">D-10</a>).</li>
+
+<li><b>Create the tenant record.</b> ผู้เช่า → new: ชื่อ-นามสกุล, เบอร์โทรศัพท์ in the Thai mobile form
+<code>0XXXXXXXXX</code>, ห้อง, วันที่เข้าอยู่. <b>LINE User ID is not a field you type</b> — it is filled only by
+the linking flow below. Saving sets the room to มีผู้เช่า in the same transaction
+(<a href="#d-10">D-10</a>, <a href="#d-07">D-07</a>).</li>
+
+<li><b>Do not touch the meter baselines.</b> เลขมิเตอร์เริ่มต้น belongs to the <em>room</em>, not to the tenant.
+A re-let room already has the departing tenant's final reading sitting there as its previous value, and the
+ordinary lookup finds it — re-entering anything here double-bills someone. Baselines are Admin-only and editable
+only while the room has no reading at all (<a href="#d-06">D-06</a>, <a href="#d-14">D-14</a>).</li>
+
+<li><b>Create the link code.</b> Press สร้างรหัสผูก LINE on the tenant's row. It is six characters from an
+alphabet with no O, 0, I or 1, valid <b>7 days</b>, single use (<a href="#d-29">D-29</a>).</li>
+
+<li><b>Print the slip</b> from <code>/tenants/:id/link-code/slip</code> — A5, carrying the code and the Official
+Account QR — and hand it over with the keys.</li>
+
+<li><b>Tell the tenant the two steps on the slip:</b> add the Official Account as a friend, then send the six
+characters as an ordinary chat message. They immediately get back
+✅ ผูกบัญชีสำเร็จ · คุณจะได้รับบิลและประกาศของห้อง {room_code} ผ่าน LINE นี้. A wrong or expired code answers
+❌ ไม่พบรหัสนี้ หรือรหัสหมดอายุแล้ว กรุณาติดต่อสำนักงานนิติบุคคล — issue a fresh code; never type a user id into
+the system by hand, because there is no field for it (<a href="#d-29">D-29</a>).</li>
+
+<li><b>Confirm the binding.</b> ผู้เช่า then shows the LINE display name and the linked date, and offers
+ยกเลิกการผูก. Until the tenant links, they are billed exactly as normal and handed paper — procedure
+<a href="#op-no-line">f</a>. One LINE account may legitimately be bound to several rooms (a parent renting two,
+a couple sharing a phone); every message names its room, and such an account receives one message per room
+(<a href="#d-29">D-29</a>, <a href="#d-30">D-30</a>).</li>
+</ol>
+
+<h3 id="op-move-out">d · Tenant move-out — the order of operations</h3>
+
+<p><b>Screens:</b> จดมิเตอร์ <code>/readings</code> · บิลประจำเดือน <code>/bills</code> · รับชำระเงิน
+<code>/payments</code> · ผู้เช่า <code>/tenants</code>. <b>Who:</b> Admin only.
+<b>Before:</b> the tenant is Active and their last month is unread and unbilled.
+<b>After:</b> the tenant is Inactive with a settled final bill, the LINE binding is cleared and the room is ว่าง
+and ready to re-let. <b>This order is not advisory</b> — the system refuses the last step until the ones before
+it are done (<a href="#d-08">D-08</a>).</p>
+
+<div class="callout warn"><div class="title">The two conditions that block สิ้นสุดสัญญาเช่า</div>
+<p>The action is <b>BLOCKED</b> unless both hold: <b>(a)</b> a final reading exists for <em>both</em> utilities
+for that room, dated on or after the last period the room was billed for; and <b>(b)</b> the bill covering that
+reading exists and is <span class="badge paid">Paid</span>. Ending a tenancy is a settlement, not a status flip
+— without this gate the departing tenant's last month is skipped by the run and silently charged to whoever
+moves in next (<a href="#d-08">D-08</a>).</p></div>
+
+<ol class="steps">
+<li><b>Record the final reading</b> — water <em>and</em> electricity — for that room on จดมิเตอร์, in the
+current period (<a href="#d-08">D-08</a>, <a href="#d-12">D-12</a>).</li>
+
+<li><b>Generate that room's bill.</b> It is created in the <b>current</b> period like any other. Nothing is
+prorated in any direction: the tenant whose tenancy is Active on the generation date receives the entire
+period's water, electricity and common area fee, and there is no off-cycle settlement bill
+(<a href="#d-08">D-08</a>, <a href="#d-18">D-18</a>).</li>
+
+<li><b>Approve and send it.</b> The tenant is still bound to LINE at this point, so they actually receive it
+(<a href="#d-19">D-19</a>).</li>
+
+<li><b>Take the cash at the counter and issue the receipt</b> — procedure <a href="#op-counter">b</a>. The bill
+must reach <span class="badge paid">Paid</span>; a partial payment does not settle a tenancy any more than it
+settles a bill (<a href="#d-24">D-24</a>).</li>
+
+<li><b>Only now press สิ้นสุดสัญญาเช่า</b> on ผู้เช่า. One transaction does all four things: the tenant becomes
+Inactive, วันที่ย้ายออก is written as the date you pressed it, the LINE binding is cleared, and the room becomes
+ว่าง. The binding is cleared at this step <em>and not before</em>, which is why the departing tenant still got
+both their final bill and their payment confirmation (<a href="#d-08">D-08</a>, <a href="#d-10">D-10</a>).</li>
+
+<li><b>Check what survived.</b> The outgoing tenant's bills, payments and receipts stay attached to them forever
+and remain visible in the room's 12-month history; the tenant record is never deleted. Their final reading is
+the next tenant's previous reading through the ordinary lookup, so no consumption crosses a tenancy, nothing is
+re-entered and nothing is billed twice (<a href="#d-42">D-42</a>, <a href="#d-14">D-14</a>).</li>
+</ol>
+
+<p class="muted">วันที่เข้าอยู่ and วันที่ย้ายออก are shown on the Tenants page and in the per-room history, but
+neither date influences any amount, neither is future-dated, and วันที่ย้ายออก is written by the action rather
+than typed (<a href="#d-08">D-08</a>, <a href="#d-10">D-10</a>).</p>
+
+<h3 id="op-rate-change">e · Changing a rate, and which period it hits</h3>
+
+<p><b>Screen:</b> ตั้งค่า <code>/settings</code>. <b>Who:</b> Admin only — Staff never see a rate
+(<a href="#d-36">D-36</a>). <b>Before:</b> know which billing period you intend the new price to apply to.
+<b>After:</b> the old rate is intact as history, and every bill in a period carries one rate no matter how often
+generation is re-run.</p>
+
+<ol class="steps">
+<li><b>Enter the new อัตรา and its วันที่มีผล.</b> The effective date defaults to today and may be set in the
+future. Saving <b>inserts a new row</b> and never overwrites the old one, so rate history is complete and
+auditable; a second rate for the same utility on the same date is refused with
+มีอัตราของวันที่นี้อยู่แล้ว (<a href="#d-17">D-17</a>).</li>
+
+<li><b>Work out which period it hits — this is the step people get wrong.</b> Generation picks, per utility, the
+rate whose วันที่มีผล is the greatest date <b>on or before the FIRST DAY of the bill's period month</b>. So a
+rate effective <b>15 ก.ย. 2026 does not touch the September bills at all</b> — 1 September is earlier than it —
+and first applies in October. To change September, the effective date must be 1 ก.ย. or earlier
+(<a href="#d-17">D-17</a>).</li>
+
+<li><b>Expect approved bills not to move.</b> The unit price is snapshotted onto the bill item at generation, and
+every screen, print view and LINE message renders from that snapshot. A rate change can never rewrite a bill
+that has been approved, sent or paid (<a href="#d-17">D-17</a>, <a href="#d-22">D-22</a>).</li>
+
+<li><b>Deal with Draft bills the change now covers.</b> If Draft bills exist for a period a back-dated rate
+reaches, ตั้งค่า shows มีบิลฉบับร่าง {N} ใบในรอบนี้ ยังใช้อัตราเดิมอยู่ with the button
+คำนวณบิลฉบับร่างใหม่. Press it — it recalculates Draft bills only and cannot touch anything else
+(<a href="#d-17">D-17</a>).</li>
+
+<li><b>Tell the tenants yourself if it matters.</b> A rate change sends no message. Use ประกาศ if the building
+should hear about it before the bills arrive (<a href="#d-35">D-35</a>).</li>
+</ol>
+
+<p class="muted">Room area works the same way and for the same reason: it is snapshotted onto the bill item, so
+correcting an area never rewrites a receipt already issued (<a href="#d-09">D-09</a>).</p>
+
+<h3 id="op-no-line">f · When a tenant has no LINE — the paper path</h3>
+
+<p><b>Screens:</b> บิลประจำเดือน <code>/bills</code> · รายละเอียดบิล <code>/bills/:id</code>.
+<b>Before:</b> the bill is approved and the delivery badge reads ยังไม่ได้ส่ง — ไม่มี LINE.
+<b>After:</b> the tenant is holding an A5 ใบแจ้งค่าใช้จ่าย carrying the same three lines and the same due date as
+the LINE message would have.</p>
+
+<ol class="steps">
+<li><b>Expect it at approval, do not be surprised by it.</b> The Approve &amp; Send result summary counts
+ยังไม่ได้ส่ง (ไม่มี LINE) {y} and lists the rooms; the same badge appears on the bill's row and on รายละเอียดบิล.
+Approval is never blocked by delivery — money state and messaging state are independent
+(<a href="#d-30">D-30</a>, <a href="#d-19">D-19</a>).</li>
+
+<li><b>Print the paper bill.</b> Open each such room's รายละเอียดบิล and press พิมพ์ใบแจ้งหนี้. That is the A5
+ใบแจ้งค่าใช้จ่าย: the same layout as the receipt with the letterhead, ห้อง, ชื่อผู้เช่า, รอบบิล,
+กำหนดชำระ and the three line items with units, rate and amount — and deliberately <b>no</b> receipt number, no
+payment date, no ผู้รับเงิน and no signature line, because nothing has been paid yet. It is available for any
+bill that is not ฉบับร่าง (<a href="#d-28">D-28</a>).</li>
+
+<li><b>Deliver it on paper</b> — under the door or at the counter — and note that this tenant will get no
+automatic reminder either, because PRE_DUE and OVERDUE are LINE messages. Chase them by phone;
+เบอร์โทรศัพท์ is on the tenant record and in the รายการค้างชำระ report
+(<a href="#d-33">D-33</a>, <a href="#d-42">D-42</a>).</li>
+
+<li><b>Fix the cause, not just this month.</b> Issue a link code and a slip — procedure
+<a href="#op-move-in">c</a>. The paper path is a fallback, not a plan
+(<a href="#d-29">D-29</a>).</li>
+</ol>
+
+<div class="callout warn"><div class="title">ส่งแล้ว is not proof the tenant read it</div>
+<p>If a tenant has <b>blocked</b> the Official Account, LINE accepts the message, reports success and drops it.
+The system cannot tell that apart from a delivered message and the word "blocked" appears nowhere in the product
+for exactly that reason. A tenant who insists they were never told, whose badge says ส่งแล้ว, is handled the
+same way as one with no binding: print the paper bill and hand it over
+(<a href="#d-30">D-30</a>, <a href="#d-05">D-05</a> limitation 9).</p></div>
+
+<h3 id="op-limitations">g · What v1 will not do, and what the office does instead</h3>
+
+<p>These are the twelve limitations <a href="#d-05">D-05</a> fixes as decisions rather than omissions, each with
+the practical workaround the office uses. None of them is a defect to be reported, and none may be quietly
+re-introduced by a screen, a test case or a seed row. The PRD §24 exclusions — no rent, no lease contracts, no
+mobile app, no payment gateway, no cards, no online banking, no slip upload, no QR payment, no IoT meters, no
+AI — sit above this table and are absolute (<a href="#scope">Scope</a>).</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th style="width:44px">#</th><th style="width:34%">The limitation</th><th>What the office does instead</th><th style="width:110px">Decision</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>No proration for a mid-period move-in or move-out.</td><td>The tenant Active on the generation date pays the whole month. Settle the departing tenant in full through procedure <a href="#op-move-out">d</a>, then re-let. If the parties want to split a month between themselves, they do it in cash between themselves — the system never sees it.</td><td><a href="#d-08">D-08</a></td></tr>
+<tr><td>2</td><td>No partial payment — a bill is paid in full or not at all.</td><td>Ask the tenant to come back with the full amount; the bill stays รอชำระ / เกินกำหนด and keeps its due date. Do not take part of the money: there is nowhere to record it.</td><td><a href="#d-24">D-24</a></td></tr>
+<tr><td>3</td><td>No late fee, no interest, no penalty of any kind.</td><td>เกินกำหนด is a display state and a reminder ladder, not a charge. Pressure is applied by the OVERDUE messages on days 1, 8 and 15, by the arrears report and by the telephone.</td><td><a href="#d-21">D-21</a></td></tr>
+<tr><td>4</td><td>No refund, credit note or balance inside the system.</td><td>A mis-keyed payment is voided and the cash returned across the counter — hand the money back <em>before</em> confirming the void. Nothing is ever carried forward to next month.</td><td><a href="#d-25">D-25</a></td></tr>
+<tr><td>5</td><td>No multi-building support.</td><td>One building, one apartment profile in ตั้งค่า. A second building is a second deployment with its own database, not a setting.</td><td><a href="#d-04">D-04</a></td></tr>
+<tr><td>6</td><td>No VAT and no tax invoice — the receipt is a non-tax ใบเสร็จรับเงิน.</td><td>A tenant who needs a ใบกำกับภาษี is told the office does not issue one. Nothing in the product can be toggled to produce one.</td><td><a href="#d-27">D-27</a></td></tr>
+<tr><td>7</td><td>No tenant-facing web login — tenants only ever receive LINE messages.</td><td>Anything a tenant wants to see, the office looks up and reads out, prints (พิมพ์ใบแจ้งหนี้, พิมพ์สำเนา) or re-sends with the per-bill ส่งแจ้งเตือนอีกครั้ง button.</td><td><a href="#d-29">D-29</a></td></tr>
+<tr><td>8</td><td>No email and no SMS channel.</td><td>LINE or paper. A tenant who will not use LINE is a paper tenant for the life of the tenancy — procedure <a href="#op-no-line">f</a>.</td><td><a href="#d-31">D-31</a></td></tr>
+<tr><td>9</td><td>A tenant who blocked the Official Account looks exactly like a delivered message — LINE reports both as success.</td><td>Treat a disputed ส่งแล้ว as an unlinked tenant: print the bill and hand it over. Never argue from the badge.</td><td><a href="#d-30">D-30</a></td></tr>
+<tr><td>10</td><td>Receipt numbers are unique and increasing but <b>not gapless</b>.</td><td>Explain a gap rather than hunt for a missing receipt: an abandoned transaction consumes a number legitimately. The two things that must hold are no duplicates and no later payment with a lower number.</td><td><a href="#d-26">D-26</a></td></tr>
+<tr><td>11</td><td>A receipt printed from the browser's own menu carries no สำเนา mark.</td><td>Always reprint with the พิมพ์สำเนา button, never with File → Print. If an unmarked duplicate escapes, reprint through the button and hand over the marked sheet.</td><td><a href="#d-27">D-27</a></td></tr>
+<tr><td>12</td><td>The LINE free plan's 500-message monthly allowance is displayed but never enforced — exhausting it silently stops delivery.</td><td>Watch the counter in ตั้งค่า before a bulk send or an announcement. Leave โหมดทดสอบ LINE on for every rehearsal, and fall back to paper for the month if the allowance runs out.</td><td><a href="#d-34">D-34</a></td></tr>
+</tbody>
+</table>
+</div>
+
+<h3 id="op-who-can-do-what">h · Who can do what — the short version</h3>
+
+<p>There are exactly two roles and no third, no per-user permissions and no per-page overrides. The binding
+matrix is in <a href="#actors">Actors &amp; roles</a> above; what follows is only the recap the office needs at
+the counter (<a href="#d-36">D-36</a>).</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th style="width:22%">Role</th><th>May do</th><th style="width:30%">May not do</th></tr></thead>
+<tbody>
+<tr><td><b>นิติบุคคล / Admin</b><br><span class="muted">the office</span></td>
+<td>Everything: rooms and tenants, rates and settings, bill generation, approval and revert, <b>taking cash and issuing receipts</b>, voiding a payment, announcements, reports, user accounts and the manual job trigger.</td>
+<td>Nothing inside the product — but the limitations in <a href="#op-limitations">g</a> bind an Admin exactly as hard as anyone else.</td></tr>
+<tr><td><b>เจ้าหน้าที่ / Staff</b><br><span class="muted">the meter reader</span></td>
+<td>ภาพรวม (a reduced Dashboard: room counts and this period's reading progress), ห้องพัก read-only, จดมิเตอร์ — create and edit readings, record a meter replacement, and press ส่งให้นิติตรวจสอบ — and a room's reading history.</td>
+<td>Never sees an amount, a rate, a payment, a receipt, the Tenants page, the Users page or Settings. Money is <em>absent</em> from what the server sends a Staff login, not merely hidden in the menu.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout warn"><div class="title">Passwords — there is no self-service reset</div>
+<p>A user who is locked out is reset by <b>another Admin</b> from ผู้ใช้งานระบบ → ตั้งรหัสผ่านใหม่. That is the
+only recovery path in v1: no email, no reset link, no security questions, no invitation flow. Users are never
+deleted, only set Inactive, because payments, readings and rates reference them and every historical attribution
+must stay resolvable (<a href="#d-37">D-37</a>, <a href="#d-46">D-46</a>). Keep at least two Admin accounts for
+this reason alone — if the <em>last</em> Admin is lost, recovery is a database operation carried out by the
+development team, not a screen: see
+<a href="02-engineering-spec.html#runbook-lost-admin">02 · Operations Runbook — recovering a lost Admin</a>.</p></div>
+
+</section>
+<section id="glossary">
+<h2>Glossary</h2>
+<p>Thai is what the user reads; English is what the database, the routes, the API payloads and the test selectors use. Both columns are binding: the Thai must be copied verbatim into the UI, and the English must be used verbatim as the identifier. Every element that renders a status also carries <code>data-status="Draft|Unpaid|Paid|Overdue"</code> so tests assert on the English while the human reads Thai (<a href="#d-02">D-02</a>).</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th style="width:20%">Thai (UI)</th><th style="width:24%">English (identifier / documentation)</th><th style="width:80px">Kind</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>นิติบุคคล</td><td><b>Juristic person / Admin</b></td><td><span class="badge info">role</span></td><td>The role that approves bills, takes cash and issues receipts. The <b>admin</b> role in the database.</td></tr>
+<tr><td>เจ้าหน้าที่ / ช่าง</td><td><b>Staff / Technician</b></td><td><span class="badge info">role</span></td><td>Reads meters on a phone. The <b>staff</b> role. Never sees an amount, a rate or a receipt.</td></tr>
+<tr><td>ผู้เช่า / ลูกบ้าน</td><td><b>Tenant</b></td><td><span class="badge info">role</span></td><td>Receives everything through the LINE Official Account. Has no login.</td></tr>
+<tr><td>ฉบับร่าง</td><td><b>Draft</b></td><td><span class="badge neutral">status</span></td><td>Bill generated, not yet reviewed. Readings still editable.</td></tr>
+<tr><td>รอชำระ</td><td><b>Unpaid</b></td><td><span class="badge neutral">status</span></td><td>Approved and sent. Everything on the bill is frozen.</td></tr>
+<tr><td>ชำระแล้ว</td><td><b>Paid</b></td><td><span class="badge neutral">status</span></td><td>Cash received in full; a receipt exists.</td></tr>
+<tr><td>เกินกำหนด</td><td><b>Overdue</b></td><td><span class="badge neutral">status</span></td><td>Display value only: Unpaid past its due date. Never stored.</td></tr>
+<tr><td>ภาพรวม</td><td><b>Dashboard</b></td><td><span class="badge fee">page</span></td><td>Period-scoped KPI page.</td></tr>
+<tr><td>ห้องพัก</td><td><b>Rooms</b></td><td><span class="badge fee">page</span></td><td>Room records, area, floor, opening readings.</td></tr>
+<tr><td>ผู้เช่า (หน้า)</td><td><b>Tenants</b></td><td><span class="badge fee">page</span></td><td>Tenant records and LINE binding.</td></tr>
+<tr><td>จดมิเตอร์</td><td><b>Meter Reading</b></td><td><span class="badge fee">page</span></td><td>The phone reading round.</td></tr>
+<tr><td>บิลประจำเดือน</td><td><b>Monthly Billing</b></td><td><span class="badge fee">page</span></td><td>The period's bill list, bulk approval.</td></tr>
+<tr><td>รายละเอียดบิล</td><td><b>Bill Detail</b></td><td><span class="badge fee">page</span></td><td>One bill, its audit timeline and its actions.</td></tr>
+<tr><td>รับชำระเงิน</td><td><b>Payment</b></td><td><span class="badge fee">page</span></td><td>The cash counter screen.</td></tr>
+<tr><td>ใบเสร็จ</td><td><b>Receipt</b></td><td><span class="badge fee">page</span></td><td>The printable A5 receipt.</td></tr>
+<tr><td>ประกาศ</td><td><b>Announcements</b></td><td><span class="badge fee">page</span></td><td>Compose and send building notices.</td></tr>
+<tr><td>รายงาน</td><td><b>Reports</b></td><td><span class="badge fee">page</span></td><td>The four reports and their CSV exports.</td></tr>
+<tr><td>ตั้งค่า</td><td><b>Settings</b></td><td><span class="badge fee">page</span></td><td>Apartment profile, rates, due day, LINE test mode.</td></tr>
+<tr><td>ผู้ใช้งานระบบ</td><td><b>Users</b></td><td><span class="badge fee">page</span></td><td>System accounts and password resets.</td></tr>
+<tr><td>รอบบิล</td><td><b>Billing period</b></td><td><span class="badge neutral">term</span></td><td>A calendar month, keyed <code>YYYY-MM</code>. Displayed as กันยายน 2026.</td></tr>
+<tr><td>เลขมิเตอร์เดือนก่อน</td><td><b>Previous reading</b></td><td><span class="badge neutral">term</span></td><td>Resolved by greatest earlier period, or the room's baseline.</td></tr>
+<tr><td>เลขมิเตอร์ปัจจุบัน</td><td><b>Current reading</b></td><td><span class="badge neutral">term</span></td><td>The value entered on the round.</td></tr>
+<tr><td>หน่วย</td><td><b>Unit</b></td><td><span class="badge neutral">term</span></td><td>Whole metered units; integer everywhere.</td></tr>
+<tr><td>ค่าน้ำ</td><td><b>Water charge</b></td><td><span class="badge neutral">term</span></td><td>units × water rate.</td></tr>
+<tr><td>ค่าไฟ</td><td><b>Electricity charge</b></td><td><span class="badge neutral">term</span></td><td>units × electricity rate.</td></tr>
+<tr><td>ค่าส่วนกลาง</td><td><b>Common area fee</b></td><td><span class="badge neutral">term</span></td><td>room area × common rate.</td></tr>
+<tr><td>อัตรา</td><td><b>Rate</b></td><td><span class="badge neutral">term</span></td><td>Effective-dated unit price, snapshotted onto the bill item.</td></tr>
+<tr><td>กำหนดชำระ</td><td><b>Due date</b></td><td><span class="badge neutral">term</span></td><td>Frozen at approval as MAX(due day, approval + 3 days).</td></tr>
+<tr><td>ใบแจ้งค่าใช้จ่าย</td><td><b>Bill notice (paper)</b></td><td><span class="badge neutral">term</span></td><td>The printable A5 bill handed to a tenant with no LINE binding.</td></tr>
+<tr><td>ใบเสร็จรับเงิน</td><td><b>Receipt (non-tax)</b></td><td><span class="badge neutral">term</span></td><td>Not a tax invoice; no VAT anywhere.</td></tr>
+<tr><td>สำเนา</td><td><b>Copy</b></td><td><span class="badge neutral">term</span></td><td>Mark on every reprint after the first button-driven print.</td></tr>
+<tr><td>ยกเลิก</td><td><b>Voided</b></td><td><span class="badge neutral">term</span></td><td>Stamp on a voided payment's receipt; the number is kept.</td></tr>
+<tr><td>ห้องว่าง</td><td><b>Vacant room</b></td><td><span class="badge neutral">term</span></td><td>No Active tenant; never billed.</td></tr>
+<tr><td>มีผู้เช่า</td><td><b>Occupied room</b></td><td><span class="badge neutral">term</span></td><td>Exactly one Active tenant; billable.</td></tr>
+<tr><td>ผูกบัญชี LINE</td><td><b>LINE binding</b></td><td><span class="badge neutral">term</span></td><td>tenant ↔ LINE userId, created by the one-time code flow.</td></tr>
+<tr><td>โหมดทดสอบ LINE</td><td><b>LINE test mode</b></td><td><span class="badge neutral">term</span></td><td>Redirects every outbound message to one whitelisted account. Default ON.</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="demo">
+<h2>Demo scenario</h2>
+<p>PRD §28 is the scripted end-to-end demo and the source of every worked example in this documentation set. These exact figures appear in the UI mockups, the LINE template examples, the receipt layout and the test cases — no document may invent different numbers for the same scenario.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th style="width:26%">รายการ (Thai)</th><th style="width:30%">Item</th><th>Value</th></tr></thead>
+<tbody>
+<tr><td>ห้อง</td><td>Room</td><td>205</td></tr>
+<tr><td>ขนาดห้อง</td><td>Area</td><td>30 ตร.ม.</td></tr>
+<tr><td>น้ำ — เลขเดือนก่อน</td><td>Water previous <span class="badge water">water</span></td><td>1,250</td></tr>
+<tr><td>น้ำ — เลขเดือนนี้</td><td>Water current <span class="badge water">water</span></td><td>1,260</td></tr>
+<tr><td>น้ำ — หน่วยที่ใช้</td><td>Water units <span class="badge water">water</span></td><td>10 หน่วย</td></tr>
+<tr><td>น้ำ — อัตรา</td><td>Water rate <span class="badge water">water</span></td><td>18.00 บาท/หน่วย</td></tr>
+<tr><td>ค่าน้ำ</td><td>Water amount <span class="badge water">water</span></td><td>180.00 บาท</td></tr>
+<tr><td>ไฟ — เลขเดือนก่อน</td><td>Electricity previous <span class="badge elec">elec</span></td><td>5,280</td></tr>
+<tr><td>ไฟ — เลขเดือนนี้</td><td>Electricity current <span class="badge elec">elec</span></td><td>5,350</td></tr>
+<tr><td>ไฟ — หน่วยที่ใช้</td><td>Electricity units <span class="badge elec">elec</span></td><td>70 หน่วย</td></tr>
+<tr><td>ไฟ — อัตรา</td><td>Electricity rate <span class="badge elec">elec</span></td><td>8.00 บาท/หน่วย</td></tr>
+<tr><td>ค่าไฟ</td><td>Electricity amount <span class="badge elec">elec</span></td><td>560.00 บาท</td></tr>
+<tr><td>ส่วนกลาง — อัตรา</td><td>Common rate <span class="badge fee">fee</span></td><td>35.00 บาท/ตร.ม.</td></tr>
+<tr><td>ค่าส่วนกลาง</td><td>Common area fee <span class="badge fee">fee</span></td><td>1,050.00 บาท</td></tr>
+<tr><td>ยอดรวม</td><td>Total</td><td><b>1,790.00 บาท</b></td></tr>
+<tr><td>กำหนดชำระ</td><td>Due date</td><td>5 กันยายน 2026</td></tr>
+<tr><td>วันที่ชำระ</td><td>Paid on</td><td>3 กันยายน 2026</td></tr>
+<tr><td>เลขที่ใบเสร็จ</td><td>Receipt no.</td><td>REC-202609-000852</td></tr>
+</tbody>
+</table>
+</div>
+<div class="formula">ค่าน้ำ 180.00 + ค่าไฟ 560.00 + ค่าส่วนกลาง 1,050.00 = <b>ยอดรวม 1,790.00 บาท</b></div>
+
+<div class="callout warn"><div class="title">Documentation values vs. live demo values</div>
+<p>The three <i>calendar</i> values above — due 5 กันยายน 2026, paid 3 กันยายน 2026, receipt
+REC-202609-000852 — are documentation and mockup values only. On a real demo day the due date is
+<code>MAX(due day of the period month, approval date + 3 days)</code> (<a href="#d-20">D-20</a>), Overdue is
+derived from <code>CURDATE()</code> (<a href="#d-21">D-21</a>) and the receipt number is built from the
+payment month (<a href="#d-27">D-27</a>), so fixed dates would show an overdue bill with the wrong number.
+The seed therefore computes every date from the run date, and the live demo reproduces the
+<b>arithmetic</b> — 10 หน่วย, 70 หน่วย, 180, 560, 1,050, 1,790 บาท, room 205 at 30 ตร.ม. — never the
+calendar (<a href="#d-44">D-44</a>).</p></div>
+
+<h3>Seed data the demo needs</h3>
+<p>Created by a committed <code>seed.sql</code> that rebuilds the whole dataset from an empty database in one
+command, so the graded demo can be restored in minutes (<a href="#d-43">D-43</a>).</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th style="width:16%">Seed</th><th style="width:40%">Contents</th><th>Why it is this way</th></tr></thead>
+<tbody>
+<tr><td><b>Rooms</b></td><td>80 rooms, floors 1–5, codes 101–116 … 501–516, every room 30.00 ตร.ม.</td><td>67 × 30 × 35 = 70,350.00 THB reproduces the PRD §16 common-area total exactly.</td></tr>
+<tr><td><b>Occupancy</b></td><td>67 Occupied, 13 Vacant</td><td>Matches the PRD §16 room counts; vacant rooms are never billed (D-07).</td></tr>
+<tr><td><b>Tenants</b></td><td>67 Active, fictional Thai names and 0XXXXXXXXX phones; exactly 54 carry a LINE binding</td><td>54 is the number quoted in the announcement preview string (D-35); the other 13 exercise the ไม่มี LINE path (D-30).</td></tr>
+<tr><td><b>LINE user IDs</b></td><td>Placeholder IDs of the form Useed0000…{tenant_id}; LINE test mode ON</td><td>Never valid push targets, and auto-unbind skips the Useed prefix, so a rehearsal cannot wipe the seeded bindings (D-44).</td></tr>
+<tr><td><b>Rates</b></td><td>น้ำ 18.00 · ไฟ 8.00 · ส่วนกลาง 35.00, effective from the first day of the earliest history period</td><td>One rate per utility for the whole seed, so every historical bill is explainable (D-17).</td></tr>
+<tr><td><b>Due day</b></td><td>5</td><td>Produces 5 ก.ย. 2026 for the documented example under D-20's MAX() rule.</td></tr>
+<tr><td><b>History</b></td><td>12 periods ending with the current month; all fully paid except the current one</td><td>Feeds the 12-month charts (D-41) and the per-room history report (D-42).</td></tr>
+<tr><td><b>Current period</b></td><td>The other 66 billable rooms carry an approved <span class="badge unpaid">Unpaid</span> bill. Room 205 is read on the 1st — water 1,250 → 1,260, electricity 5,280 → 5,350 — and carries the one bill left <span class="badge draft">Draft</span>, total 1,790.00. <b>No payment row and no receipt row exist for it.</b></td><td>The demo approves it live, which is the only way the due date and the receipt number come out right (D-44). Because the seed is the <i>finished</i> period, the demo script's first two actions need <code>npm run db:demo-arm</code> first — see step 0 below.</td></tr>
+<tr><td><b>Receipt counter</b></td><td>Offset so room 205's payment issues REC-&lt;current YYYYMM&gt;-000852</td><td>Reproduces the PRD's own example number; the offset is one documented source of gaps (D-27).</td></tr>
+<tr><td><b>Completed tenancy</b></td><td>Room 312: Inactive tenant with a final reading, final bill and Paid receipt in the previous period; new Active tenant from the 1st of the current month</td><td>Makes D-06 baselines, D-08 settlement and D-14's gap note demonstrable instead of theoretical.</td></tr>
+<tr><td><b>Users</b></td><td>admin / นิติบุคคล and staff / เจ้าหน้าที่; password from SEED_ADMIN_PASSWORD</td><td>No working credential is ever committed (D-37).</td></tr>
+</tbody>
+</table>
+</div>
+<h3>เตรียมสาธิต — the two preparations that happen before anyone is in the room</h3>
+
+<div class="callout warn"><div class="title">Step 0 · Arm the demo — <code>npm run db:demo-arm</code></div>
+<p>The seed ships the <i>finished</i> current period: room 205 is already read and already carries its ฉบับร่าง bill,
+which is what every screen figure, fixture id and test in this document set assumes. On an untouched
+<code>npm run db:reset</code> the จดมิเตอร์ list therefore shows room 205 as <b>จดแล้ว</b> and pressing
+ส่งให้นิติตรวจสอบ reports <code>สร้างบิลใหม่ 0 ใบ · อัปเดต 1 ใบ</code> — actions 1 and 2 below would have nothing to do.
+<code>npm run db:demo-arm</code> applies <code>db/demo-reset.sql</code>, which deletes room 205's current-period readings
+and bill and resets the receipt counter to 851, and touches nothing else — not the other 66 bills, not the
+<code>settings</code> row. It is idempotent, it takes about a second, and it is run again after any practice run
+(engineering specification §2.7).</p></div>
+
+<div class="callout warn"><div class="title">เตรียมสาธิต LINE — three steps, or nothing is delivered</div>
+<p>On a fresh seed the LINE half of the demo <b>cannot work</b>, in either mode. Room 205's tenant carries the
+placeholder id <code>Useed0000…0037</code>, which is never a valid push target (<a href="#d-44">D-44</a>), and
+<code>line_test_user_id</code> ships empty, which is the swallow branch: with โหมดทดสอบ LINE ON <b>no API call is made
+at all</b> and the delivery badge still turns <span class="badge ok">ส่งแล้ว</span>; with it OFF the push is attempted
+against the <code>Useed…</code> id, LINE answers 400 and the badge turns <span class="badge bad">ส่งไม่สำเร็จ</span>.
+Neither puts a message on a phone. Do this before the examiner arrives (engineering specification §5.8.5):</p>
+<ol class="steps">
+<li><b>Give the demo a real recipient.</b> Either open ผู้เช่า, press <b>สร้างรหัสผูก LINE</b> for room 205's tenant and
+send that 6-character code from the team's own LINE account — which overwrites the <code>Useed…</code> id with a genuine
+one (<a href="#d-29">D-29</a>) — or, more safely, set <b>บัญชีรับข้อความทดสอบ</b> on ตั้งค่า to the team account and leave
+<b>โหมดทดสอบ LINE</b> ON, which redirects every message to that one account while still recording the intended
+recipient (<a href="#d-34">D-34</a>).</li>
+<li><b>Read the mode back on ตั้งค่า.</b> <code>โหมดทดสอบ LINE: เปิด · บัญชีรับข้อความทดสอบ: ตั้งค่าแล้ว</code>. Never trust
+the default — the whole hazard is that a wrong configuration looks identical on the badges.</li>
+<li><b>Send one test bill.</b> Run step 0, walk room 205 through จดมิเตอร์ → ส่งให้นิติตรวจสอบ → อนุมัติและส่งบิล once, and
+watch it land on the phone. Then run step 0 again to re-arm the room for the real demo.</li>
+</ol>
+<p style="margin:0">The demo sends to two or three real accounts and never bulk-approves 67 rooms live: at three followers the
+free plan's 500 monthly messages are inexhaustible, at 67 they are not (<a href="#d-34">D-34</a>).</p></div>
+
+<h3>Demo script — the eight actions on screen</h3>
+<ol class="steps">
+<li>Sign in as <b>staff</b>, open จดมิเตอร์ for the current period, and save room 205: water 1,260, electricity 5,350. The counter moves and the card collapses to จดแล้ว. <span class="badge warn">needs step 0</span></li>
+<li>Press <b>ส่งให้นิติตรวจสอบ</b>. The run reports how many Draft bills it created, updated and skipped — <code>สร้างบิลใหม่ 1 ใบ</code> after step 0, and <code>สร้างบิลใหม่ 0 ใบ · อัปเดต 1 ใบ</code> without it. <span class="badge warn">needs step 0</span></li>
+<li>Sign in as <b>admin</b> and open รายละเอียดบิล for room 205: 10 หน่วย × 18.00 = 180.00, 70 หน่วย × 8.00 = 560.00, 30 ตร.ม. × 35.00 = 1,050.00, ยอดรวม 1,790.00 บาท.</li>
+<li>Press <b>อนุมัติและส่งบิล</b>, confirm the dialog, and show the LINE bill arriving on the team's own linked account with the delivery badge turning ส่งแล้ว. <span class="badge warn">needs เตรียมสาธิต LINE</span> Without that preparation the badge still turns ส่งแล้ว and no message is delivered — <b>ส่งแล้ว means the message was recorded, not that it arrived</b> (<a href="#d-30">D-30</a>, <a href="#d-34">D-34</a>). Say so out loud if an examiner asks: the honest claim is what the notification row proves.</li>
+<li>Show one room with no binding: badge ยังไม่ได้ส่ง — ไม่มี LINE, then <b>พิมพ์ใบแจ้งหนี้</b> for the A5 paper bill.</li>
+<li>Open รับชำระเงิน, find room 205, confirm the period in the dialog, and press <b>ยืนยันรับเงินสด</b>. The bill flips to ชำระแล้ว and the receipt appears.</li>
+<li>Press <b>พิมพ์ใบเสร็จ</b> for the A5 receipt (REC-…-000852), then reopen it to show the สำเนา mark on the copy.</li>
+<li>Open ภาพรวม and รายงาน: billed minus collected equals outstanding for the period, and room 205's 12-month history shows the new row.</li>
+</ol>
+
+<div class="callout ok"><div class="title">Rehearsal safety</div>
+<p>โหมดทดสอบ LINE defaults to ON, redirecting every outbound message to one whitelisted account while still
+recording the intended recipient. It is switched off only for the rehearsed demo path, which sends to the two
+or three real accounts the team owns — that is what keeps a 67-room rehearsal from spending the free plan's
+500-message monthly allowance and from unbinding the seeded tenants
+(<a href="#d-34">D-34</a>, <a href="#d-44">D-44</a>). The safer configuration, and the one this document recommends,
+is to leave test mode ON and point <b>บัญชีรับข้อความทดสอบ</b> at the team account: the redirect is then the safety
+net rather than something switched off under pressure.</p>
+<p style="margin:0">After every rehearsal, run <code>npm run db:demo-arm</code> again. A rehearsal leaves room 205 read,
+billed, approved and paid, and the next run has to start from the same place this one did.</p></div>
+</section>
+
+  </main>
+</div>
+<script>
+(function(){
+  // Build TOC from h2/h3 in #content
+  var content=document.getElementById('content'), toc=document.getElementById('toc');
+  var heads=content.querySelectorAll('h2, h3'), root=document.createElement('ul'), cur=null, used={};
+  heads.forEach(function(h){
+    if(!h.id){var s=h.textContent.trim().toLowerCase().replace(/[^\w฀-๿]+/g,'-').replace(/^-+|-+$/g,'').slice(0,60)||'sec';var b=s,i=2;while(used[s]||document.getElementById(s)){s=b+'-'+(i++)}h.id=s}
+    used[h.id]=1;
+    var li=document.createElement('li'),a=document.createElement('a');a.href='#'+h.id;a.textContent=h.textContent;li.appendChild(a);
+    if(h.tagName==='H2'){root.appendChild(li);cur=li}
+    else{if(!cur){root.appendChild(li);return}var ul=cur.querySelector(':scope > ul');if(!ul){ul=document.createElement('ul');cur.appendChild(ul)}ul.appendChild(li)}
+  });
+  toc.appendChild(root);
+  var links=toc.querySelectorAll('a');
+  if('IntersectionObserver' in window){
+    var map={};links.forEach(function(a){map[a.getAttribute('href').slice(1)]=a});
+    var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){links.forEach(function(l){l.classList.remove('active')});var a=map[e.target.id];if(a)a.classList.add('active')}})},{rootMargin:'0px 0px -75% 0px'});
+    heads.forEach(function(h){io.observe(h)});
+  }
+  // Mermaid
+  var dark=document.documentElement.getAttribute('data-theme')==='dark'||(!document.documentElement.getAttribute('data-theme')&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);
+  if(window.mermaid){mermaid.initialize({startOnLoad:true,theme:dark?'dark':'neutral',securityLevel:'loose',flowchart:{curve:'basis',htmlLabels:true},er:{useMaxWidth:true},sequence:{useMaxWidth:true},gantt:{useMaxWidth:true}})}
+})();
+</script>
+</body>
+</html>

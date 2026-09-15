@@ -1,0 +1,1324 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UI/UX Design · Juristic Platform</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Thai:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ---------- Document design tokens (NOT the product UI; product UI lives under .screen) ---------- */
+:root{
+  --bg:#f6f7f9; --surface:#ffffff; --surface-2:#f0f2f5; --border:#e2e5ea; --border-strong:#c9ced6;
+  --text:#1b2129; --text-2:#3f4753; --muted:#6b7280; --link:#0b5fd7;
+  --accent:#0b5fd7; --accent-soft:#e7efff;
+  --ok:#137a3a; --ok-soft:#e3f5e9; --warn:#9a5b00; --warn-soft:#fff3dc; --bad:#b42318; --bad-soft:#fdecea; --info:#0b6b8f; --info-soft:#e2f3fa;
+  --water:#0b7fab; --water-soft:#e0f2fa; --elec:#c27400; --elec-soft:#fff1d6; --fee:#6b4fbb; --fee-soft:#ece7fa;
+  --draft:#6b7280; --unpaid:#c27400; --paid:#137a3a; --overdue:#b42318;
+  --radius:10px; --radius-sm:6px;
+  --shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.08);
+  --font:"Inter","Noto Sans Thai",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Sarabun",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --toc-w:260px; --content-w:1080px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1318; --surface:#161b22; --surface-2:#1e252e; --border:#2a323d; --border-strong:#3b4552;
+    --text:#e6e9ee; --text-2:#c3c9d2; --muted:#8b94a1; --link:#6ea3ff;
+    --accent:#6ea3ff; --accent-soft:#17263f;
+    --ok:#4fd07f; --ok-soft:#10301c; --warn:#f2b447; --warn-soft:#332507; --bad:#ff7b6b; --bad-soft:#3a1512; --info:#5cc3ea; --info-soft:#0e2a35;
+    --water:#4fb8e0; --water-soft:#0e2a35; --elec:#f0a93a; --elec-soft:#332507; --fee:#a992ee; --fee-soft:#231c3d;
+    --draft:#8b94a1; --unpaid:#f0a93a; --paid:#4fd07f; --overdue:#ff7b6b;
+    --shadow:0 1px 2px rgba(0,0,0,.4);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f1318; --surface:#161b22; --surface-2:#1e252e; --border:#2a323d; --border-strong:#3b4552;
+  --text:#e6e9ee; --text-2:#c3c9d2; --muted:#8b94a1; --link:#6ea3ff;
+  --accent:#6ea3ff; --accent-soft:#17263f;
+  --ok:#4fd07f; --ok-soft:#10301c; --warn:#f2b447; --warn-soft:#332507; --bad:#ff7b6b; --bad-soft:#3a1512; --info:#5cc3ea; --info-soft:#0e2a35;
+  --water:#4fb8e0; --water-soft:#0e2a35; --elec:#f0a93a; --elec-soft:#332507; --fee:#a992ee; --fee-soft:#231c3d;
+  --draft:#8b94a1; --unpaid:#f0a93a; --paid:#4fd07f; --overdue:#ff7b6b;
+  --shadow:0 1px 2px rgba(0,0,0,.4);
+}
+
+/* ---------- Base ---------- */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+a{color:var(--link);text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{line-height:1.25;font-weight:600;color:var(--text);margin:0}
+h1{font-size:30px;letter-spacing:-.01em}
+h2{font-size:22px;margin-top:56px;padding-top:16px;border-top:1px solid var(--border)}
+h2:first-child{margin-top:0;border-top:0;padding-top:0}
+h3{font-size:17px;margin-top:32px}
+h4{font-size:15px;margin-top:20px;color:var(--text-2)}
+p{margin:10px 0}
+ul,ol{padding-left:22px;margin:8px 0}
+li{margin:3px 0}
+hr{border:0;border-top:1px solid var(--border);margin:32px 0}
+small,.muted{color:var(--muted)}
+strong{font-weight:600}
+code{font-family:var(--mono);font-size:.88em;background:var(--surface-2);border:1px solid var(--border);border-radius:4px;padding:1px 5px}
+pre{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 16px;overflow-x:auto;font-family:var(--mono);font-size:13px;line-height:1.5}
+pre code{background:none;border:0;padding:0;font-size:inherit}
+blockquote{margin:12px 0;padding:8px 16px;border-left:3px solid var(--border-strong);color:var(--text-2)}
+img,svg{max-width:100%}
+details{border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 14px;margin:10px 0;background:var(--surface)}
+summary{cursor:pointer;font-weight:500}
+
+/* ---------- Layout ---------- */
+.doc-header{background:var(--surface);border-bottom:1px solid var(--border);padding:22px 32px}
+.doc-header .crumbs{font-size:13px;color:var(--muted);margin-bottom:6px}
+.doc-header .meta{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:13px;color:var(--muted);margin-top:8px}
+.doc-header .meta b{color:var(--text-2);font-weight:500}
+.layout{display:grid;grid-template-columns:var(--toc-w) minmax(0,1fr);gap:0;max-width:calc(var(--toc-w) + var(--content-w) + 64px);margin:0 auto}
+.toc{position:sticky;top:0;align-self:start;max-height:100vh;overflow-y:auto;padding:24px 16px 40px 24px;font-size:13px;border-right:1px solid var(--border)}
+.toc .toc-title{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+.toc ul{list-style:none;padding:0;margin:0}
+.toc ul ul{padding-left:12px}
+.toc li{margin:0}
+.toc a{display:block;padding:4px 8px;border-radius:4px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.toc a:hover{background:var(--surface-2);text-decoration:none}
+.toc a.active{color:var(--accent);background:var(--accent-soft)}
+.content{padding:32px 32px 96px;min-width:0}
+@media (max-width:960px){.layout{grid-template-columns:1fr}.toc{position:static;max-height:none;border-right:0;border-bottom:1px solid var(--border)}.content{padding:24px 16px 64px}.doc-header{padding:18px 16px}}
+
+/* ---------- Components ---------- */
+table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden}
+th,td{padding:8px 12px;border-bottom:1px solid var(--border);vertical-align:top;text-align:left}
+th{background:var(--surface-2);font-weight:600;font-size:13px;color:var(--text-2)}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even) td{background:color-mix(in srgb,var(--surface-2) 45%,transparent)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.table-wrap{overflow-x:auto;margin:14px 0}
+.table-wrap table{margin:0}
+.callout{border:1px solid var(--border);border-left:4px solid var(--accent);background:var(--surface);border-radius:var(--radius-sm);padding:12px 16px;margin:16px 0}
+.callout .title{font-weight:600;margin-bottom:4px;font-size:14px}
+.callout.note{border-left-color:var(--info);background:var(--info-soft)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.ok{border-left-color:var(--ok);background:var(--ok-soft)}
+.callout.decision{border-left-color:var(--fee);background:var(--fee-soft)}
+.badge{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600;line-height:1.5;border:1px solid transparent;white-space:nowrap}
+.badge.draft{background:var(--surface-2);color:var(--draft);border-color:var(--border-strong)}
+.badge.unpaid{background:var(--elec-soft);color:var(--unpaid)}
+.badge.paid{background:var(--ok-soft);color:var(--paid)}
+.badge.overdue{background:var(--bad-soft);color:var(--overdue)}
+.badge.ok{background:var(--ok-soft);color:var(--ok)}
+.badge.warn{background:var(--warn-soft);color:var(--warn)}
+.badge.bad{background:var(--bad-soft);color:var(--bad)}
+.badge.info{background:var(--info-soft);color:var(--info)}
+.badge.neutral{background:var(--surface-2);color:var(--text-2);border-color:var(--border)}
+.badge.water{background:var(--water-soft);color:var(--water)}
+.badge.elec{background:var(--elec-soft);color:var(--elec)}
+.badge.fee{background:var(--fee-soft);color:var(--fee)}
+.badge.p0{background:var(--bad-soft);color:var(--bad)} .badge.p1{background:var(--warn-soft);color:var(--warn)} .badge.p2{background:var(--surface-2);color:var(--text-2)}
+.kv{display:grid;grid-template-columns:max-content 1fr;gap:6px 18px;margin:12px 0;font-size:14px}
+.kv dt{color:var(--muted);font-weight:500}
+.kv dd{margin:0}
+.grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));margin:16px 0}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h3,.card h4{margin-top:0}
+.diagram{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin:16px 0;overflow-x:auto}
+.diagram .caption{font-size:13px;color:var(--muted);margin-top:8px;text-align:center}
+pre.mermaid{background:transparent;border:0;padding:0;text-align:center;font-family:var(--font);font-size:14px}
+.tree{font-family:var(--mono);font-size:13px;line-height:1.55;white-space:pre}
+.tree .c{color:var(--muted)}
+.steps{counter-reset:step;list-style:none;padding:0;margin:14px 0}
+.steps li{position:relative;padding-left:40px;margin:10px 0}
+.steps li::before{counter-increment:step;content:counter(step);position:absolute;left:0;top:1px;width:26px;height:26px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-weight:600;font-size:13px;display:flex;align-items:center;justify-content:center}
+.formula{font-family:var(--mono);background:var(--surface-2);border:1px dashed var(--border-strong);border-radius:var(--radius-sm);padding:10px 14px;margin:10px 0;font-size:14px}
+.tag-row{display:flex;flex-wrap:wrap;gap:6px}
+.checklist{list-style:none;padding-left:0}
+.checklist li{padding-left:26px;position:relative}
+.checklist li::before{content:"";position:absolute;left:2px;top:7px;width:14px;height:14px;border:1.5px solid var(--border-strong);border-radius:3px}
+
+/* ---------- Device frames for UI mockups (mockup content itself is styled by tokens.css under .screen) ---------- */
+.device{margin:20px auto;background:var(--surface);border:1px solid var(--border);box-shadow:0 8px 30px rgba(16,24,40,.12);overflow:hidden}
+.device.phone{width:390px;max-width:100%;border-radius:36px;border:8px solid #1b1f24;background:#1b1f24}
+.device.phone .screen{border-radius:28px;min-height:760px;background:#fff;overflow:hidden}
+.device.desktop{width:100%;max-width:1200px;border-radius:10px}
+.device.desktop .chrome{height:34px;background:var(--surface-2);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;padding:0 12px}
+.device.desktop .chrome i{width:11px;height:11px;border-radius:50%;background:#d1d5db;display:inline-block}
+.device.desktop .chrome i:nth-child(1){background:#ff5f57}.device.desktop .chrome i:nth-child(2){background:#febc2e}.device.desktop .chrome i:nth-child(3){background:#28c840}
+.device.desktop .chrome .url{margin-left:10px;flex:1;height:20px;border-radius:5px;background:var(--surface);border:1px solid var(--border);font-size:11px;color:var(--muted);padding:0 8px;line-height:20px;font-family:var(--mono)}
+.device.desktop .screen{min-height:720px;background:#fff;overflow:hidden}
+.device.print{width:100%;max-width:420px;border-radius:4px;background:#fff}
+.device.print .screen{background:#fff;padding:0}
+.screen{color:#1b2129;font-family:"Noto Sans Thai","Inter",sans-serif;font-size:14px;line-height:1.45;text-align:left}
+.annotations{counter-reset:ann;margin:12px 0 28px}
+.annotations li{margin:6px 0}
+.ann{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;font-size:11px;font-weight:700;margin-right:6px;vertical-align:middle;font-family:var(--font)}
+.screen .ann{position:absolute;box-shadow:0 0 0 2px #fff}
+.screen-meta{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:var(--muted);margin:6px 0 10px}
+.screen-meta b{color:var(--text-2);font-weight:500}
+
+/* ---------- Print ---------- */
+@media print{
+  body{background:#fff;color:#000;font-size:12px}
+  .toc{display:none}
+  .layout{display:block;max-width:none}
+  .content{padding:0}
+  .doc-header{padding:0 0 12px;border-bottom:1px solid #000}
+  h2{break-before:page}
+  h2:first-child{break-before:auto}
+  .device,.card,.callout,.diagram{break-inside:avoid;box-shadow:none}
+  a{color:#000}
+}
+
+/* ==== product UI ==== */
+/* ============================================================================
+   Juristic Platform — PRODUCT UI design system (tokens.css)
+   Every rule is scoped under .screen so it can never collide with the
+   documentation stylesheet in docs/_shared/template.html.
+   In the running app the same file is public/css/app.css with .screen dropped.
+
+   Rules for authors:
+   - All custom properties are prefixed --ui- and declared on .screen.
+   - Mockups are always LIGHT: the device frames in the doc template paint the
+     screen white, so there is no dark palette here on purpose.
+   - Layout switches by CONTAINER width (.app is the container), not by viewport,
+     so a phone frame inside a wide document renders the phone layout.
+   - Thai is the UI language (D-02); English survives only in identifiers such as
+     data-status="Draft|Unpaid|Paid|Overdue".
+   ========================================================================== */
+
+/* ---------- 1. Tokens ---------- */
+.screen{
+  /* brand */
+  --ui-brand:#1b4fa0; --ui-brand-hover:#173f80; --ui-brand-active:#123467;
+  --ui-brand-soft:#e9eff9; --ui-brand-ink:#ffffff;
+  /* utility accents (💧 water · ⚡ electricity · 🏢 common area fee) */
+  --ui-water:#0a6b90; --ui-water-soft:#e0f2fa;
+  --ui-elec:#8f5800;  --ui-elec-soft:#fff1d6;
+  --ui-fee:#6b4fbb;   --ui-fee-soft:#ece7fa;
+  /* bill statuses — the four display values of D-21 */
+  --ui-draft:#5b6472;   --ui-draft-soft:#eef0f3;
+  --ui-unpaid:#9a5b00;  --ui-unpaid-soft:#fff1d6;
+  --ui-paid:#137a3a;    --ui-paid-soft:#e3f5e9;
+  --ui-overdue:#a4231a; --ui-overdue-soft:#fdecea;
+  /* room statuses — deliberately NOT green/red: vacancy is not a failure */
+  --ui-occupied:#0b6b8f; --ui-occupied-soft:#e2f3fa;
+  --ui-vacant:#5b6472;   --ui-vacant-soft:#eef0f3;
+  /* semantic */
+  --ui-success:#137a3a; --ui-success-soft:#e3f5e9;
+  --ui-warning:#9a5b00; --ui-warning-soft:#fff3dc;
+  --ui-danger:#a4231a;  --ui-danger-soft:#fdecea;
+  --ui-info:#0b6b8f;    --ui-info-soft:#e2f3fa;
+  /* neutrals */
+  --ui-bg:#f5f6f8; --ui-surface:#ffffff; --ui-surface-2:#f0f2f5; --ui-surface-3:#e6e9ee;
+  --ui-border:#dfe3e9; --ui-border-strong:#c3c9d3;
+  --ui-text:#1b2129; --ui-text-2:#48505c; --ui-muted:#6b7280; --ui-on-dark:#f3f5f8;
+  /* LINE */
+  --ui-line-green:#06c755; --ui-line-chat:#8aa9cf; --ui-line-oa:#ffffff; --ui-line-user:#06c755;
+  /* type */
+  --ui-font:"Noto Sans Thai","Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --ui-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --ui-fs-2xs:11px; --ui-fs-xs:12px; --ui-fs-sm:13px; --ui-fs-md:14px;
+  --ui-fs-lg:16px; --ui-fs-xl:18px; --ui-fs-2xl:22px; --ui-fs-3xl:28px;
+  --ui-lh-tight:1.25; --ui-lh:1.45; --ui-lh-loose:1.7;
+  --ui-fw-med:500; --ui-fw-semi:600; --ui-fw-bold:700;
+  /* space */
+  --ui-sp-1:4px; --ui-sp-2:8px; --ui-sp-3:12px; --ui-sp-4:16px;
+  --ui-sp-5:20px; --ui-sp-6:24px; --ui-sp-8:32px; --ui-sp-10:40px;
+  /* radius, shadow, metrics */
+  --ui-r-xs:4px; --ui-r-sm:6px; --ui-r-md:10px; --ui-r-lg:14px; --ui-r-pill:999px;
+  --ui-sh-1:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.08);
+  --ui-sh-2:0 4px 10px rgba(16,24,40,.08),0 2px 4px rgba(16,24,40,.06);
+  --ui-sh-3:0 16px 40px rgba(16,24,40,.22);
+  --ui-tap:44px; --ui-focus:#1b4fa0; --ui-focus-ring:0 0 0 3px rgba(27,79,160,.30);
+  --ui-sidebar-w:216px; --ui-topbar-h:52px; --ui-tabbar-h:56px; --ui-content-max:1200px;
+}
+.device .screen{background:var(--ui-bg);color:var(--ui-text);font-family:var(--ui-font);font-size:var(--ui-fs-md);line-height:var(--ui-lh)}
+.screen *{box-sizing:border-box}
+.screen h1,.screen h2,.screen h3,.screen h4{margin:0;font-weight:var(--ui-fw-semi);line-height:var(--ui-lh-tight);color:var(--ui-text);border:0;padding:0}
+.screen h1{font-size:var(--ui-fs-2xl)} .screen h2{font-size:var(--ui-fs-xl)}
+.screen h3{font-size:var(--ui-fs-lg)} .screen h4{font-size:var(--ui-fs-md)}
+.screen p{margin:0 0 var(--ui-sp-2)}
+.screen .ui-muted{color:var(--ui-muted)}
+.screen .ui-sub{font-size:var(--ui-fs-xs);color:var(--ui-muted)}
+.screen .num,.screen .money{font-variant-numeric:tabular-nums;text-align:right}
+.screen .row{display:flex;align-items:center;gap:var(--ui-sp-2)}
+.screen .spread{display:flex;align-items:center;justify-content:space-between;gap:var(--ui-sp-3)}
+.screen .toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:var(--ui-sp-2);margin-bottom:var(--ui-sp-3)}
+.screen .divider{height:1px;background:var(--ui-border);margin:var(--ui-sp-4) 0;border:0}
+.screen :focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px;border-radius:var(--ui-r-xs)}
+
+/* ---------- 2. Layout ---------- */
+.screen .app{display:flex;min-height:inherit;background:var(--ui-bg);container-type:inline-size;container-name:app}
+.screen .sidebar{flex:0 0 var(--ui-sidebar-w);width:var(--ui-sidebar-w);background:var(--ui-brand);color:var(--ui-on-dark);padding:var(--ui-sp-4) var(--ui-sp-2);display:flex;flex-direction:column;gap:var(--ui-sp-1)}
+.screen .sidebar .brand{padding:var(--ui-sp-2) var(--ui-sp-3) var(--ui-sp-4);line-height:1.3}
+.screen .sidebar .brand b{display:block;font-size:var(--ui-fs-lg);font-weight:var(--ui-fw-semi);color:#fff}
+.screen .sidebar .brand span{font-size:var(--ui-fs-2xs);color:rgba(255,255,255,.72)}
+.screen .sidebar .nav-section{font-size:var(--ui-fs-2xs);letter-spacing:.06em;text-transform:uppercase;color:rgba(255,255,255,.55);padding:var(--ui-sp-3) var(--ui-sp-3) var(--ui-sp-1)}
+.screen .nav-item{display:flex;align-items:center;gap:var(--ui-sp-2);min-height:38px;padding:var(--ui-sp-2) var(--ui-sp-3);border-radius:var(--ui-r-sm);color:rgba(255,255,255,.86);font-size:var(--ui-fs-md);text-decoration:none;cursor:pointer}
+.screen .nav-item:hover{background:rgba(255,255,255,.10);color:#fff}
+.screen .nav-item.active{background:rgba(255,255,255,.18);color:#fff;font-weight:var(--ui-fw-semi)}
+.screen .nav-item .count{margin-left:auto;font-size:var(--ui-fs-xs);background:rgba(255,255,255,.20);border-radius:var(--ui-r-pill);padding:1px 7px}
+.screen .sidebar .user{margin-top:auto;display:flex;align-items:center;gap:var(--ui-sp-2);padding:var(--ui-sp-3);border-top:1px solid rgba(255,255,255,.18);font-size:var(--ui-fs-xs);color:rgba(255,255,255,.80)}
+.screen .main{flex:1;min-width:0;display:flex;flex-direction:column}
+.screen .topbar{display:flex;align-items:center;gap:var(--ui-sp-3);min-height:var(--ui-topbar-h);padding:0 var(--ui-sp-4);background:var(--ui-surface);border-bottom:1px solid var(--ui-border)}
+.screen .topbar .title{font-size:var(--ui-fs-lg);font-weight:var(--ui-fw-semi)}
+.screen .topbar .actions{margin-left:auto;display:flex;align-items:center;gap:var(--ui-sp-2)}
+.screen .page{padding:var(--ui-sp-5);max-width:var(--ui-content-max)}
+.screen .bottom-tabs{display:none;position:sticky;bottom:0;height:var(--ui-tabbar-h);background:var(--ui-surface);border-top:1px solid var(--ui-border)}
+.screen .bottom-tabs .tab{flex:1;min-height:var(--ui-tap);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:var(--ui-fs-2xs);color:var(--ui-muted);text-decoration:none}
+.screen .bottom-tabs .tab .ico{font-size:var(--ui-fs-lg);line-height:1}
+.screen .bottom-tabs .tab.active{color:var(--ui-brand);font-weight:var(--ui-fw-semi)}
+@container app (max-width:767px){
+  .screen .sidebar{display:none}
+  .screen .page{padding:var(--ui-sp-3) var(--ui-sp-3) var(--ui-sp-10)}
+  .screen .bottom-tabs{display:flex}
+  .screen .topbar{position:sticky;top:0;z-index:5}
+  .screen .kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
+/* ---------- 3. Buttons ---------- */
+.screen .btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--ui-sp-2);min-height:38px;padding:0 var(--ui-sp-4);border:1px solid var(--ui-border-strong);border-radius:var(--ui-r-sm);background:var(--ui-surface);color:var(--ui-text);font-family:inherit;font-size:var(--ui-fs-md);font-weight:var(--ui-fw-med);line-height:1;text-decoration:none;cursor:pointer;white-space:nowrap}
+.screen .btn:hover{background:var(--ui-surface-2)}
+.screen .btn.primary{background:var(--ui-brand);border-color:var(--ui-brand);color:var(--ui-brand-ink);font-weight:var(--ui-fw-semi)}
+.screen .btn.primary:hover{background:var(--ui-brand-hover);border-color:var(--ui-brand-hover)}
+.screen .btn.secondary{background:var(--ui-brand-soft);border-color:var(--ui-brand-soft);color:var(--ui-brand);font-weight:var(--ui-fw-semi)}
+.screen .btn.danger{background:var(--ui-danger);border-color:var(--ui-danger);color:#fff;font-weight:var(--ui-fw-semi)}
+.screen .btn.ghost{background:transparent;border-color:transparent;color:var(--ui-brand)}
+.screen .btn.ghost:hover{background:var(--ui-brand-soft)}
+.screen .btn.sm{min-height:30px;padding:0 var(--ui-sp-3);font-size:var(--ui-fs-sm)}
+.screen .btn.lg{min-height:var(--ui-tap);padding:0 var(--ui-sp-5);font-size:var(--ui-fs-lg)}
+.screen .btn.block{display:flex;width:100%}
+.screen .btn[disabled],.screen .btn.is-disabled{opacity:.5;cursor:not-allowed;pointer-events:none}
+.screen .btn.is-loading{position:relative;color:transparent}
+.screen .btn.is-loading::after{content:"";position:absolute;width:15px;height:15px;border-radius:50%;border:2px solid rgba(255,255,255,.45);border-top-color:#fff}
+.screen .btn.secondary.is-loading::after,.screen .btn.ghost.is-loading::after{border-color:rgba(27,79,160,.35);border-top-color:var(--ui-brand)}
+
+/* ---------- 4. Forms ---------- */
+.screen .field{display:block;margin-bottom:var(--ui-sp-4)}
+.screen .field .label{display:block;font-size:var(--ui-fs-sm);font-weight:var(--ui-fw-med);color:var(--ui-text-2);margin-bottom:var(--ui-sp-1)}
+.screen .field .label .req{color:var(--ui-danger);margin-left:2px}
+.screen .input,.screen .select,.screen .textarea{display:block;width:100%;min-height:var(--ui-tap);padding:var(--ui-sp-2) var(--ui-sp-3);border:1px solid var(--ui-border-strong);border-radius:var(--ui-r-sm);background:var(--ui-surface);color:var(--ui-text);font-family:inherit;font-size:var(--ui-fs-lg)}
+.screen .textarea{min-height:96px;resize:vertical;line-height:var(--ui-lh)}
+.screen .select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--ui-muted) 50%),linear-gradient(135deg,var(--ui-muted) 50%,transparent 50%);background-position:calc(100% - 18px) 50%,calc(100% - 13px) 50%;background-size:5px 5px;background-repeat:no-repeat;padding-right:var(--ui-sp-8)}
+.screen .input[readonly],.screen .input.readonly{background:var(--ui-surface-2);color:var(--ui-text-2);border-style:dashed}
+.screen .input::placeholder{color:var(--ui-border-strong)}
+.screen .field .hint{display:block;font-size:var(--ui-fs-xs);color:var(--ui-muted);margin-top:var(--ui-sp-1)}
+.screen .field .error{display:block;font-size:var(--ui-fs-xs);color:var(--ui-danger);font-weight:var(--ui-fw-med);margin-top:var(--ui-sp-1)}
+.screen .field.invalid .input,.screen .field.invalid .select,.screen .field.invalid .textarea{border-color:var(--ui-danger);background:var(--ui-danger-soft)}
+.screen .field.inline{display:flex;align-items:center;gap:var(--ui-sp-2);margin-bottom:var(--ui-sp-2)}
+.screen .field-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:var(--ui-sp-3)}
+.screen .check{display:flex;align-items:center;gap:var(--ui-sp-2);min-height:var(--ui-tap);font-size:var(--ui-fs-md);cursor:pointer}
+.screen .check input{width:18px;height:18px;accent-color:var(--ui-brand)}
+
+/* ---------- 5. Card, table, KPI, list ---------- */
+.screen .card{background:var(--ui-surface);border:1px solid var(--ui-border);border-radius:var(--ui-r-md);box-shadow:var(--ui-sh-1);padding:var(--ui-sp-4);margin:0 0 var(--ui-sp-4)}
+.screen .card .card-head{display:flex;align-items:center;justify-content:space-between;gap:var(--ui-sp-3);margin:calc(var(--ui-sp-4) * -1) calc(var(--ui-sp-4) * -1) var(--ui-sp-4);padding:var(--ui-sp-3) var(--ui-sp-4);border-bottom:1px solid var(--ui-border)}
+.screen .card .card-title{font-size:var(--ui-fs-md);font-weight:var(--ui-fw-semi)}
+.screen .card .card-foot{margin:var(--ui-sp-4) calc(var(--ui-sp-4) * -1) calc(var(--ui-sp-4) * -1);padding:var(--ui-sp-3) var(--ui-sp-4);border-top:1px solid var(--ui-border);background:var(--ui-surface-2);border-radius:0 0 var(--ui-r-md) var(--ui-r-md);display:flex;gap:var(--ui-sp-2);justify-content:flex-end}
+.screen .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.screen table{width:100%;border-collapse:collapse;background:var(--ui-surface);border:1px solid var(--ui-border);border-radius:var(--ui-r-sm);overflow:hidden;font-size:var(--ui-fs-md);margin:0}
+.screen th,.screen td{padding:var(--ui-sp-3);border-bottom:1px solid var(--ui-border);text-align:left;vertical-align:middle}
+.screen th{background:var(--ui-surface-2);font-size:var(--ui-fs-sm);font-weight:var(--ui-fw-semi);color:var(--ui-text-2);white-space:nowrap}
+.screen th.num,.screen td.num{text-align:right;font-variant-numeric:tabular-nums}
+.screen tbody tr:last-child td{border-bottom:0}
+.screen table.zebra tbody tr:nth-child(even) td{background:#fafbfc}
+.screen table.compact th,.screen table.compact td{padding:var(--ui-sp-2) var(--ui-sp-3);font-size:var(--ui-fs-sm)}
+.screen tbody tr.is-selected td{background:var(--ui-brand-soft)}
+.screen .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:var(--ui-sp-3);margin-bottom:var(--ui-sp-4)}
+.screen .kpi{background:var(--ui-surface);border:1px solid var(--ui-border);border-left:3px solid var(--ui-brand);border-radius:var(--ui-r-md);padding:var(--ui-sp-3) var(--ui-sp-4);box-shadow:var(--ui-sh-1)}
+.screen .kpi .label{font-size:var(--ui-fs-xs);color:var(--ui-muted)}
+.screen .kpi .value{font-size:var(--ui-fs-2xl);font-weight:var(--ui-fw-semi);font-variant-numeric:tabular-nums;line-height:1.2;margin-top:2px}
+.screen .kpi .sub{font-size:var(--ui-fs-2xs);color:var(--ui-muted)}
+.screen .kpi.water{border-left-color:var(--ui-water)} .screen .kpi.elec{border-left-color:var(--ui-elec)}
+.screen .kpi.fee{border-left-color:var(--ui-fee)} .screen .kpi.paid{border-left-color:var(--ui-paid)}
+.screen .kpi.overdue{border-left-color:var(--ui-overdue)} .screen .kpi.neutral{border-left-color:var(--ui-border-strong)}
+.screen .list-item{display:flex;align-items:center;gap:var(--ui-sp-3);min-height:var(--ui-tap);padding:var(--ui-sp-3);background:var(--ui-surface);border:1px solid var(--ui-border);border-radius:var(--ui-r-sm);margin-bottom:var(--ui-sp-2)}
+.screen .list-item .lead{font-weight:var(--ui-fw-semi)}
+.screen .list-item .meta{font-size:var(--ui-fs-xs);color:var(--ui-muted)}
+.screen .list-item .end{margin-left:auto;display:flex;align-items:center;gap:var(--ui-sp-2)}
+.screen .list-item.is-done{background:var(--ui-paid-soft);border-color:#c8e6d4}
+.screen .group-head{position:sticky;top:0;background:var(--ui-surface-3);font-size:var(--ui-fs-xs);font-weight:var(--ui-fw-semi);color:var(--ui-text-2);padding:var(--ui-sp-1) var(--ui-sp-3);border-radius:var(--ui-r-xs);margin:var(--ui-sp-3) 0 var(--ui-sp-2)}
+
+/* ---------- 6. Badges, chips, stepper, progress ---------- */
+.screen .badge{display:inline-block;padding:2px 9px;border-radius:var(--ui-r-pill);border:1px solid transparent;font-size:var(--ui-fs-xs);font-weight:var(--ui-fw-semi);line-height:1.5;white-space:nowrap}
+.screen .badge.draft{background:var(--ui-draft-soft);color:var(--ui-draft);border-color:var(--ui-border-strong)}
+.screen .badge.unpaid{background:var(--ui-unpaid-soft);color:var(--ui-unpaid)}
+.screen .badge.paid{background:var(--ui-paid-soft);color:var(--ui-paid)}
+.screen .badge.overdue{background:var(--ui-overdue-soft);color:var(--ui-overdue)}
+.screen .badge.occupied{background:var(--ui-occupied-soft);color:var(--ui-occupied)}
+.screen .badge.vacant{background:var(--ui-vacant-soft);color:var(--ui-vacant);border-color:var(--ui-border-strong)}
+.screen .badge.ok{background:var(--ui-success-soft);color:var(--ui-success)}
+.screen .badge.warn{background:var(--ui-warning-soft);color:var(--ui-warning)}
+.screen .badge.bad{background:var(--ui-danger-soft);color:var(--ui-danger)}
+.screen .badge.info{background:var(--ui-info-soft);color:var(--ui-info)}
+.screen .badge.neutral{background:var(--ui-surface-2);color:var(--ui-text-2);border-color:var(--ui-border)}
+.screen .badge.water{background:var(--ui-water-soft);color:var(--ui-water)}
+.screen .badge.elec{background:var(--ui-elec-soft);color:var(--ui-elec)}
+.screen .badge.fee{background:var(--ui-fee-soft);color:var(--ui-fee)}
+.screen .chip-row{display:flex;flex-wrap:wrap;gap:var(--ui-sp-2);margin-bottom:var(--ui-sp-3)}
+.screen .chip{display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 var(--ui-sp-3);border:1px solid var(--ui-border-strong);border-radius:var(--ui-r-pill);background:var(--ui-surface);color:var(--ui-text-2);font-size:var(--ui-fs-sm);cursor:pointer;white-space:nowrap}
+.screen .chip .count{font-variant-numeric:tabular-nums;color:var(--ui-muted)}
+.screen .chip.active{background:var(--ui-brand);border-color:var(--ui-brand);color:#fff;font-weight:var(--ui-fw-semi)}
+.screen .chip.active .count{color:rgba(255,255,255,.85)}
+.screen .stepper{display:flex;align-items:center;gap:var(--ui-sp-2);flex-wrap:wrap;margin-bottom:var(--ui-sp-4)}
+.screen .stepper .step{display:flex;align-items:center;gap:var(--ui-sp-2);font-size:var(--ui-fs-sm);color:var(--ui-muted)}
+.screen .stepper .step::before{content:attr(data-step);display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--ui-surface-3);color:var(--ui-text-2);font-size:var(--ui-fs-xs);font-weight:var(--ui-fw-semi)}
+.screen .stepper .step.current{color:var(--ui-text);font-weight:var(--ui-fw-semi)}
+.screen .stepper .step.current::before{background:var(--ui-brand);color:#fff}
+.screen .stepper .step.done{color:var(--ui-success)}
+.screen .stepper .step.done::before{content:"✓";background:var(--ui-success-soft);color:var(--ui-success)}
+.screen .stepper .step + .step{margin-left:var(--ui-sp-2)}
+.screen .stepper .step + .step::after{order:-1;content:"";width:20px;height:1px;background:var(--ui-border-strong);margin-right:var(--ui-sp-2)}
+.screen .progress{height:8px;border-radius:var(--ui-r-pill);background:var(--ui-surface-3);overflow:hidden}
+.screen .progress .bar{height:100%;background:var(--ui-brand);border-radius:inherit}
+.screen .progress.ok .bar{background:var(--ui-success)}
+.screen .progress-label{display:flex;justify-content:space-between;font-size:var(--ui-fs-xs);color:var(--ui-muted);margin-bottom:var(--ui-sp-1);font-variant-numeric:tabular-nums}
+
+/* ---------- 7. Feedback: notice, toast, modal, empty, skeleton ---------- */
+.screen .notice{border:1px solid var(--ui-border);border-left:3px solid var(--ui-info);background:var(--ui-info-soft);border-radius:var(--ui-r-sm);padding:var(--ui-sp-3);font-size:var(--ui-fs-sm);margin-bottom:var(--ui-sp-3)}
+.screen .notice.warn{border-left-color:var(--ui-warning);background:var(--ui-warning-soft)}
+.screen .notice.bad{border-left-color:var(--ui-danger);background:var(--ui-danger-soft)}
+.screen .notice.ok{border-left-color:var(--ui-success);background:var(--ui-success-soft)}
+.screen .notice b{display:block;font-weight:var(--ui-fw-semi);margin-bottom:2px}
+.screen .toast-stack{position:absolute;right:var(--ui-sp-4);bottom:var(--ui-sp-4);display:flex;flex-direction:column;gap:var(--ui-sp-2);z-index:20}
+.screen .toast{display:flex;align-items:flex-start;gap:var(--ui-sp-2);max-width:340px;padding:var(--ui-sp-3);border-radius:var(--ui-r-sm);border-left:3px solid var(--ui-success);background:var(--ui-surface);box-shadow:var(--ui-sh-2);font-size:var(--ui-fs-sm)}
+.screen .toast.warn{border-left-color:var(--ui-warning)} .screen .toast.bad{border-left-color:var(--ui-danger)}
+.screen .modal{position:absolute;inset:0;background:rgba(16,24,40,.45);display:flex;align-items:center;justify-content:center;padding:var(--ui-sp-4);z-index:30}
+.screen .dialog{width:100%;max-width:420px;background:var(--ui-surface);border-radius:var(--ui-r-md);box-shadow:var(--ui-sh-3);overflow:hidden}
+.screen .dialog .dialog-title{padding:var(--ui-sp-4) var(--ui-sp-4) 0;font-size:var(--ui-fs-lg);font-weight:var(--ui-fw-semi)}
+.screen .dialog .dialog-body{padding:var(--ui-sp-3) var(--ui-sp-4);font-size:var(--ui-fs-md);color:var(--ui-text-2)}
+.screen .dialog .dialog-actions{display:flex;justify-content:flex-end;gap:var(--ui-sp-2);padding:var(--ui-sp-3) var(--ui-sp-4);background:var(--ui-surface-2);border-top:1px solid var(--ui-border)}
+.screen .empty-state{text-align:center;padding:var(--ui-sp-10) var(--ui-sp-4);color:var(--ui-muted)}
+.screen .empty-state .ico{font-size:32px;opacity:.45;display:block;margin-bottom:var(--ui-sp-2)}
+.screen .empty-state p{font-size:var(--ui-fs-md);margin-bottom:var(--ui-sp-3)}
+.screen .skeleton{height:12px;border-radius:var(--ui-r-xs);background:linear-gradient(90deg,var(--ui-surface-2),var(--ui-surface-3),var(--ui-surface-2));margin:var(--ui-sp-2) 0}
+.screen .skeleton.row{height:38px;margin:0 0 var(--ui-sp-1)}
+.screen .spinner{width:16px;height:16px;border-radius:50%;border:2px solid var(--ui-border-strong);border-top-color:var(--ui-brand);display:inline-block;vertical-align:-3px}
+
+/* ---------- 8. LINE mockups ----------
+   v1 sends PLAIN TEXT only (D-31): use .bubble.oa for every message.
+   .flex-card and .rich-menu are reserved for a post-v1 version and must not
+   appear in a v1 screen mockup. */
+.screen .line-chat{width:320px;max-width:100%;border-radius:var(--ui-r-md);overflow:hidden;background:var(--ui-line-chat);box-shadow:var(--ui-sh-1)}
+.screen .line-chat .line-header{display:flex;align-items:center;gap:var(--ui-sp-2);padding:var(--ui-sp-2) var(--ui-sp-3);background:var(--ui-line-green);color:#fff;font-size:var(--ui-fs-sm);font-weight:var(--ui-fw-semi)}
+.screen .line-chat .line-header .avatar{width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,.28);display:flex;align-items:center;justify-content:center;font-size:var(--ui-fs-xs)}
+.screen .line-chat .line-body{padding:var(--ui-sp-3);display:flex;flex-direction:column;gap:var(--ui-sp-2)}
+.screen .bubble{max-width:86%;padding:var(--ui-sp-2) var(--ui-sp-3);border-radius:var(--ui-r-lg);font-size:var(--ui-fs-sm);line-height:1.5;white-space:pre-line;word-break:break-word}
+.screen .bubble.oa{align-self:flex-start;background:var(--ui-line-oa);color:var(--ui-text);border-top-left-radius:var(--ui-r-xs)}
+.screen .bubble.user{align-self:flex-end;background:var(--ui-line-user);color:#06331a;border-top-right-radius:var(--ui-r-xs)}
+.screen .bubble .time{display:block;font-size:10px;color:var(--ui-muted);margin-top:var(--ui-sp-1);text-align:right}
+.screen .flex-card{align-self:flex-start;width:88%;background:#fff;border-radius:var(--ui-r-md);overflow:hidden;font-size:var(--ui-fs-sm)}
+.screen .flex-card .flex-head{background:var(--ui-brand);color:#fff;padding:var(--ui-sp-2) var(--ui-sp-3);font-weight:var(--ui-fw-semi)}
+.screen .flex-card .flex-body{padding:var(--ui-sp-3);display:grid;grid-template-columns:1fr auto;gap:var(--ui-sp-1) var(--ui-sp-3)}
+.screen .flex-card .flex-foot{padding:var(--ui-sp-2) var(--ui-sp-3);border-top:1px solid var(--ui-border);color:var(--ui-muted);font-size:var(--ui-fs-xs)}
+.screen .flex-card .flex-btn{display:block;margin:0 var(--ui-sp-3) var(--ui-sp-3);text-align:center;padding:var(--ui-sp-2);border-radius:var(--ui-r-sm);background:var(--ui-brand-soft);color:var(--ui-brand);font-weight:var(--ui-fw-semi)}
+.screen .rich-menu{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--ui-border);border-radius:var(--ui-r-sm);overflow:hidden;width:320px;max-width:100%}
+.screen .rich-menu .cell{background:var(--ui-surface);padding:var(--ui-sp-4) var(--ui-sp-2);text-align:center;font-size:var(--ui-fs-xs);color:var(--ui-text-2)}
+
+/* ---------- 9. Print surfaces (A5 portrait: receipt and invoice) ---------- */
+.screen .receipt{width:148mm;max-width:100%;min-height:200mm;margin:0 auto;padding:10mm;background:#fff;color:#000;font-size:12px;line-height:1.5;position:relative}
+.screen .receipt .receipt-head{text-align:center;border-bottom:1px solid #000;padding-bottom:var(--ui-sp-2);margin-bottom:var(--ui-sp-3)}
+.screen .receipt .receipt-org{font-size:15px;font-weight:var(--ui-fw-bold)}
+.screen .receipt .receipt-org-meta{font-size:11px;color:#333}
+.screen .receipt .receipt-title{text-align:center;font-size:16px;font-weight:var(--ui-fw-bold);letter-spacing:.04em;margin-bottom:var(--ui-sp-3)}
+.screen .receipt .receipt-meta{display:grid;grid-template-columns:max-content 1fr max-content 1fr;gap:2px var(--ui-sp-2);font-size:11px;margin-bottom:var(--ui-sp-3)}
+.screen .receipt .receipt-meta dt{color:#555;margin:0} .screen .receipt .receipt-meta dd{margin:0;font-weight:var(--ui-fw-med)}
+.screen .receipt table{border:1px solid #000;border-radius:0;font-size:11px;background:#fff}
+.screen .receipt th,.screen .receipt td{border-bottom:1px solid #999;padding:5px 7px}
+.screen .receipt th{background:#eee;color:#000}
+.screen .receipt .receipt-total{display:flex;justify-content:space-between;align-items:baseline;border-top:2px solid #000;margin-top:var(--ui-sp-2);padding-top:var(--ui-sp-2);font-size:14px;font-weight:var(--ui-fw-bold);font-variant-numeric:tabular-nums}
+.screen .receipt .receipt-words{text-align:center;font-size:11px;font-style:italic;margin-top:var(--ui-sp-1)}
+.screen .receipt .receipt-sign{margin-top:18mm;text-align:center;font-size:11px}
+.screen .receipt .receipt-sign .line{width:60mm;margin:0 auto var(--ui-sp-1);border-bottom:1px dotted #000;height:1px}
+.screen .receipt .receipt-stamp{position:absolute;top:34mm;left:50%;transform:translateX(-50%) rotate(-14deg);border:3px solid var(--ui-danger);color:var(--ui-danger);font-size:26px;font-weight:var(--ui-fw-bold);padding:2px 16px;border-radius:var(--ui-r-sm);opacity:.75;letter-spacing:.08em}
+.screen .receipt .receipt-stamp.copy{border-color:var(--ui-muted);color:var(--ui-muted)}
+
+/* ---------- 10. Screen-specific composites (used on more than one page) ---------- */
+.screen .login{min-height:inherit;display:flex;align-items:center;justify-content:center;padding:var(--ui-sp-6);background:var(--ui-brand-soft)}
+.screen .login .login-card{width:100%;max-width:360px;background:var(--ui-surface);border:1px solid var(--ui-border);border-radius:var(--ui-r-lg);box-shadow:var(--ui-sh-2);padding:var(--ui-sp-6)}
+.screen .login .login-card h1{font-size:var(--ui-fs-2xl);margin-bottom:var(--ui-sp-1)}
+.screen .login .login-card .sub{font-size:var(--ui-fs-sm);color:var(--ui-muted);margin-bottom:var(--ui-sp-5)}
+.screen .month-picker{display:inline-flex;align-items:center;gap:var(--ui-sp-2);min-height:34px;padding:0 var(--ui-sp-3);border:1px solid var(--ui-border-strong);border-radius:var(--ui-r-sm);background:var(--ui-surface);font-size:var(--ui-fs-sm);font-weight:var(--ui-fw-med)}
+.screen .month-picker .arrow{color:var(--ui-muted);cursor:pointer;padding:0 2px}
+.screen .search{display:flex;align-items:center;gap:var(--ui-sp-2);min-height:var(--ui-tap);padding:0 var(--ui-sp-3);border:1px solid var(--ui-border-strong);border-radius:var(--ui-r-sm);background:var(--ui-surface)}
+.screen .search input{flex:1;border:0;outline:0;background:transparent;font-family:inherit;font-size:var(--ui-fs-lg);min-width:0}
+.screen .tabs{display:flex;gap:var(--ui-sp-4);border-bottom:1px solid var(--ui-border);margin-bottom:var(--ui-sp-4)}
+.screen .tabs .tab-link{padding:var(--ui-sp-2) 0;font-size:var(--ui-fs-md);color:var(--ui-muted);border-bottom:2px solid transparent;text-decoration:none;cursor:pointer}
+.screen .tabs .tab-link.active{color:var(--ui-brand);border-bottom-color:var(--ui-brand);font-weight:var(--ui-fw-semi)}
+.screen .meter-card{background:var(--ui-surface);border:1px solid var(--ui-border);border-radius:var(--ui-r-md);box-shadow:var(--ui-sh-1);padding:var(--ui-sp-3);margin-bottom:var(--ui-sp-3)}
+.screen .meter-card .meter-head{display:flex;align-items:center;gap:var(--ui-sp-2);margin-bottom:var(--ui-sp-3)}
+.screen .meter-card .meter-head .room{font-size:var(--ui-fs-xl);font-weight:var(--ui-fw-semi)}
+.screen .meter-card .meter-row{display:grid;grid-template-columns:26px 1fr 1fr;align-items:end;gap:var(--ui-sp-2);margin-bottom:var(--ui-sp-3)}
+.screen .meter-card .meter-row .ico{font-size:var(--ui-fs-xl);line-height:2}
+.screen .meter-card.water{border-left:3px solid var(--ui-water)}
+.screen .meter-card.elec{border-left:3px solid var(--ui-elec)}
+.screen .amount-rows{display:grid;grid-template-columns:20px 1fr max-content;gap:var(--ui-sp-2) var(--ui-sp-3);align-items:baseline;font-size:var(--ui-fs-md)}
+.screen .amount-rows .calc{grid-column:2;font-size:var(--ui-fs-xs);color:var(--ui-muted);margin-top:-6px}
+.screen .amount-rows .amt{text-align:right;font-variant-numeric:tabular-nums;font-weight:var(--ui-fw-med)}
+.screen .amount-total{display:flex;justify-content:space-between;align-items:baseline;border-top:1px solid var(--ui-border-strong);margin-top:var(--ui-sp-3);padding-top:var(--ui-sp-3);font-size:var(--ui-fs-xl);font-weight:var(--ui-fw-semi);font-variant-numeric:tabular-nums}
+.screen .chart-box{display:flex;align-items:center;justify-content:center;height:180px;background:var(--ui-surface-2);border:1px dashed var(--ui-border-strong);border-radius:var(--ui-r-sm);color:var(--ui-muted);font-size:var(--ui-fs-xs)}
+@media print{.screen .sidebar,.screen .bottom-tabs,.screen .topbar,.screen .toast-stack{display:none}.screen .page{padding:0}}
+
+</style>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+</head>
+<body>
+<header class="doc-header">
+  <div class="crumbs">Juristic Platform · Documentation</div>
+  <h1>UI/UX Design</h1>
+  <div class="meta"><span><b>Owner:</b> Senior Product Designer</span><span><b>Date:</b> 2026-09-07</span><span><b>Status:</b> Draft</span><span><b>Version:</b> 1.0</span></div>
+</header>
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="Table of contents"><div class="toc-title">Contents</div></nav>
+  <main class="content" id="content">
+<!-- REQUIRES: parts/design/tokens.css must be inlined in a <style> block (or linked)
+     before this section, otherwise every .screen mockup below renders unstyled. -->
+<section id="foundations">
+<h2>Design Foundations &amp; User Flows</h2>
+
+<p>This section is the design contract for every screen mockup in this document set. It fixes the principles, the people, the map, the flows and the component vocabulary; the screen chapters that follow spend those decisions instead of re-taking them. Everything visible to a user is Thai (D-02); every identifier in this document — page names, statuses, class names, routes — stays English, because that is what the code, the API payloads and the test selectors use.</p>
+
+<div class="callout decision">
+  <div class="title">Two stylesheets, one boundary</div>
+  <p>The documentation is styled by <code>docs/_shared/template.html</code>. The product UI is styled by <code>parts/design/tokens.css</code>, in which <strong>every rule is scoped under <code>.screen</code></strong> and every custom property is prefixed <code>--ui-</code>. A mockup is therefore always written as <code>&lt;div class="device desktop"&gt;&lt;div class="screen"&gt;…&lt;/div&gt;&lt;/div&gt;</code> (or <code>device phone</code> / <code>device print</code>). The two systems can never collide, and the same file ships as <code>public/css/app.css</code> with the <code>.screen</code> prefix removed.</p>
+</div>
+
+<h3>1. Design principles</h3>
+
+<p>Five principles, each traceable to a decision and each falsifiable — if a screen breaks one, the screen is wrong, not the principle.</p>
+
+<div class="grid">
+  <div class="card">
+    <h4>1 · Mobile-first for staff, desktop-first for the office</h4>
+    <p>Three surfaces are phone-sized and must work at 360&nbsp;×&nbsp;640 on Chrome for Android: <b>Login</b>, <b>Meter Reading</b> and the reduced <b>Dashboard</b>. Everything else is an office surface designed at 1280&nbsp;px and not required to work below 768&nbsp;px (D-45). One stylesheet serves both; the layout switches on container width, never on a user-agent sniff.</p>
+  </div>
+  <div class="card">
+    <h4>2 · One-hand meter entry</h4>
+    <p>A technician stands at a meter box holding a phone in one hand. Each room is a self-contained card with its own <b>บันทึก</b> button and one request (D-15); nothing is a 67-room form. Inputs are <code>inputmode="numeric"</code>, targets are ≥&nbsp;44&nbsp;px, previous readings are read-only text, and a dead spot loses at most the room being typed.</p>
+  </div>
+  <div class="card">
+    <h4>3 · Error prevention on money actions</h4>
+    <p>Four actions move money or send irreversible messages: <b>อนุมัติและส่งบิล</b>, <b>ยืนยันรับเงินสด</b>, <b>ส่งประกาศ</b>, <b>ยกเลิกการชำระเงิน</b>. Each states its exact effect — amount, room, billing period, recipient count — in a dialog before it runs (D-39), and each is guarded server-side as well, because a disabled button is not a guard.</p>
+  </div>
+  <div class="card">
+    <h4>4 · Thai-first copy, English identifiers</h4>
+    <p>Every label, button, badge, error and LINE message is Thai and is written once in the templates — there is no language switcher and no i18n framework (D-02). English survives as <code>data-status="Unpaid"</code>, route names and column names. Money is <code>1,790.00</code> in tables and <code>1,790 บาท</code> in sentences and LINE; dates are Gregorian (D-03).</p>
+  </div>
+  <div class="card">
+    <h4>5 · Glanceable status</h4>
+    <p>The office question is always "which rooms still owe money?". Status is a badge carrying a Thai word, a colour and a <code>data-status</code> hook — never colour alone (§9). <b>Overdue</b> is derived at render time from <b>Unpaid</b> plus a past due date and is never stored (D-21), so no screen may offer an action that "marks a bill overdue".</p>
+  </div>
+</div>
+
+<h3>2. Personas</h3>
+
+<div class="grid">
+  <div class="card">
+    <h4>คุณนิด — Admin / นิติบุคคล</h4>
+    <dl class="kv">
+      <dt>Device</dt><dd>Office desktop, Chrome, 1280–1920&nbsp;px, mouse and keyboard</dd>
+      <dt>Frequency</dt><dd>Daily at the counter; a heavy hour once a month at approval</dd>
+      <dt>Owns</dt><dd>Rates, bills, approval, cash, receipts, tenants, announcements, users, settings</dd>
+    </dl>
+    <p><b>Goals</b> — every occupied room billed with nothing missed; the cash drawer reconciles against the system at closing; know today which rooms are in arrears and for how long; answer "why is my bill 1,790?" with the meter numbers on screen.</p>
+    <p><b>Frustrations</b> — an Excel file that two people edited; re-typing the same LINE message 67 times; a tenant disputing a reading with no history to show; discovering at month end that three rooms were never read.</p>
+  </div>
+  <div class="card">
+    <h4>ช่างสมชาย — Staff / เจ้าหน้าที่ช่าง</h4>
+    <dl class="kv">
+      <dt>Device</dt><dd>Personal Android phone, 360&nbsp;× 640, one hand, patchy signal in stairwells</dd>
+      <dt>Frequency</dt><dd>One reading round per month, 67 rooms, target ≤ 15 minutes (D-45)</dd>
+      <dt>Owns</dt><dd>Meter readings and meter replacements only — never an amount, a rate or a payment (D-36)</dd>
+    </dl>
+    <p><b>Goals</b> — walk each floor once, in room order; never re-walk a floor because a save was lost; know at a glance which rooms are still outstanding; hand the round to the office with one button.</p>
+    <p><b>Frustrations</b> — a form that loses everything when the lift kills the connection; tiny targets while wearing gloves; not remembering whether room 312 was already entered; a keyboard that is not numeric.</p>
+  </div>
+  <div class="card">
+    <h4>คุณแอน — Tenant / ผู้เช่า</h4>
+    <dl class="kv">
+      <dt>Device</dt><dd>LINE on her phone. No login, no app, no web account — ever (D-05)</dd>
+      <dt>Frequency</dt><dd>Three or four messages a month</dd>
+      <dt>Owns</dt><dd>Nothing in the system; she is a recipient and a person at the counter</dd>
+    </dl>
+    <p><b>Goals</b> — know the amount and the due date without asking; understand how the amount was reached; get proof that her cash was recorded.</p>
+    <p><b>Frustrations</b> — a paper slip pushed under the door and lost; a total with no breakdown; no confirmation after paying; being chased for a bill she already settled.</p>
+  </div>
+</div>
+
+<div class="callout note">
+  <div class="title">The tenant is not a user of the web application</div>
+  <p>Every tenant-facing surface in this design set is a LINE message or a printed A5 sheet. No screen, route, empty state or error page is ever designed for a tenant, and no mockup may show a tenant login (PRD §4, D-05).</p>
+</div>
+
+<h3>3. Site map and routes</h3>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart TD
+  LOGIN["Login · /login"]
+  DASH["Dashboard · /dashboard"]
+  ROOMS["Rooms · /rooms"]
+  ROOMD["Room detail · /rooms/:id"]
+  TEN["Tenants · /tenants"]
+  READ["Meter Reading · /readings"]
+  BILLS["Monthly Billing · /bills"]
+  BILLD["Bill Detail · /bills/:id"]
+  INV["Invoice A5 · /bills/:id/invoice"]
+  PAY["Payment · /payments"]
+  RCPT["Receipt A5 · /receipts/:id"]
+  ANN["Announcements · /announcements"]
+  REP["Reports · /reports"]
+  SET["Settings · /settings"]
+  USERS["Users · /users"]
+  ERR["403 · 404 · 500"]
+
+  LOGIN --> DASH
+  DASH --> ROOMS --> ROOMD
+  DASH --> TEN
+  DASH --> READ --> BILLS
+  BILLS --> BILLD --> INV
+  BILLD --> PAY --> RCPT
+  DASH --> ANN
+  DASH --> REP
+  DASH --> SET
+  DASH --> USERS
+  LOGIN -.-> ERR
+</pre>
+<div class="caption">Fifteen page routes plus three error pages. Staff reach only Dashboard, Rooms, Room detail and Meter Reading; every other node returns the Thai 403 page (D-36, D-40).</div>
+</div>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Page (identifier)</th><th>Route</th><th>Thai title</th><th>Roles</th><th>Primary action</th></tr></thead>
+<tbody>
+<tr><td>Login</td><td><code>/login</code></td><td>เข้าสู่ระบบ</td><td>public</td><td>เข้าสู่ระบบ</td></tr>
+<tr><td>Dashboard</td><td><code>/dashboard</code></td><td>ภาพรวม</td><td>admin · staff (reduced)</td><td>month picker</td></tr>
+<tr><td>Rooms</td><td><code>/rooms</code></td><td>ห้องพัก</td><td>admin · staff (read-only)</td><td>เพิ่มห้อง</td></tr>
+<tr><td>Room detail</td><td><code>/rooms/:id</code></td><td>รายละเอียดห้อง</td><td>admin · staff (no amounts)</td><td>แก้ไขห้อง</td></tr>
+<tr><td>Tenants</td><td><code>/tenants</code></td><td>ผู้เช่า</td><td>admin</td><td>สร้างรหัสผูก LINE</td></tr>
+<tr><td>Meter Reading</td><td><code>/readings</code></td><td>จดมิเตอร์</td><td>admin · staff</td><td>บันทึก · ส่งให้นิติตรวจสอบ</td></tr>
+<tr><td>Monthly Billing</td><td><code>/bills</code></td><td>บิลประจำเดือน</td><td>admin</td><td>อนุมัติและส่งบิล ({N} ห้อง)</td></tr>
+<tr><td>Bill Detail</td><td><code>/bills/:id</code></td><td>รายละเอียดบิล</td><td>admin</td><td>อนุมัติและส่งบิล</td></tr>
+<tr><td>Invoice (print)</td><td><code>/bills/:id/invoice</code></td><td>ใบแจ้งค่าใช้จ่าย</td><td>admin</td><td>พิมพ์ใบแจ้งหนี้</td></tr>
+<tr><td>Payment</td><td><code>/payments</code></td><td>รับชำระเงิน</td><td>admin</td><td>ยืนยันรับเงินสด</td></tr>
+<tr><td>Receipt (print)</td><td><code>/receipts/:id</code></td><td>ใบเสร็จ</td><td>admin</td><td>พิมพ์ใบเสร็จ</td></tr>
+<tr><td>Announcements</td><td><code>/announcements</code></td><td>ประกาศ</td><td>admin</td><td>ส่งประกาศ</td></tr>
+<tr><td>Reports</td><td><code>/reports</code></td><td>รายงาน</td><td>admin</td><td>ดาวน์โหลด CSV</td></tr>
+<tr><td>Settings</td><td><code>/settings</code></td><td>ตั้งค่า</td><td>admin</td><td>บันทึก</td></tr>
+<tr><td>Users</td><td><code>/users</code></td><td>ผู้ใช้งานระบบ</td><td>admin</td><td>ตั้งรหัสผ่านใหม่</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>4. Navigation model per role</h3>
+
+<p>One shell, two navigations, chosen by role at render time — not two applications. Staff never see a link they cannot open, and the 403 page exists for the case where a staff user types an Admin URL directly (D-40).</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Role</th><th>Surface</th><th>Navigation</th><th>Items, in order</th><th>Landing page</th></tr></thead>
+<tbody>
+<tr>
+  <td><b>Admin</b></td><td>Desktop ≥ 768&nbsp;px</td><td><code>.sidebar</code>, always visible</td>
+  <td>ภาพรวม · จดมิเตอร์ · บิลประจำเดือน · รับชำระเงิน · ห้องพัก · ผู้เช่า · ประกาศ · รายงาน — then a <code>.nav-section</code> "ตั้งค่าระบบ": ตั้งค่า · ผู้ใช้งานระบบ</td>
+  <td>ภาพรวม</td>
+</tr>
+<tr>
+  <td><b>Admin</b></td><td>Phone (occasional)</td><td><code>.topbar</code> only</td>
+  <td>Title plus actions; the sidebar collapses out below 768&nbsp;px. Not a supported working surface (D-45), but nothing breaks.</td>
+  <td>ภาพรวม</td>
+</tr>
+<tr>
+  <td><b>Staff</b></td><td>Phone 360&nbsp;px</td><td><code>.bottom-tabs</code>, three tabs</td>
+  <td>จดมิเตอร์ (default) · ห้องพัก · ภาพรวม</td>
+  <td>จดมิเตอร์</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<p>The tab order is deliberate: the reading round is the staff job, so it is the landing page and the first tab. The staff Dashboard shows room counts and this period's reading progress only — no money reaches a staff response body at all (D-36).</p>
+
+<h3>5. User flows</h3>
+
+<h4>5.1 Staff meter-reading round</h4>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart TD
+  A["เข้าสู่ระบบ บนมือถือ"] --> B["จดมิเตอร์ · เดือนปัจจุบัน"]
+  B --> C["ตัวกรอง: ยังไม่จด (ค่าเริ่มต้น)"]
+  C --> D["เปิดการ์ดห้อง จัดกลุ่มตามชั้น"]
+  D --> E["กรอกเลขน้ำและเลขไฟ · Previous อ่านอย่างเดียว"]
+  E --> F{"เลขปัจจุบัน น้อยกว่าเดือนก่อน?"}
+  F -->|"ไม่"| H["กด บันทึก · หนึ่งคำขอต่อหนึ่งห้อง"]
+  F -->|"ใช่"| G{"เปลี่ยนมิเตอร์ในรอบนี้?"}
+  G -->|"ไม่"| G1["ปุ่มบันทึกถูกปิด · ข้อความผิดพลาดในฟอร์ม"] --> E
+  G -->|"ใช่"| G2["กรอกเลขสุดท้ายเดิม เลขเริ่มต้นใหม่ และเหตุผล"] --> H
+  H --> I{"บันทึกสำเร็จ?"}
+  I -->|"ไม่"| I1["แจ้งเตือนในการ์ด · ค่าที่พิมพ์ยังอยู่ · ลองอีกครั้ง"] --> H
+  I -->|"ใช่"| J["การ์ดยุบเป็นแถว จดแล้ว · ตัวนับ 42/67"]
+  J --> K{"ครบทุกห้อง?"}
+  K -->|"ยัง"| D
+  K -->|"ครบ 67/67"| L["ส่งให้นิติตรวจสอบ"]
+  L --> M["สรุปผล: สร้างบิลใหม่ · อัปเดต · ข้าม · ยังไม่ได้จด"]
+</pre>
+<div class="caption">D-15 and D-13. The round is complete when the sticky counter reads Y/Y — the state the 15-minute acceptance target measures (D-45).</div>
+</div>
+
+<h4>5.2 Admin monthly billing and Approve &amp; Send</h4>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart TD
+  A["บิลประจำเดือน · เลือกรอบ"] --> B["แถบสรุปความครบถ้วน: บิลครบทุกห้อง 64/67"]
+  B --> C{"มีห้องที่ยังไม่ได้จด?"}
+  C -->|"มี"| C1["คำเตือน: ยังไม่ได้จดมิเตอร์ 3 ห้อง · ลิงก์ไปหน้าจดมิเตอร์"]
+  C1 --> D
+  C -->|"ไม่มี"| D["ตรวจรายละเอียดบิล · เลขมิเตอร์ หน่วย อัตรา ยอดรวม"]
+  D --> E{"ตัวเลขถูกต้อง?"}
+  E -->|"ไม่"| E1["แก้เลขมิเตอร์ · บิลฉบับร่างคำนวณใหม่ทันที"] --> D
+  E -->|"ใช่"| F["เลือกบิลฉบับร่าง · กด อนุมัติและส่งบิล"]
+  F --> G["กล่องยืนยัน: อนุมัติและส่งบิล N ห้อง ผ่าน LINE — ยกเลิกไม่ได้"]
+  G --> H["รอบที่ 1 · คอมมิต: Draft ไปเป็น Unpaid · ตรึงค่า · กำหนดวันครบกำหนด · เข้าคิวแจ้งเตือน"]
+  H --> I["รอบที่ 2 · ส่งทีละไม่เกิน 20 ข้อความ จนคิวหมด"]
+  I --> J["สรุปผล: อนุมัติ N ใบ · ส่งสำเร็จ x · ไม่มี LINE y · ส่งไม่สำเร็จ z"]
+  J --> K["ห้องที่ไม่มี LINE: พิมพ์ใบแจ้งหนี้ A5"]
+  J --> L["ห้องที่ส่งไม่สำเร็จ: ส่งแจ้งเตือนอีกครั้ง"]
+</pre>
+<div class="caption">D-19, D-20, D-23 and D-30. Approval commits in ≤ 5 seconds; delivery is drained in a second loop, so a dropped connection loses nothing (D-45).</div>
+</div>
+
+<h4>5.3 Cash payment and receipt</h4>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart TD
+  A["ผู้เช่ามาที่เคาน์เตอร์"] --> B["รับชำระเงิน · ค้นหาห้อง 205"]
+  B --> C["เลือกบิลที่ต้องชำระ · แสดงรอบบิลเสมอ"]
+  C --> D["ยอดที่ต้องชำระ 1,790.00 บาท · อ่านอย่างเดียว"]
+  D --> E["ตัวช่วยหน้าจอ: รับเงิน 2,000 ไปเป็น เงินทอน 210.00 · ไม่บันทึก"]
+  E --> F["กด ยืนยันรับเงินสด"]
+  F --> G["กล่องยืนยัน: ยืนยันรับเงินสด 1,790 บาท ห้อง 205 รอบ กันยายน 2026"]
+  G --> H["หนึ่งทรานแซกชัน: บันทึกการรับเงิน · Unpaid ไปเป็น Paid · ออกเลขใบเสร็จ"]
+  H --> I["ใบเสร็จ REC-202609-000852 · หน้าจอ A5"]
+  I --> J["พิมพ์ใบเสร็จ · นับจำนวนพิมพ์ก่อนสั่งพิมพ์"]
+  J --> K["พิมพ์ครั้งถัดไปมีคำว่า สำเนา"]
+  H --> L["เข้าคิวข้อความ LINE ยืนยันการชำระเงิน"]
+  H --> M{"รับเงินผิดห้องหรือผิดรอบ?"}
+  M -->|"ใช่"| N["คืนเงินสดที่เคาน์เตอร์ก่อน · ยกเลิกการชำระเงิน พร้อมเหตุผล"]
+  N --> O["ใบเสร็จถูกประทับ ยกเลิก · บิลกลับเป็น Unpaid · ระงับการแจ้งเตือนอัตโนมัติ"]
+</pre>
+<div class="caption">D-24, D-25, D-26 and D-27. The amount is never an input, partial payment does not exist, and the void path returns cash across the counter before anything is clicked.</div>
+</div>
+
+<h4>5.4 Tenant LINE account linking</h4>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart TD
+  A["ผู้เช่า · หน้าผู้เช่า"] --> B["กด สร้างรหัสผูก LINE"]
+  B --> C["ระบบสร้างรหัส 6 หลัก · อายุ 7 วัน · ใช้ได้ครั้งเดียว"]
+  C --> D["พิมพ์สลิป: QR ของ Official Account และรหัส"]
+  D --> E["ผู้เช่าเพิ่มเพื่อน OA · เหตุการณ์ follow เก็บ userId"]
+  E --> F["ผู้เช่าพิมพ์รหัสส่งในแชท"]
+  F --> G{"รหัสถูกต้องและยังไม่หมดอายุ?"}
+  G -->|"ใช่"| H["ผูก userId กับผู้เช่า · ปิดรหัส · ตอบกลับ ผูกบัญชีสำเร็จ"]
+  G -->|"ไม่"| I["ตอบกลับ ไม่พบรหัสนี้ หรือรหัสหมดอายุ · ติดต่อสำนักงาน"] --> B
+  H --> J["หน้าผู้เช่าแสดงชื่อ LINE และวันที่ผูก"]
+  J --> K["ข้อความอื่นทุกข้อความได้รับข้อความอัตโนมัติชี้ไปที่สำนักงาน"]
+</pre>
+<div class="caption">D-29. Staff never type a LINE User ID: the field is read-only and is filled only by this flow.</div>
+</div>
+
+<h4>5.5 Tenant journey — from bill to payment confirmation</h4>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart TD
+  A["LINE: บิลประจำเดือน · ยอดรวม 1,790 บาท · ครบกำหนด 5 กันยายน 2026"] --> B{"ชำระก่อนครบกำหนด?"}
+  B -->|"ยังไม่ชำระ"| C["ก่อนครบกำหนด 2 วัน · แจ้งเตือนก่อนครบกำหนด"]
+  C --> D{"ชำระแล้วหรือยัง?"}
+  D -->|"ยัง"| E["เลยกำหนด วันที่ 1 · 8 · 15 เท่านั้น"]
+  E --> F["สถานะบนหน้าจอเปลี่ยนเป็น เกินกำหนด โดยอัตโนมัติ"]
+  B -->|"ชำระ"| G["นำเงินสดมาที่สำนักงานในเวลาทำการ"]
+  D -->|"ชำระ"| G
+  F --> G
+  G --> H["เจ้าหน้าที่นิติกด ยืนยันรับเงินสด"]
+  H --> I["LINE: ยืนยันการชำระเงิน · เลขที่ใบเสร็จ REC-202609-000852"]
+  H --> J["รับใบเสร็จกระดาษ A5 ที่เคาน์เตอร์"]
+  A --> K{"ผูก LINE แล้วหรือยัง?"}
+  K -->|"ยังไม่ผูก"| L["รับใบแจ้งค่าใช้จ่าย A5 ที่สำนักงานแทน"] --> G
+</pre>
+<div class="caption">D-31 and D-33. A tenant receives at most four automatic messages per bill in its entire life; nothing is sent after day 15 and nothing is sent to a paid bill.</div>
+</div>
+
+<h4>5.6 Announcement</h4>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart TD
+  A["ประกาศ · เขียนประกาศใหม่"] --> B["หัวข้อ ไม่เกิน 60 ตัวอักษร"]
+  B --> C["เนื้อหา ไม่เกิน 400 ตัวอักษร"]
+  C --> D{"ผู้รับ"}
+  D -->|"ทุกห้องที่มีผู้เช่า"| E["จะส่งถึง 67 ห้อง · ผูก LINE แล้ว 54 ราย"]
+  D -->|"เลือกชั้น"| F["เลือกได้หลายชั้น · นับผู้รับใหม่ทันที"]
+  E --> G["ตัวอย่างข้อความสดตามเทมเพลต ANNOUNCEMENT"]
+  F --> G
+  G --> H["กล่องยืนยัน: ส่งประกาศถึง N ห้อง ผ่าน LINE — เรียกคืนไม่ได้"]
+  H --> I["ส่งแบบ multicast ครั้งละไม่เกิน 500 ผู้รับ"]
+  I --> J["บันทึกหนึ่งแถวต่อผู้รับหนึ่งราย"]
+  J --> K["รายการประกาศ: เวลาที่ส่ง ผู้รับ จำนวน และผลการส่ง"]
+  K --> L["ประกาศที่ส่งแล้วแก้ไข ส่งซ้ำ หรือเรียกคืนไม่ได้"]
+</pre>
+<div class="caption">D-35 and D-34. The linked-tenant count is shown because unlinked tenants receive nothing — the office must know that before pressing send.</div>
+</div>
+
+<h3>6. Interaction rules</h3>
+
+<h4>6.1 Validation timing</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Moment</th><th>What runs</th><th>What the user sees</th></tr></thead>
+<tbody>
+<tr><td>While typing</td><td>Nothing, with two exceptions: the meter comparison (current vs previous) and the เงินทอน calculator</td><td>Live error under the meter field and a disabled <b>บันทึก</b>; a live change figure. No other field nags mid-typing.</td></tr>
+<tr><td>On blur</td><td>Format and required checks for the field just left (phone 0XXXXXXXXX, area, dates)</td><td>Inline Thai message under the field, <code>.field.invalid</code>, and the value kept exactly as typed.</td></tr>
+<tr><td>On submit</td><td><code>zod</code> at the boundary, then the service rules, then the database constraints</td><td>422 renders the same Thai strings inline, keyed by input name — the API message and the form message are one string (ADR §6.8).</td></tr>
+<tr><td>After submit</td><td>State guards that only the database can settle (already paid, later bill exists, duplicate reading)</td><td>409 or 422 as a <code>.notice.bad</code> above the form, never a redirect and never a lost form.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout warn">
+  <div class="title">The one blocking rule at the meter</div>
+  <p>When <b>เปลี่ยนมิเตอร์ในรอบนี้</b> is off and the current reading is below the previous one, <b>บันทึก</b> is disabled and the field shows <span lang="th">เลขมิเตอร์ปัจจุบันน้อยกว่าเดือนก่อน (1,250) กรุณาตรวจสอบ</span>. Ticking the checkbox reveals เลขสุดท้ายของมิเตอร์เดิม, เลขเริ่มต้นของมิเตอร์ใหม่ and a required reason, and replaces the rule instead of bypassing it (D-13). The two soft flags — <span class="badge warn">ใช้สูงผิดปกติ</span> and <span class="badge warn">ไม่มีการใช้งาน</span> — never block a save.</p>
+</div>
+
+<h4>6.2 Empty states</h4>
+
+<p>One <code>.empty-state</code> component: a muted icon, one Thai sentence, and a primary action only where there is something to do. The eight surfaces are fixed by D-40 and must be used verbatim.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Surface</th><th>Sentence</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td>ห้องพัก</td><td>ยังไม่มีข้อมูลห้อง</td><td>เพิ่มห้อง</td></tr>
+<tr><td>ผู้เช่า</td><td>ยังไม่มีผู้เช่า</td><td>—</td></tr>
+<tr><td>จดมิเตอร์</td><td>ยังไม่มีห้องที่ต้องจดในรอบนี้</td><td>—</td></tr>
+<tr><td>บิลประจำเดือน</td><td>ยังไม่มีบิลในรอบนี้</td><td>สร้างบิลฉบับร่าง</td></tr>
+<tr><td>รับชำระเงิน</td><td>ค้นหาห้องเพื่อรับชำระเงิน</td><td>—</td></tr>
+<tr><td>ประกาศ</td><td>ยังไม่เคยส่งประกาศ</td><td>เขียนประกาศ</td></tr>
+<tr><td>รายงาน</td><td>ยังไม่มีข้อมูลในช่วงเวลานี้</td><td>—</td></tr>
+<tr><td>รายการค้างชำระ</td><td>ไม่มีห้องค้างชำระ 🎉</td><td>—</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>6.3 Errors and loading</h4>
+
+<ul>
+  <li><b>Failed save</b> — a <code>.notice.bad</code> above the form with <b>ลองอีกครั้ง</b>; every typed value is preserved. On the phone reading screen the notice lives inside the room card and never reloads the page (D-40).</li>
+  <li><b>Unauthorized</b> — a full Thai 403 page: <span lang="th">ไม่มีสิทธิ์เข้าถึงหน้านี้ · บัญชีของคุณเป็นเจ้าหน้าที่ กรุณาติดต่อนิติบุคคล</span> with a button back to จดมิเตอร์. Never a silent redirect, so the permission matrix is testable row by row.</li>
+  <li><b>Lists</b> — three to five <code>.skeleton.row</code> placeholders, never a centred spinner over an empty page.</li>
+  <li><b>Actions</b> — the pressed button takes <code>.is-loading</code> and <code>disabled</code>; nothing else on the page is blocked.</li>
+  <li><b>Long jobs</b> — the approve result screen shows a <code>.progress</code> bar driven by the drain loop with a running count, because a 67-room send takes up to three minutes (D-19, D-45).</li>
+  <li><b>Success</b> — a <code>.toast.ok</code> for reversible, low-stakes saves; a full result screen for anything that sent a LINE message or moved money.</li>
+</ul>
+
+<h4>6.4 Confirmation dialogs</h4>
+
+<p>One shared <code>.modal</code> + <code>.dialog</code> component, six call sites, never the browser's native <code>confirm()</code>. Every dialog names the exact effect with counts and amounts, and the primary button repeats the verb instead of saying ตกลง (D-39).</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>#</th><th>Action</th><th>Dialog text</th><th>Primary button</th><th>Reason required</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>Approve &amp; Send (single)</td><td>อนุมัติและส่งบิลห้อง 205 ผ่าน LINE — ยกเลิกไม่ได้</td><td>อนุมัติและส่ง</td><td>no</td></tr>
+<tr><td>2</td><td>Approve &amp; Send (bulk)</td><td>อนุมัติและส่งบิล 64 ห้อง ผ่าน LINE — ยกเลิกไม่ได้</td><td>อนุมัติและส่ง</td><td>no</td></tr>
+<tr><td>3</td><td>Confirm Cash Payment</td><td>ยืนยันรับเงินสด 1,790 บาท · ห้อง 205 · รอบ กันยายน 2026 และออกใบเสร็จ</td><td>ยืนยันรับเงินสด</td><td>no</td></tr>
+<tr><td>4</td><td>Send announcement</td><td>ส่งประกาศถึง 67 ห้อง ผ่าน LINE — เรียกคืนไม่ได้</td><td>ส่งประกาศ</td><td>no</td></tr>
+<tr><td>5</td><td>Void payment</td><td>คืนเงินสด 1,790 บาท ให้ผู้เช่าก่อนยืนยันการยกเลิก</td><td>ยกเลิกการชำระเงิน</td><td>yes, ≥ 10 chars</td></tr>
+<tr><td>6</td><td>End tenancy / deactivate room</td><td>สิ้นสุดสัญญาเช่าห้อง 205 · ประวัติบิลและใบเสร็จจะยังคงอยู่</td><td>สิ้นสุดสัญญาเช่า</td><td>yes, ≥ 10 chars</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>6.5 Undo — where it exists and where it deliberately does not</h4>
+
+<div class="callout bad">
+  <div class="title">No toast-with-undo anywhere in this product</div>
+  <p>An undo window would force every outbound LINE message into a delay queue, and a message already delivered cannot be recalled by any API LINE offers (D-39, D-35). Instead, the two reversible money paths are explicit, audited, Admin-only actions with a required Thai reason: <b>ตีกลับเป็นฉบับร่าง</b> on an Unpaid or Overdue bill — available only on a room's most recent bill (D-22) — and <b>ยกเลิกการชำระเงิน</b>, which returns cash first, keeps the receipt number and stamps the receipt ยกเลิก (D-25). Everything else is safe because it is reversible by ordinary editing (a Draft bill recalculates on every reading save) or because it never happened yet (a dialog stands between the click and the effect).</p>
+</div>
+
+<h3>7. Visual language</h3>
+
+<p>Rendered live from <code>tokens.css</code>. Every swatch below is the actual custom property, so this block is a regression test as much as a specification: if a token changes, this page changes.</p>
+
+<div class="device desktop">
+  <div class="chrome"><i></i><i></i><i></i><div class="url">tokens.css · palette</div></div>
+  <div class="screen" style="min-height:0">
+    <div class="page" style="max-width:none">
+      <h3 style="margin-bottom:12px">สีหลักและสีสถานะ</h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
+        <div class="card" style="padding:0;overflow:hidden;margin:0"><div style="height:44px;background:var(--ui-brand)"></div><div style="padding:8px 10px"><b style="font-size:12px">--ui-brand</b><div class="ui-sub">#1b4fa0 · แถบเมนู ปุ่มหลัก</div></div></div>
+        <div class="card" style="padding:0;overflow:hidden;margin:0"><div style="height:44px;background:var(--ui-water)"></div><div style="padding:8px 10px"><b style="font-size:12px">--ui-water</b><div class="ui-sub">💧 ค่าน้ำ</div></div></div>
+        <div class="card" style="padding:0;overflow:hidden;margin:0"><div style="height:44px;background:var(--ui-elec)"></div><div style="padding:8px 10px"><b style="font-size:12px">--ui-elec</b><div class="ui-sub">⚡ ค่าไฟ</div></div></div>
+        <div class="card" style="padding:0;overflow:hidden;margin:0"><div style="height:44px;background:var(--ui-fee)"></div><div style="padding:8px 10px"><b style="font-size:12px">--ui-fee</b><div class="ui-sub">🏢 ค่าส่วนกลาง</div></div></div>
+        <div class="card" style="padding:0;overflow:hidden;margin:0"><div style="height:44px;background:var(--ui-draft)"></div><div style="padding:8px 10px"><b style="font-size:12px">--ui-draft</b><div class="ui-sub">Draft · ฉบับร่าง</div></div></div>
+        <div class="card" style="padding:0;overflow:hidden;margin:0"><div style="height:44px;background:var(--ui-unpaid)"></div><div style="padding:8px 10px"><b style="font-size:12px">--ui-unpaid</b><div class="ui-sub">Unpaid · รอชำระ</div></div></div>
+        <div class="card" style="padding:0;overflow:hidden;margin:0"><div style="height:44px;background:var(--ui-paid)"></div><div style="padding:8px 10px"><b style="font-size:12px">--ui-paid</b><div class="ui-sub">Paid · ชำระแล้ว</div></div></div>
+        <div class="card" style="padding:0;overflow:hidden;margin:0"><div style="height:44px;background:var(--ui-overdue)"></div><div style="padding:8px 10px"><b style="font-size:12px">--ui-overdue</b><div class="ui-sub">Overdue · เกินกำหนด</div></div></div>
+        <div class="card" style="padding:0;overflow:hidden;margin:0"><div style="height:44px;background:var(--ui-occupied)"></div><div style="padding:8px 10px"><b style="font-size:12px">--ui-occupied</b><div class="ui-sub">Occupied · มีผู้เช่า</div></div></div>
+        <div class="card" style="padding:0;overflow:hidden;margin:0"><div style="height:44px;background:var(--ui-vacant)"></div><div style="padding:8px 10px"><b style="font-size:12px">--ui-vacant</b><div class="ui-sub">Vacant · ว่าง</div></div></div>
+        <div class="card" style="padding:0;overflow:hidden;margin:0"><div style="height:44px;background:var(--ui-success)"></div><div style="padding:8px 10px"><b style="font-size:12px">--ui-success</b><div class="ui-sub">สำเร็จ</div></div></div>
+        <div class="card" style="padding:0;overflow:hidden;margin:0"><div style="height:44px;background:var(--ui-warning)"></div><div style="padding:8px 10px"><b style="font-size:12px">--ui-warning</b><div class="ui-sub">คำเตือน</div></div></div>
+        <div class="card" style="padding:0;overflow:hidden;margin:0"><div style="height:44px;background:var(--ui-danger)"></div><div style="padding:8px 10px"><b style="font-size:12px">--ui-danger</b><div class="ui-sub">อันตราย ทำลายข้อมูล</div></div></div>
+        <div class="card" style="padding:0;overflow:hidden;margin:0"><div style="height:44px;background:var(--ui-line-green)"></div><div style="padding:8px 10px"><b style="font-size:12px">--ui-line-green</b><div class="ui-sub">LINE OA เท่านั้น</div></div></div>
+      </div>
+
+      <h3 style="margin:24px 0 12px">ระดับตัวอักษร · Noto Sans Thai</h3>
+      <div style="display:grid;gap:6px">
+        <div style="font-size:var(--ui-fs-3xl);font-weight:600">1,790.00 บาท <span class="ui-sub">28px · --ui-fs-3xl · ยอดรวมบนใบเสร็จ</span></div>
+        <div style="font-size:var(--ui-fs-2xl);font-weight:600">ห้อง 205 <span class="ui-sub">22px · --ui-fs-2xl · หัวข้อหน้า ตัวเลข KPI</span></div>
+        <div style="font-size:var(--ui-fs-xl);font-weight:600">บิลประจำเดือน กันยายน 2026 <span class="ui-sub">18px · --ui-fs-xl</span></div>
+        <div style="font-size:var(--ui-fs-lg)">ช่องกรอกและปุ่มขนาดใหญ่บนมือถือ <span class="ui-sub">16px · --ui-fs-lg · ไม่ต่ำกว่านี้ในช่องกรอก</span></div>
+        <div style="font-size:var(--ui-fs-md)">ข้อความปกติในตารางและฟอร์ม <span class="ui-sub">14px · --ui-fs-md · ค่าเริ่มต้น</span></div>
+        <div style="font-size:var(--ui-fs-sm)">หัวตาราง ป้ายกำกับ <span class="ui-sub">13px · --ui-fs-sm</span></div>
+        <div style="font-size:var(--ui-fs-xs)">คำอธิบายใต้ช่องกรอก <span class="ui-sub">12px · --ui-fs-xs · เล็กที่สุดสำหรับข้อความ</span></div>
+        <div style="font-size:var(--ui-fs-2xs)">ป้ายกำกับรอง <span class="ui-sub">11px · --ui-fs-2xs · ตัวอักษรพิมพ์ใหญ่สั้น ๆ เท่านั้น</span></div>
+      </div>
+
+      <h3 style="margin:24px 0 12px">ระยะห่าง · 4px scale</h3>
+      <div class="row" style="align-items:flex-end;gap:14px">
+        <div><div style="width:var(--ui-sp-1);height:24px;background:var(--ui-brand)"></div><div class="ui-sub">1 · 4</div></div>
+        <div><div style="width:var(--ui-sp-2);height:24px;background:var(--ui-brand)"></div><div class="ui-sub">2 · 8</div></div>
+        <div><div style="width:var(--ui-sp-3);height:24px;background:var(--ui-brand)"></div><div class="ui-sub">3 · 12</div></div>
+        <div><div style="width:var(--ui-sp-4);height:24px;background:var(--ui-brand)"></div><div class="ui-sub">4 · 16</div></div>
+        <div><div style="width:var(--ui-sp-5);height:24px;background:var(--ui-brand)"></div><div class="ui-sub">5 · 20</div></div>
+        <div><div style="width:var(--ui-sp-6);height:24px;background:var(--ui-brand)"></div><div class="ui-sub">6 · 24</div></div>
+        <div><div style="width:var(--ui-sp-8);height:24px;background:var(--ui-brand)"></div><div class="ui-sub">8 · 32</div></div>
+        <div><div style="width:var(--ui-sp-10);height:24px;background:var(--ui-brand)"></div><div class="ui-sub">10 · 40</div></div>
+        <div style="margin-left:20px"><div style="width:var(--ui-tap);height:var(--ui-tap);background:var(--ui-brand-soft);border:1px dashed var(--ui-brand)"></div><div class="ui-sub">--ui-tap · 44</div></div>
+      </div>
+
+      <h3 style="margin:24px 0 12px">มุมโค้งและเงา</h3>
+      <div class="row" style="gap:16px">
+        <div style="width:74px;height:52px;background:#fff;border:1px solid var(--ui-border);border-radius:var(--ui-r-xs)"></div>
+        <div style="width:74px;height:52px;background:#fff;border:1px solid var(--ui-border);border-radius:var(--ui-r-sm)"></div>
+        <div style="width:74px;height:52px;background:#fff;border:1px solid var(--ui-border);border-radius:var(--ui-r-md);box-shadow:var(--ui-sh-1)"></div>
+        <div style="width:74px;height:52px;background:#fff;border:1px solid var(--ui-border);border-radius:var(--ui-r-lg);box-shadow:var(--ui-sh-2)"></div>
+        <div style="width:74px;height:52px;background:#fff;border-radius:var(--ui-r-md);box-shadow:var(--ui-sh-3)"></div>
+      </div>
+      <p class="ui-sub" style="margin-top:6px">4 · 6 · 10 + เงา 1 · 14 + เงา 2 · เงา 3 (กล่องยืนยันเท่านั้น)</p>
+    </div>
+  </div>
+</div>
+
+<h3>8. Component inventory</h3>
+
+<p>Every component class in <code>tokens.css</code>, rendered once, in all states. A screen author copies from here rather than inventing markup.</p>
+
+<h4>8.1 Application shell — Admin desktop</h4>
+
+<div class="device desktop">
+  <div class="chrome"><i></i><i></i><i></i><div class="url">/dashboard</div></div>
+  <div class="screen" style="min-height:0">
+    <div class="app" style="min-height:340px">
+      <nav class="sidebar">
+        <div class="brand"><b>ศุภาลัย เรสซิเดนซ์</b><span>Juristic Platform</span></div>
+        <a class="nav-item active">📊 ภาพรวม</a>
+        <a class="nav-item">📝 จดมิเตอร์</a>
+        <a class="nav-item">🧾 บิลประจำเดือน <span class="count">3</span></a>
+        <a class="nav-item">💵 รับชำระเงิน</a>
+        <a class="nav-item">🚪 ห้องพัก</a>
+        <a class="nav-item">👤 ผู้เช่า</a>
+        <a class="nav-item">📢 ประกาศ</a>
+        <a class="nav-item">📈 รายงาน</a>
+        <div class="nav-section">ตั้งค่าระบบ</div>
+        <a class="nav-item">⚙️ ตั้งค่า</a>
+        <a class="nav-item">👥 ผู้ใช้งานระบบ</a>
+        <div class="user">นิติบุคคล · admin · ออกจากระบบ</div>
+      </nav>
+      <div class="main">
+        <div class="topbar">
+          <span class="title">ภาพรวม</span>
+          <span class="month-picker"><span class="arrow">‹</span> กันยายน 2026 <span class="arrow">›</span></span>
+          <span class="actions"><button class="btn sm">พิมพ์</button><button class="btn primary sm">สร้าง/อัปเดตบิลฉบับร่าง</button></span>
+        </div>
+        <div class="page">
+          <div class="kpi-grid">
+            <div class="kpi neutral"><div class="label">ห้องทั้งหมด</div><div class="value">80</div><div class="sub">มีผู้เช่า 67 · ว่าง 13</div></div>
+            <div class="kpi water"><div class="label">ยอดค่าน้ำเดือนนี้</div><div class="value">12,240.00</div><div class="sub">บาท · จากบิลที่อนุมัติแล้ว</div></div>
+            <div class="kpi elec"><div class="label">ยอดค่าไฟเดือนนี้</div><div class="value">38,976.00</div><div class="sub">บาท · จากบิลที่อนุมัติแล้ว</div></div>
+            <div class="kpi fee"><div class="label">ยอดค่าส่วนกลาง</div><div class="value">70,350.00</div><div class="sub">บาท · 67 ห้อง × 30 ตร.ม. × 35</div></div>
+            <div class="kpi paid"><div class="label">รับชำระแล้ว</div><div class="value">98,420.00</div><div class="sub">บาท</div></div>
+            <div class="kpi overdue"><div class="label">ค้างชำระ</div><div class="value">23,146.00</div><div class="sub">บาท · รอบนี้</div></div>
+          </div>
+          <div class="card"><div class="card-head"><span class="card-title">การใช้น้ำย้อนหลัง 12 เดือน</span><span class="badge water">💧 หน่วย</span></div><div class="chart-box">Chart.js · line · 12 periods</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="muted" style="font-size:13px">Figures other than the room counts and 70,350.00 are illustrative: PRD §16's 18,500 and 62,500 are not reproducible at the stated rates and must never be used as expected values (D-44).</p>
+
+<h4>8.2 Application shell — Staff phone</h4>
+
+<div class="device phone">
+  <div class="screen">
+    <div class="app" style="min-height:744px;flex-direction:column">
+      <div class="main">
+        <div class="topbar"><span class="title">จดมิเตอร์</span><span class="actions"><span class="month-picker">ก.ย. 2026</span></span></div>
+        <div class="page">
+          <div class="chip-row">
+            <span class="chip">ทั้งหมด <span class="count">67</span></span>
+            <span class="chip active">ยังไม่จด <span class="count">25</span></span>
+            <span class="chip">จดแล้ว <span class="count">42</span></span>
+            <span class="chip">ห้องว่าง <span class="count">13</span></span>
+          </div>
+          <div class="group-head">ชั้น 2</div>
+          <div class="meter-card">
+            <div class="meter-head"><span class="room">205</span><span class="badge occupied">มีผู้เช่า</span></div>
+            <div class="meter-row">
+              <span class="ico">💧</span>
+              <span class="field" style="margin:0"><span class="label">เดือนก่อน</span><input class="input readonly" value="1,250" readonly></span>
+              <span class="field" style="margin:0"><span class="label">เดือนนี้ <span class="req">*</span></span><input class="input" inputmode="numeric" value="1,260"></span>
+            </div>
+            <div class="meter-row">
+              <span class="ico">⚡</span>
+              <span class="field" style="margin:0"><span class="label">เดือนก่อน</span><input class="input readonly" value="5,280" readonly></span>
+              <span class="field" style="margin:0"><span class="label">เดือนนี้ <span class="req">*</span></span><input class="input" inputmode="numeric" value="5,350"></span>
+            </div>
+            <label class="check"><input type="checkbox"> เปลี่ยนมิเตอร์ในรอบนี้</label>
+            <button class="btn primary lg block">บันทึก</button>
+          </div>
+          <div class="list-item is-done"><span class="lead">206</span><span class="meta">💧 12 หน่วย · ⚡ 81 หน่วย</span><span class="end"><span class="badge ok">จดแล้ว</span></span></div>
+          <div class="list-item"><span class="lead">207</span><span class="meta">💧 — · ⚡ —</span><span class="end"><span class="badge neutral">ยังไม่จด</span></span></div>
+        </div>
+        <div style="padding:8px 12px;background:#fff;border-top:1px solid var(--ui-border)">
+          <div class="progress-label"><span>จดแล้ว 42/67 ห้อง</span><span>63%</span></div>
+          <div class="progress"><div class="bar" style="width:63%"></div></div>
+        </div>
+      </div>
+      <nav class="bottom-tabs" style="display:flex">
+        <a class="tab active"><span class="ico">📝</span>จดมิเตอร์</a>
+        <a class="tab"><span class="ico">🚪</span>ห้องพัก</a>
+        <a class="tab"><span class="ico">📊</span>ภาพรวม</a>
+      </nav>
+    </div>
+  </div>
+</div>
+
+<h4>8.3 Buttons, fields, chips, stepper, progress</h4>
+
+<div class="device desktop">
+  <div class="chrome"><i></i><i></i><i></i><div class="url">components · controls</div></div>
+  <div class="screen" style="min-height:0">
+    <div class="page" style="max-width:none">
+      <h4>ปุ่ม · <code style="font-size:12px">.btn</code></h4>
+      <div class="row" style="flex-wrap:wrap;margin-bottom:10px">
+        <button class="btn primary">อนุมัติและส่งบิล</button>
+        <button class="btn secondary">สร้างบิลฉบับร่าง</button>
+        <button class="btn">ยกเลิก</button>
+        <button class="btn danger">ยกเลิกการชำระเงิน</button>
+        <button class="btn ghost">ดูประวัติ</button>
+        <button class="btn primary" disabled>อนุมัติและส่งบิล</button>
+        <button class="btn primary is-loading">กำลังส่ง</button>
+      </div>
+      <div class="row" style="flex-wrap:wrap;margin-bottom:16px">
+        <button class="btn primary sm">sm · 30px</button>
+        <button class="btn primary">default · 38px</button>
+        <button class="btn primary lg">lg · 44px (มือถือ)</button>
+      </div>
+
+      <h4>ช่องกรอก · <code style="font-size:12px">.field</code></h4>
+      <div class="field-row">
+        <label class="field"><span class="label">ชื่อ-นามสกุล <span class="req">*</span></span><input class="input" value="อารยา ศรีสุวรรณ"><span class="hint">ตามบัตรประชาชน</span></label>
+        <label class="field invalid"><span class="label">เลขมิเตอร์น้ำเดือนนี้ <span class="req">*</span></span><input class="input" value="1,240"><span class="error">เลขมิเตอร์ปัจจุบันน้อยกว่าเดือนก่อน (1,250) กรุณาตรวจสอบ</span></label>
+        <label class="field"><span class="label">เดือนก่อน</span><input class="input readonly" value="1,250" readonly><span class="hint">ระบบดึงจากรอบก่อนหน้า แก้ไขไม่ได้</span></label>
+        <label class="field"><span class="label">ผู้รับประกาศ</span><select class="select"><option>ทุกห้องที่มีผู้เช่า</option><option>เลือกชั้น</option></select></label>
+      </div>
+      <label class="field"><span class="label">เหตุผล <span class="req">*</span></span><textarea class="textarea">รับเงินผิดรอบบิล ต้องยกเลิกและรับใหม่</textarea><span class="hint">อย่างน้อย 10 ตัวอักษร · จะถูกบันทึกในประวัติการแก้ไข</span></label>
+      <div class="row" style="gap:16px;margin-bottom:16px">
+        <label class="check"><input type="checkbox" checked> เปลี่ยนมิเตอร์ในรอบนี้</label>
+        <span class="search" style="max-width:260px">🔎 <input placeholder="ค้นหาห้อง เช่น 205"></span>
+      </div>
+
+      <h4>ตัวกรอง ขั้นตอน และความคืบหน้า</h4>
+      <div class="chip-row">
+        <span class="chip active">ทั้งหมด <span class="count">67</span></span>
+        <span class="chip">ฉบับร่าง <span class="count">3</span></span>
+        <span class="chip">รอชำระ <span class="count">21</span></span>
+        <span class="chip">ชำระแล้ว <span class="count">43</span></span>
+      </div>
+      <div class="stepper">
+        <span class="step done" data-step="1">จดมิเตอร์</span>
+        <span class="step done" data-step="2">สร้างบิล</span>
+        <span class="step current" data-step="3">อนุมัติและส่ง</span>
+        <span class="step" data-step="4">รับชำระเงิน</span>
+        <span class="step" data-step="5">ออกใบเสร็จ</span>
+      </div>
+      <div class="progress-label"><span>ส่ง LINE แล้ว 40/64</span><span>63%</span></div>
+      <div class="progress" style="margin-bottom:10px"><div class="bar" style="width:63%"></div></div>
+      <div class="progress ok"><div class="bar" style="width:100%"></div></div>
+      <div class="row" style="margin-top:14px"><span class="spinner"></span> <span class="ui-sub">กำลังโหลด…</span></div>
+      <div class="skeleton row"></div><div class="skeleton row"></div><div class="skeleton" style="width:60%"></div>
+    </div>
+  </div>
+</div>
+
+<h4>8.4 Badges — every status, and the test hook</h4>
+
+<div class="device desktop">
+  <div class="chrome"><i></i><i></i><i></i><div class="url">components · badges and table</div></div>
+  <div class="screen" style="min-height:0">
+    <div class="page" style="max-width:none">
+      <div class="row" style="flex-wrap:wrap;margin-bottom:14px">
+        <span class="badge draft" data-status="Draft">ฉบับร่าง</span>
+        <span class="badge unpaid" data-status="Unpaid">รอชำระ</span>
+        <span class="badge paid" data-status="Paid">ชำระแล้ว</span>
+        <span class="badge overdue" data-status="Overdue">เกินกำหนด</span>
+        <span class="badge occupied">มีผู้เช่า</span>
+        <span class="badge vacant">ว่าง</span>
+        <span class="badge water">💧 ค่าน้ำ</span>
+        <span class="badge elec">⚡ ค่าไฟ</span>
+        <span class="badge fee">🏢 ค่าส่วนกลาง</span>
+        <span class="badge ok">ส่งแล้ว</span>
+        <span class="badge warn">ใช้สูงผิดปกติ</span>
+        <span class="badge bad">ส่งไม่สำเร็จ</span>
+        <span class="badge info">ไม่ออกบิล</span>
+        <span class="badge neutral">ยังไม่ได้ส่ง — ไม่มี LINE</span>
+      </div>
+
+      <div class="notice warn"><b>ยังไม่ได้จดมิเตอร์ 3 ห้อง</b>108, 312, 405 — ยังไม่ได้สร้างบิล</div>
+
+      <div class="table-scroll">
+        <table class="zebra compact">
+          <thead><tr><th style="width:34px"><input type="checkbox"></th><th>ห้อง</th><th>ผู้เช่า</th><th class="num">💧 หน่วย</th><th class="num">ค่าน้ำ</th><th class="num">⚡ หน่วย</th><th class="num">ค่าไฟ</th><th class="num">ค่าส่วนกลาง</th><th class="num">รวม</th><th>สถานะ</th><th>LINE</th></tr></thead>
+          <tbody>
+            <tr class="is-selected"><td><input type="checkbox" checked></td><td><b>205</b></td><td>อารยา ศรีสุวรรณ</td><td class="num">10</td><td class="num">180.00</td><td class="num">70</td><td class="num">560.00</td><td class="num">1,050.00</td><td class="num"><b>1,790.00</b></td><td><span class="badge draft" data-status="Draft">ฉบับร่าง</span></td><td><span class="badge neutral">—</span></td></tr>
+            <tr><td><input type="checkbox"></td><td>206</td><td>ธนกฤต ใจดี</td><td class="num">12</td><td class="num">216.00</td><td class="num">81</td><td class="num">648.00</td><td class="num">1,050.00</td><td class="num">1,914.00</td><td><span class="badge unpaid" data-status="Unpaid">รอชำระ</span></td><td><span class="badge ok">ส่งแล้ว</span></td></tr>
+            <tr><td><input type="checkbox"></td><td>207</td><td>สุดา พงษ์ไพบูลย์</td><td class="num">9</td><td class="num">162.00</td><td class="num">64</td><td class="num">512.00</td><td class="num">1,050.00</td><td class="num">1,724.00</td><td><span class="badge paid" data-status="Paid">ชำระแล้ว</span></td><td><span class="badge ok">ส่งแล้ว</span></td></tr>
+            <tr><td><input type="checkbox"></td><td>312</td><td>วิชัย มั่นคง</td><td class="num">31</td><td class="num">558.00</td><td class="num">240</td><td class="num">1,920.00</td><td class="num">1,050.00</td><td class="num">3,528.00</td><td><span class="badge overdue" data-status="Overdue">เกินกำหนด</span></td><td><span class="badge bad">ส่งไม่สำเร็จ</span></td></tr>
+            <tr><td><input type="checkbox"></td><td>405</td><td>—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td><span class="badge vacant">ว่าง</span></td><td><span class="badge info">ไม่ออกบิล</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="ui-sub" style="margin-top:8px">Room 312 carries the <span class="badge warn">ใช้สูงผิดปกติ</span> flag on its electricity row: 240 units against 68 last period, over the 3× threshold with a ≥ 10-unit floor (D-13).</p>
+    </div>
+  </div>
+</div>
+
+<h4>8.5 Cards, amount breakdown, empty state, toast, dialog</h4>
+
+<div class="device desktop">
+  <div class="chrome"><i></i><i></i><i></i><div class="url">/bills/205</div></div>
+  <div class="screen" style="min-height:0">
+    <div class="page" style="max-width:none;position:relative">
+      <div class="grid" style="grid-template-columns:1fr 1fr;display:grid;gap:16px">
+        <div class="card">
+          <div class="card-head"><span class="card-title">ห้อง 205 · รอบ กันยายน 2026</span><span class="badge draft" data-status="Draft">ฉบับร่าง</span></div>
+          <div class="amount-rows">
+            <span>💧</span><span>ค่าน้ำ</span><span class="amt">180.00</span>
+            <span class="calc">1,260 − 1,250 = 10 หน่วย × 18.00 บาท</span>
+            <span>⚡</span><span>ค่าไฟ</span><span class="amt">560.00</span>
+            <span class="calc">5,350 − 5,280 = 70 หน่วย × 8.00 บาท</span>
+            <span>🏢</span><span>ค่าส่วนกลาง</span><span class="amt">1,050.00</span>
+            <span class="calc">30 ตร.ม. × 35.00 บาท</span>
+          </div>
+          <div class="amount-total"><span>ยอดรวม</span><span>1,790.00 บาท</span></div>
+          <div class="card-foot"><button class="btn">พิมพ์ใบแจ้งหนี้</button><button class="btn primary">อนุมัติและส่งบิล</button></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><span class="card-title">รายการค้างชำระ</span></div>
+          <div class="empty-state"><span class="ico">🎉</span><p>ไม่มีห้องค้างชำระ</p></div>
+        </div>
+      </div>
+
+      <div class="modal" style="position:relative;inset:auto;margin-top:16px;border-radius:10px">
+        <div class="dialog">
+          <div class="dialog-title">ยืนยันรับเงินสด</div>
+          <div class="dialog-body">ยืนยันรับเงินสด 1,790 บาท · ห้อง 205 · รอบ กันยายน 2026 และออกใบเสร็จ</div>
+          <div class="dialog-actions"><button class="btn">ยกเลิก</button><button class="btn primary">ยืนยันรับเงินสด</button></div>
+        </div>
+      </div>
+
+      <div class="toast-stack" style="position:relative;inset:auto;align-items:flex-end;margin-top:16px">
+        <div class="toast">✅ บันทึกเลขมิเตอร์ห้อง 205 แล้ว</div>
+        <div class="toast warn">⚠️ ห้อง 312 ใช้ไฟสูงผิดปกติ กรุณาตรวจสอบ</div>
+        <div class="toast bad">❌ ส่ง LINE ไม่สำเร็จ 2 ห้อง — ลองอีกครั้ง</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h4>8.6 LINE Official Account</h4>
+
+<p>v1 sends <strong>plain text only</strong> — no Flex Messages, no images, no rich menu (D-31). The <code>.flex-card</code> and <code>.rich-menu</code> classes exist in <code>tokens.css</code> for a post-v1 version and must not appear in a v1 screen mockup. The two messages below are the BILL and PAID templates rendered with the PRD §28 values.</p>
+
+<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">
+  <div class="device desktop" style="max-width:360px;margin:0">
+    <div class="screen" style="min-height:0;padding:12px">
+      <div class="line-chat">
+        <div class="line-header"><span class="avatar">🏢</span> ศุภาลัย เรสซิเดนซ์</div>
+        <div class="line-body">
+          <div class="bubble oa">🔔 ค่าใช้จ่ายประจำเดือน กันยายน 2026
+ห้อง 205
+
+💧 ค่าน้ำ 10 หน่วย × 18 บาท = 180 บาท
+⚡ ค่าไฟ 70 หน่วย × 8 บาท = 560 บาท
+🏢 ค่าส่วนกลาง 30 ตร.ม. × 35 บาท = 1,050 บาท
+
+💰 ยอดรวม 1,790 บาท
+📅 กรุณาชำระภายในวันที่ 5 กันยายน 2026
+
+ชำระเงินสดที่สำนักงานนิติบุคคล เวลา 08:00–17:00 น.<span class="time">1 ก.ย. 09:12 น.</span></div>
+          <div class="bubble user">รับทราบค่ะ<span class="time">อ่านแล้ว · 09:20 น.</span></div>
+          <div class="bubble oa">✅ ยืนยันการชำระเงิน
+ห้อง 205
+ได้รับชำระค่าใช้จ่ายจำนวน 1,790 บาท เรียบร้อยแล้ว
+วันที่ 3 กันยายน 2026
+เลขที่ใบเสร็จ REC-202609-000852
+
+ขอบคุณครับ/ค่ะ<span class="time">3 ก.ย. 14:30 น.</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="device desktop" style="max-width:360px;margin:0">
+    <div class="screen" style="min-height:0;padding:12px">
+      <p class="ui-sub" style="margin-bottom:8px">สงวนไว้สำหรับรุ่นถัดไป · ไม่ใช้ใน v1</p>
+      <div class="line-chat">
+        <div class="line-header"><span class="avatar">🏢</span> ศุภาลัย เรสซิเดนซ์</div>
+        <div class="line-body">
+          <div class="flex-card">
+            <div class="flex-head">บิลประจำเดือน กันยายน 2026 · ห้อง 205</div>
+            <div class="flex-body">
+              <span>💧 ค่าน้ำ 10 หน่วย</span><span class="num">180</span>
+              <span>⚡ ค่าไฟ 70 หน่วย</span><span class="num">560</span>
+              <span>🏢 ค่าส่วนกลาง 30 ตร.ม.</span><span class="num">1,050</span>
+              <span><b>ยอดรวม</b></span><span class="num"><b>1,790</b></span>
+            </div>
+            <div class="flex-foot">ครบกำหนด 5 กันยายน 2026</div>
+            <div class="flex-btn">ดูรายละเอียด</div>
+          </div>
+        </div>
+      </div>
+      <div class="rich-menu" style="margin-top:12px">
+        <div class="cell">🧾<br>บิลของฉัน</div>
+        <div class="cell">📅<br>กำหนดชำระ</div>
+        <div class="cell">📢<br>ประกาศ</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h4>8.7 Print — ใบเสร็จรับเงิน A5</h4>
+
+<div class="device print">
+  <div class="screen">
+    <div class="receipt">
+      <div class="receipt-head">
+        <div class="receipt-org">นิติบุคคลอาคารชุด ศุภาลัย เรสซิเดนซ์</div>
+        <div class="receipt-org-meta">99/1 ถนนพหลโยธิน แขวงจตุจักร เขตจตุจักร กรุงเทพฯ 10900 · โทร 02-123-4567</div>
+        <div class="receipt-org-meta">เลขประจำตัวผู้เสียภาษี 0-1055-12345-67-8</div>
+      </div>
+      <div class="receipt-title">ใบเสร็จรับเงิน</div>
+      <dl class="receipt-meta">
+        <dt>เลขที่</dt><dd>REC-202609-000852</dd><dt>วันที่ชำระ</dt><dd>3 กันยายน 2026</dd>
+        <dt>ห้อง</dt><dd>205</dd><dt>รอบบิล</dt><dd>กันยายน 2026</dd>
+        <dt>ชื่อผู้เช่า</dt><dd>นางสาวอารยา ศรีสุวรรณ</dd><dt>ชำระโดย</dt><dd>เงินสด</dd>
+      </dl>
+      <table>
+        <thead><tr><th>รายการ</th><th class="num">จำนวน</th><th class="num">ราคา/หน่วย</th><th class="num">จำนวนเงิน</th></tr></thead>
+        <tbody>
+          <tr><td>ค่าน้ำ</td><td class="num">10 หน่วย</td><td class="num">18.00</td><td class="num">180.00</td></tr>
+          <tr><td>ค่าไฟ</td><td class="num">70 หน่วย</td><td class="num">8.00</td><td class="num">560.00</td></tr>
+          <tr><td>ค่าส่วนกลาง</td><td class="num">30 ตร.ม.</td><td class="num">35.00</td><td class="num">1,050.00</td></tr>
+        </tbody>
+      </table>
+      <div class="receipt-total"><span>ยอดรวม</span><span>1,790.00 บาท</span></div>
+      <div class="receipt-words">(หนึ่งพันเจ็ดร้อยเก้าสิบบาทถ้วน)</div>
+      <div class="receipt-sign">
+        <div class="line"></div>
+        ลงชื่อผู้รับเงิน · นิติบุคคล
+      </div>
+    </div>
+  </div>
+</div>
+
+<p>The same A5 route with the title <b>ใบแจ้งค่าใช้จ่าย</b>, no receipt number, no payment date, no ผู้รับเงิน and no signature line is the paper bill for a tenant with no LINE binding (D-28). A reprint adds <code>.receipt-stamp.copy</code> reading <b>สำเนา</b>; a voided receipt adds <code>.receipt-stamp</code> reading <b>ยกเลิก</b> in red (D-25, D-27).</p>
+
+<h3>9. Accessibility</h3>
+
+<ul>
+  <li><b>Contrast</b> — every badge pairs its text token with its own <code>-soft</code> background at ≥ 4.5:1, and white on <code>--ui-brand</code> is 7.8:1. The four palette values that failed this check were darkened rather than accepted: water, electricity, danger and overdue. Muted text (<code>--ui-muted</code> on white, 4.7:1) is the lightest text permitted, and it is never used below 12&nbsp;px.</li>
+  <li><b>Status is never colour alone</b> — a status is always a Thai word inside a badge, plus <code>data-status</code> for tests. A colour-blind cashier reads ชำระแล้ว, not "the green one"; a printed page in greyscale still says it.</li>
+  <li><b>Targets</b> — 44&nbsp;× 44&nbsp;px minimum on every phone surface (<code>--ui-tap</code>): the meter inputs, บันทึก, the filter chips and the bottom tabs. Desktop rows may use the 38&nbsp;px default, but never for a destructive action.</li>
+  <li><b>Labels</b> — every input has a real <code>&lt;label&gt;</code>; a placeholder is never the label, because it disappears exactly when a Thai speaker re-checks what they typed. Hints and errors are wired with <code>aria-describedby</code>, and <code>.field.invalid</code> also sets <code>aria-invalid="true"</code>.</li>
+  <li><b>Focus</b> — a visible 2&nbsp;px <code>--ui-focus</code> ring on every interactive element, never <code>outline:none</code>. Focus order follows the DOM: topbar → filters → list → primary action. Opening a dialog moves focus to its title and traps it; <kbd>Esc</kbd> always cancels and never confirms; closing returns focus to the button that opened it.</li>
+  <li><b>Numbers</b> — <code>inputmode="numeric"</code> on every meter and money field, and <code>font-variant-numeric: tabular-nums</code> on every money column so columns of baht line up.</li>
+  <li><b>Language and structure</b> — <code>&lt;html lang="th"&gt;</code>, one <code>&lt;h1&gt;</code> per page, tables with real <code>&lt;th scope&gt;</code>, and a skip link to <code>.main</code> as the first focusable element.</li>
+  <li><b>Motion</b> — the only animation is a loading spinner; there is nothing to disable, and no auto-advancing carousel, toast queue or scroll-jacking exists.</li>
+</ul>
+
+<h3>10. Responsive breakpoints</h3>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Range</th><th>Layout</th><th>Applies to</th></tr></thead>
+<tbody>
+<tr><td>&lt; 768&nbsp;px</td><td><code>.sidebar</code> hidden · sticky <code>.topbar</code> · <code>.bottom-tabs</code> visible · one-column page · KPI tiles two-up</td><td>Staff phone (360&nbsp;× 640 minimum), and Login on any device</td></tr>
+<tr><td>768–1279&nbsp;px</td><td><code>.sidebar</code> visible at 216&nbsp;px · tables scroll inside <code>.table-scroll</code></td><td>Tablet or a small laptop window; usable but not the design target</td></tr>
+<tr><td>≥ 1280&nbsp;px</td><td>Full Admin layout · page content capped at <code>--ui-content-max</code> 1200&nbsp;px · KPI grid auto-fits at 170&nbsp;px minimum</td><td>The office desktop — the surface every Admin screen is designed at (D-45)</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout note">
+  <div class="title">Container queries, not viewport queries</div>
+  <p>The switch is written as <code>@container app (max-width:767px)</code> against <code>.app</code>, not as a media query. In the running app the result is identical, because <code>.app</code> fills the viewport. In this document set it is what makes a phone mockup inside a <code>.device.phone</code> frame render the phone layout while a desktop mockup on the same page renders the sidebar — one stylesheet, no duplicated mobile variants, and no chance of a mockup drifting from the product.</p>
+</div>
+
+<h3>11. Assumptions recorded by design</h3>
+
+<ol>
+  <li><b>Page routes.</b> The ADR fixes the naming rule (lowercase, plural, hyphenated) and quotes <code>/bills</code>, <code>/bills/:id</code>, <code>/readings</code> and <code>/announcements</code>. The remaining routes in §3 — <code>/login</code>, <code>/dashboard</code>, <code>/rooms/:id</code>, <code>/tenants</code>, <code>/payments</code>, <code>/receipts/:id</code>, <code>/bills/:id/invoice</code>, <code>/reports</code>, <code>/settings</code>, <code>/users</code> — are derived from that rule and from the <code>routes/</code> and <code>views/pages/</code> file lists. If engineering names one differently, this table follows the code.</li>
+  <li><b>Brand colour.</b> The PRD names no brand colour. Navy <code>#1b4fa0</code> was chosen because it is unmistakable against all three utility accents (cyan, amber, violet) and against the paid/overdue pair, and because white text on it clears 7:1. No logo, gradient or illustration is introduced — nothing in the document set implies an asset the team has not made.</li>
+  <li><b>Single light theme.</b> The doc template paints every mockup screen white and the product targets one office desktop and one staff phone, so no dark palette is defined. Adding one later is a token block, not a redesign.</li>
+  <li><b>Icons are emoji.</b> 💧 ⚡ 🏢 📝 🧾 and the nav glyphs are Unicode emoji rendered by the platform font — zero assets, zero licensing, and they already appear in the LINE templates fixed by D-31. Any icon carrying meaning is paired with a Thai word.</li>
+  <li><b>Illustrative Dashboard figures.</b> Water and electricity totals in §8.1 are invented for the mockup. Per D-44, only the room counts (80 / 67 / 13) and the common area total (70,350.00) from PRD §16 are reproducible; PRD §16's 18,500 and 62,500 are not and are never used as expected values.</li>
+  <li><b>Demo names.</b> ศุภาลัย เรสซิเดนซ์, the address, the tax ID and every tenant name are fictional seed values (D-44). No real tenant data appears in any mockup.</li>
+  <li><b>Reserved LINE components.</b> <code>.flex-card</code> and <code>.rich-menu</code> are specified because the brief asks for them, and are marked reserved in both the stylesheet and §8.6 because D-31 fixes v1 to plain text. A v1 screen using them is a defect.</li>
+</ol>
+
+</section>
+
+  </main>
+</div>
+<script>
+(function(){
+  // Build TOC from h2/h3 in #content
+  var content=document.getElementById('content'), toc=document.getElementById('toc');
+  var heads=content.querySelectorAll('h2, h3'), root=document.createElement('ul'), cur=null, used={};
+  heads.forEach(function(h){
+    if(!h.id){var s=h.textContent.trim().toLowerCase().replace(/[^\w฀-๿]+/g,'-').replace(/^-+|-+$/g,'').slice(0,60)||'sec';var b=s,i=2;while(used[s]||document.getElementById(s)){s=b+'-'+(i++)}h.id=s}
+    used[h.id]=1;
+    var li=document.createElement('li'),a=document.createElement('a');a.href='#'+h.id;a.textContent=h.textContent;li.appendChild(a);
+    if(h.tagName==='H2'){root.appendChild(li);cur=li}
+    else{if(!cur){root.appendChild(li);return}var ul=cur.querySelector(':scope > ul');if(!ul){ul=document.createElement('ul');cur.appendChild(ul)}ul.appendChild(li)}
+  });
+  toc.appendChild(root);
+  var links=toc.querySelectorAll('a');
+  if('IntersectionObserver' in window){
+    var map={};links.forEach(function(a){map[a.getAttribute('href').slice(1)]=a});
+    var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){links.forEach(function(l){l.classList.remove('active')});var a=map[e.target.id];if(a)a.classList.add('active')}})},{rootMargin:'0px 0px -75% 0px'});
+    heads.forEach(function(h){io.observe(h)});
+  }
+  // Mermaid
+  var dark=document.documentElement.getAttribute('data-theme')==='dark'||(!document.documentElement.getAttribute('data-theme')&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);
+  if(window.mermaid){mermaid.initialize({startOnLoad:true,theme:dark?'dark':'neutral',securityLevel:'loose',flowchart:{curve:'basis',htmlLabels:true},er:{useMaxWidth:true},sequence:{useMaxWidth:true},gantt:{useMaxWidth:true}})}
+})();
+</script>
+</body>
+</html>

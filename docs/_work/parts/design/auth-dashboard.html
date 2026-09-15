@@ -1,0 +1,737 @@
+<section id="auth-dashboard">
+<h2>Login &amp; Dashboard</h2>
+
+<p>These are the two screens every session passes through: the gate that establishes <em>who</em> is working (and therefore which of the two roles of D-36 the rest of the application will obey) and the first screen behind it, which answers <em>what needs doing this month</em>. Everything visible below is Thai (D-02); the English names <strong>Login</strong> and <strong>Dashboard</strong> survive only as route and identifier, never as UI copy.</p>
+
+<div class="callout decision">
+  <div class="title">Design decisions taken in this document</div>
+  <ul>
+    <li><b>The login identifier is <span class="badge neutral">ชื่อผู้ใช้</span> only, not "Username / Email".</b> PRD §19 lists "Username / Email", but D-46 fixes the Users page field list with <em>no email address</em> and the ADR's <code>users</code> table has <code>username</code> and no email column. One identifier field satisfies the PRD; adding an email field would create a column nothing writes.</li>
+    <li><b>No "จดจำฉัน" checkbox and no "ลืมรหัสผ่าน" link that does anything.</b> D-37 gives a rolling 8-hour session and states that Admin resetting a password from the Users page is the <em>only</em> recovery path in v1, so the footer is a sentence, not a link.</li>
+    <li><b>The Dashboard mockup shows the period <span class="badge info">กันยายน 2026</span> in its end state</b> — all 67 bills approved, i.e. immediately after the PRD §28 demo approves room 205 live. That is the only state in which D-44's binding common-area figure 67 × 30 × 35 = 70,350.00 appears on screen, because D-41 excludes Draft bills from every money tile.</li>
+    <li><b>"Today" in the mockups is 8 ก.ย. 2026</b>, three days past the 5 ก.ย. 2026 due date of PRD §28, so both รอชำระ and เกินกำหนด are visible at once. D-20 freezes each bill's own due date, so the nine bills approved on 5 ก.ย. carry a due date of 8 ก.ย. and are correctly <em>not</em> overdue.</li>
+    <li><b>Money in a KPI tile is written <span class="badge neutral">฿151,370</span>, in a table <span class="badge neutral">2,016.00</span>.</b> D-03 permits the ฿ glyph in mockups where space is tight; a 22 px value inside a 179 px tile is that case. Tables and Bill Detail keep two decimals. The running application may render the tile as <code>151,370</code> with บาท in the label — the figure is what is binding, not the glyph.</li>
+    <li><b>No D-39 confirmation dialog is reachable from either screen.</b> All six call sites live on Monthly Billing, Bill Detail, Payment, Announcements, Tenants and Rooms. Logout is a plain <code>POST /logout</code> with no dialog, because D-39 fixes the list at six and logging out destroys nothing.</li>
+  </ul>
+</div>
+
+<div class="callout warn">
+  <div class="title">Where the Dashboard figures come from</div>
+  <p>D-44 is explicit that PRD §16's ยอดค่าน้ำ 18,500 and ยอดค่าไฟ 62,500 are <strong>arithmetically impossible</strong> at the fixed rates (18,500 is not divisible by 18; 62,500 is not divisible by 8) and may not be used as expected values anywhere. Only <strong>80 / 67 / 13</strong> and <strong>70,350.00</strong> are reproduced from the PRD. The water and electricity totals on this page are therefore constructed so that every figure divides cleanly and the three money tiles reconcile:</p>
+  <div class="formula">น้ำ 1,030 หน่วย × 18.00 = 18,540.00 &nbsp;·&nbsp; ไฟ 7,810 หน่วย × 8.00 = 62,480.00 &nbsp;·&nbsp; ส่วนกลาง 67 × 30 × 35.00 = 70,350.00<br>เรียกเก็บ 151,370.00 − รับชำระ 124,180.00 = ค้างชำระ 27,190.00</div>
+  <p style="margin:0;font-size:13px;color:var(--muted)">The same twelve-month series feed the two charts; the last column of each chart is this period. Any test that asserts a Dashboard number must assert against these, never against PRD §16.</p>
+</div>
+
+<style>
+/* Layout specifics for the Login and Dashboard mockups only. Every selector is
+   scoped under .screen so nothing here can reach the surrounding document. */
+.screen{position:relative}
+.screen .card,.screen .kpi,.screen .login-card,.screen .topbar,.screen .sidebar,
+.screen .field,.screen .notice,.screen .month-picker,.screen .bottom-tabs,
+.screen .btn,.screen .progress-label,.screen .empty-state,.screen .list-item{position:relative}
+.screen .ann{z-index:40}
+/* the tab bar sits at the foot of a fixed-height mockup frame */
+.screen .bottom-tabs{margin-top:auto}
+/* Dashboard: charts column + a narrow status column */
+.screen .ad-cols{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:var(--ui-sp-4);align-items:start}
+.screen .ad-donut{display:flex;align-items:center;gap:var(--ui-sp-3)}
+.screen .ad-donut svg{flex:0 0 132px}
+.screen .ad-legend{flex:1;min-width:0;display:flex;flex-direction:column;gap:var(--ui-sp-2)}
+.screen .ad-sw{width:12px;height:12px;border-radius:3px;flex:0 0 12px}
+.screen .ad-recon{border-top:1px solid var(--ui-border);margin-top:var(--ui-sp-3);padding-top:var(--ui-sp-3);display:flex;flex-direction:column;gap:var(--ui-sp-1);font-size:var(--ui-fs-sm)}
+.screen .ad-quick{display:grid;grid-template-columns:1fr 1fr;gap:var(--ui-sp-2)}
+.screen .ad-login-foot{margin-top:var(--ui-sp-5);padding-top:var(--ui-sp-4);border-top:1px solid var(--ui-border);text-align:center}
+@container app (max-width:767px){.screen .ad-cols{grid-template-columns:minmax(0,1fr)}}
+</style>
+
+
+<h3>Login — <code>GET /login</code> · <code>POST /login</code></h3>
+
+<div class="screen-meta">
+  <span><b>Role</b> unauthenticated (both admin and staff)</span>
+  <span><b>Thai title</b> เข้าสู่ระบบ</span>
+  <span><b>Entry points</b> the site root, any 401 on a page route, the ออกจากระบบ action, an expired 8-hour session</span>
+  <span><b>Primary action</b> เข้าสู่ระบบ</span>
+  <span><b>Devices</b> desktop 1280 px+ and Chrome for Android 360 px (D-45)</span>
+  <span><b>Exits</b> admin → <code>/dashboard</code>, staff → <code>/readings</code></span>
+</div>
+
+<div class="device desktop">
+  <div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/login</span></div>
+  <div class="screen">
+    <div class="login">
+      <form class="login-card" method="post" action="/login">
+        <span class="ann" style="top:-11px;left:-11px">1</span>
+        <h1>Juristic Platform</h1>
+        <p class="sub">ระบบจัดการค่าน้ำ ค่าไฟ และค่าส่วนกลาง</p>
+
+        <div class="field">
+          <span class="ann" style="top:-2px;right:-11px">2</span>
+          <label class="label" for="lg-user">ชื่อผู้ใช้<span class="req">*</span></label>
+          <input class="input" id="lg-user" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="เช่น admin">
+        </div>
+
+        <div class="field">
+          <span class="ann" style="top:-2px;right:-11px">3</span>
+          <label class="label" for="lg-pass">รหัสผ่าน<span class="req">*</span></label>
+          <input class="input" id="lg-pass" name="password" type="password" autocomplete="current-password" placeholder="••••••••">
+        </div>
+
+        <button class="btn primary lg block" type="submit">เข้าสู่ระบบ<span class="ann" style="top:-11px;right:-11px">4</span></button>
+
+        <div class="ad-login-foot">
+          <span class="ann" style="top:6px;left:-11px">5</span>
+          <p class="ui-sub">ลืมรหัสผ่าน? ติดต่อนิติบุคคลเพื่อตั้งรหัสผ่านใหม่</p>
+          <p class="ui-sub" style="margin:0">ศุภาลัย เรสซิเดนซ์ · นิติบุคคลอาคารชุด</p>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<ol class="annotations">
+  <li><b>Brand block.</b> H1 <span class="badge neutral">Juristic Platform</span> plus the Thai subtitle, verbatim from D-01 — the login page is the one surface that shows the product name, because the apartment name is not yet known (Settings is behind the session). No logo image: the design system ships no asset and one is not needed. Static; not interactive.</li>
+  <li><b>ชื่อผู้ใช้.</b> A single identifier field, <code>name="username"</code>, 44 px tall with 16 px text so iOS and Android do not zoom on focus. <code>autocapitalize="none"</code> and <code>spellcheck="false"</code> because a username typed on a phone keyboard is otherwise capitalised. Validation: required. Empty on submit renders <code>.field.invalid</code> and the message กรุณากรอกชื่อผู้ใช้ under the input; the typed value is preserved on every failure (D-40). No live validation while typing — the first error appears on submit.</li>
+  <li><b>รหัสผ่าน.</b> <code>type="password"</code>, <code>autocomplete="current-password"</code>. Required; empty on submit gives กรุณากรอกรหัสผ่าน. The value is <em>never</em> echoed back into the field after a failed attempt, on any error path. No show/hide toggle in v1 and no minimum-length hint on this screen — password rules belong to the Users page (D-46), not the gate.</li>
+  <li><b>เข้าสู่ระบบ.</b> The single primary action, full width and 44 px (<code>.btn.primary.lg.block</code>), also the submit target of Enter from either field. On submit it becomes <code>.btn.is-loading</code> and disabled, so a double submit is impossible before the response lands. Success is a 302: admin to <code>/dashboard</code>, staff to <code>/readings</code> — staff never lands on a page they are 403'd from. The form posts a CSRF token issued on the GET (D-37).</li>
+  <li><b>Recovery footer.</b> A sentence, not a link. D-37 and D-46 make Admin's ตั้งรหัสผ่านใหม่ on the Users page the only recovery path in v1, so a self-service link would lead nowhere. The second line is the apartment name from Settings, rendered server-side; it is the one hint that the reader is at the right building's URL.</li>
+</ol>
+
+<h4>Alternate state — phone 390 px, sign-in rejected</h4>
+
+<div class="device phone">
+  <div class="screen">
+    <div class="login">
+      <form class="login-card" method="post" action="/login">
+        <h1>Juristic Platform</h1>
+        <p class="sub">ระบบจัดการค่าน้ำ ค่าไฟ และค่าส่วนกลาง</p>
+
+        <div class="notice bad">
+          <span class="ann" style="top:-11px;right:-11px">6</span>
+          <b>ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง</b>
+          กรุณาตรวจสอบแล้วลองอีกครั้ง
+        </div>
+
+        <div class="field invalid">
+          <span class="ann" style="top:-2px;right:-11px">7</span>
+          <label class="label" for="lg-user-2">ชื่อผู้ใช้<span class="req">*</span></label>
+          <input class="input" id="lg-user-2" name="username" type="text" value="somchai.admin">
+        </div>
+
+        <div class="field invalid">
+          <label class="label" for="lg-pass-2">รหัสผ่าน<span class="req">*</span></label>
+          <input class="input" id="lg-pass-2" name="password" type="password" placeholder="••••••••">
+        </div>
+
+        <button class="btn primary lg block" type="submit">เข้าสู่ระบบ</button>
+
+        <div class="ad-login-foot">
+          <span class="ann" style="top:6px;left:-11px">8</span>
+          <p class="ui-sub" style="margin:0">ลืมรหัสผ่าน? ติดต่อนิติบุคคลเพื่อตั้งรหัสผ่านใหม่</p>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<ol class="annotations" start="6">
+  <li><b>One banner, above the form.</b> <code>.notice.bad</code> re-rendered by the same POST handler (D-40: never a redirect, never a lost form). The wording never says <em>which</em> half was wrong — an attacker must not learn that a username exists — so there is no per-field message here, and the banner is the only place the failure is stated.</li>
+  <li><b>Both fields carry <code>.field.invalid</code>, neither carries a message.</b> Marking only the password would leak exactly what the banner refuses to say. The username keeps its typed value; the password is cleared and takes focus. After the tenth failed attempt from one IP inside 15 minutes the banner is replaced by the rate-limit text and the button becomes <code>.btn.is-disabled</code> (D-37).</li>
+  <li><b>The phone layout is the same card.</b> <code>.login-card</code> is <code>max-width:360px</code>, so a 390 px device shows the desktop composition unchanged with 24 px of padding either side — there is no separate mobile login template. Inputs stay 44 px with 16 px text, which is what keeps Chrome for Android from zooming (D-45).</li>
+</ol>
+
+<h4>States — Login</h4>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>State</th><th>Trigger</th><th>What the screen does</th><th>Thai copy</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><span class="badge neutral">Empty</span></td>
+      <td>First <code>GET /login</code></td>
+      <td>Both fields blank, ชื่อผู้ใช้ focused, button enabled. No banner. This is the default screenshot above.</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td><span class="badge info">Loading</span></td>
+      <td>Submit pressed</td>
+      <td>Button becomes <code>.btn.is-loading</code> (spinner, label hidden) and disabled; both inputs go <code>readonly</code>. No skeleton — there is no list to load.</td>
+      <td>Button label while loading: <b>กำลังเข้าสู่ระบบ…</b> (screen-reader text only; the spinner hides it visually)</td>
+    </tr>
+    <tr>
+      <td><span class="badge bad">Error — validation</span></td>
+      <td>Empty field on submit</td>
+      <td>422 from the zod schema; the field gets <code>.field.invalid</code> and an inline <code>.error</code>. No banner. Typed values preserved.</td>
+      <td><b>กรุณากรอกชื่อผู้ใช้</b> · <b>กรุณากรอกรหัสผ่าน</b></td>
+    </tr>
+    <tr>
+      <td><span class="badge bad">Error — credentials</span></td>
+      <td>Unknown user, or wrong password</td>
+      <td>401, page re-rendered with the banner; both fields <code>.field.invalid</code>, password cleared and focused. The attempt is counted by the IP rate limiter.</td>
+      <td><b>ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง</b> / กรุณาตรวจสอบแล้วลองอีกครั้ง</td>
+    </tr>
+    <tr>
+      <td><span class="badge bad">Error — account disabled</span></td>
+      <td>Correct password, <code>users.status = 'Inactive'</code> (D-46)</td>
+      <td>401 with its own banner and no session. Deliberately distinguishable from a wrong password, because the person holds valid credentials and needs to know who to ask.</td>
+      <td><b>บัญชีนี้ถูกปิดการใช้งาน</b> / กรุณาติดต่อนิติบุคคลเพื่อเปิดใช้งานอีกครั้ง</td>
+    </tr>
+    <tr>
+      <td><span class="badge bad">Error — rate limited</span></td>
+      <td>11th attempt from one IP inside 15 minutes (D-37)</td>
+      <td>429, banner replaces the credential banner, primary button <code>.btn.is-disabled</code>. The limiter keys on the real client IP via <code>trust proxy</code>, so one wrong password does not lock the whole building out.</td>
+      <td><b>พยายามเข้าสู่ระบบไม่สำเร็จหลายครั้งเกินไป</b> / กรุณารอ 15 นาที แล้วลองใหม่อีกครั้ง</td>
+    </tr>
+    <tr>
+      <td><span class="badge warn">Error — session expired</span></td>
+      <td>Arriving at <code>/login</code> after an 8-hour rolling session lapsed, or after a CSRF token mismatch</td>
+      <td><code>.notice.warn</code> above the form; the intended URL is remembered and used after a successful sign-in.</td>
+      <td><b>เซสชันหมดอายุ</b> / กรุณาเข้าสู่ระบบอีกครั้ง</td>
+    </tr>
+    <tr>
+      <td><span class="badge bad">Error — server</span></td>
+      <td>500 (database unreachable, session store down)</td>
+      <td><code>.notice.bad</code> above the form, values preserved, ลองอีกครั้ง offered. The stack trace goes to stdout only.</td>
+      <td><b>ระบบขัดข้องชั่วคราว</b> / กรุณาลองอีกครั้งในอีกสักครู่</td>
+    </tr>
+    <tr>
+      <td><span class="badge paid">Success</span></td>
+      <td>Valid credentials, Active account</td>
+      <td>Session row written to MySQL, cookie set (<code>httpOnly</code>, <code>SameSite=Lax</code>, <code>Secure</code> in production), 302 to <code>/dashboard</code> for admin and <code>/readings</code> for staff. No toast: the next screen is the confirmation.</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td><span class="badge neutral">Permission denied</span></td>
+      <td>An already-signed-in user opens <code>/login</code></td>
+      <td>Not an error: 302 straight to the role's landing page. The Login screen itself has no 403 state, because it is the only route that requires no session.</td>
+      <td>—</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h4>Thai copy — Login</h4>
+<div class="table-wrap">
+<table class="zebra">
+  <thead><tr><th>Element</th><th>Thai copy</th><th>Source</th></tr></thead>
+  <tbody>
+    <tr><td>Browser tab title</td><td>เข้าสู่ระบบ · Juristic Platform</td><td>D-01, D-02</td></tr>
+    <tr><td>Card heading (H1)</td><td>Juristic Platform</td><td>D-01 (verbatim, not translated)</td></tr>
+    <tr><td>Card subtitle</td><td>ระบบจัดการค่าน้ำ ค่าไฟ และค่าส่วนกลาง</td><td>D-01 (verbatim)</td></tr>
+    <tr><td>Field label 1</td><td>ชื่อผู้ใช้ <span style="color:var(--muted)">(required marker *)</span></td><td>D-46</td></tr>
+    <tr><td>Field 1 placeholder</td><td>เช่น admin</td><td>—</td></tr>
+    <tr><td>Field label 2</td><td>รหัสผ่าน <span style="color:var(--muted)">(required marker *)</span></td><td>D-37</td></tr>
+    <tr><td>Primary button</td><td>เข้าสู่ระบบ</td><td>D-02 page mapping</td></tr>
+    <tr><td>Button, submitting</td><td>กำลังเข้าสู่ระบบ…</td><td>D-40 loading rule</td></tr>
+    <tr><td>Recovery line</td><td>ลืมรหัสผ่าน? ติดต่อนิติบุคคลเพื่อตั้งรหัสผ่านใหม่</td><td>D-37, D-46</td></tr>
+    <tr><td>Footer line</td><td>ศุภาลัย เรสซิเดนซ์ · นิติบุคคลอาคารชุด</td><td>D-01, D-44 seed</td></tr>
+    <tr><td>Validation — username</td><td>กรุณากรอกชื่อผู้ใช้</td><td>D-40</td></tr>
+    <tr><td>Validation — password</td><td>กรุณากรอกรหัสผ่าน</td><td>D-40</td></tr>
+    <tr><td>Error — credentials</td><td>ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง / กรุณาตรวจสอบแล้วลองอีกครั้ง</td><td>D-37, D-40</td></tr>
+    <tr><td>Error — disabled account</td><td>บัญชีนี้ถูกปิดการใช้งาน / กรุณาติดต่อนิติบุคคลเพื่อเปิดใช้งานอีกครั้ง</td><td>D-46</td></tr>
+    <tr><td>Error — rate limited</td><td>พยายามเข้าสู่ระบบไม่สำเร็จหลายครั้งเกินไป / กรุณารอ 15 นาที แล้วลองใหม่อีกครั้ง</td><td>D-37</td></tr>
+    <tr><td>Error — session expired</td><td>เซสชันหมดอายุ / กรุณาเข้าสู่ระบบอีกครั้ง</td><td>D-37</td></tr>
+    <tr><td>Error — server</td><td>ระบบขัดข้องชั่วคราว / กรุณาลองอีกครั้งในอีกสักครู่</td><td>D-40</td></tr>
+    <tr><td>Confirmation dialogs</td><td style="color:var(--muted)">none — no D-39 call site is reachable from this screen</td><td>D-39</td></tr>
+  </tbody>
+</table>
+</div>
+
+
+<h3>Dashboard — <code>GET /dashboard?period=YYYY-MM</code></h3>
+
+<div class="screen-meta">
+  <span><b>Role</b> admin (full) · staff (reduced, D-36)</span>
+  <span><b>Thai title</b> ภาพรวม</span>
+  <span><b>Entry points</b> the landing page after an admin sign-in; the first item of the sidebar on every page</span>
+  <span><b>Primary action</b> รับชำระเงิน (the counter's daily job) — the month picker is the page's only control</span>
+  <span><b>Data</b> <code>services/reports.js</code>, all ten tiles from the D-41 formulas; charts from <code>GET /api/dashboard/charts?period=2026-09</code></span>
+  <span><b>Devices</b> desktop 1280 px+ for admin; the reduced staff view must work at 360 px</span>
+</div>
+
+<div class="device desktop">
+  <div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/dashboard?period=2026-09</span></div>
+  <div class="screen">
+    <div class="app">
+
+      <aside class="sidebar">
+        <span class="ann" style="top:12px;right:10px">1</span>
+        <div class="brand"><b>ศุภาลัย เรสซิเดนซ์</b><span>Juristic Platform</span></div>
+        <a class="nav-item active">ภาพรวม</a>
+        <a class="nav-item">ห้องพัก</a>
+        <a class="nav-item">ผู้เช่า</a>
+        <a class="nav-item">จดมิเตอร์</a>
+        <a class="nav-item">บิลประจำเดือน<span class="count">15</span></a>
+        <a class="nav-item">รับชำระเงิน</a>
+        <a class="nav-item">ประกาศ</a>
+        <a class="nav-item">รายงาน</a>
+        <div class="nav-section">ระบบ</div>
+        <a class="nav-item">ผู้ใช้งานระบบ</a>
+        <a class="nav-item">ตั้งค่า</a>
+        <div class="user">นิติบุคคล · admin</div>
+      </aside>
+
+      <div class="main">
+        <header class="topbar">
+          <div class="title">ภาพรวม</div>
+          <div class="actions">
+            <span class="ui-sub">ข้อมูล ณ 8 ก.ย. 2026 09:12 น.</span>
+            <div class="month-picker">
+              <span class="ann" style="top:-11px;right:-11px">2</span>
+              <span class="arrow">‹</span><span>กันยายน 2026</span><span class="arrow">›</span>
+            </div>
+          </div>
+        </header>
+
+        <div class="page">
+
+          <div class="kpi-grid">
+            <div class="kpi neutral">
+              <span class="ann" style="top:-11px;left:-11px">3</span>
+              <div class="label">ห้องทั้งหมด</div><div class="value">80</div><div class="sub">5 ชั้น · ชั้นละ 16 ห้อง</div>
+            </div>
+            <div class="kpi">
+              <div class="label">มีผู้เช่า</div><div class="value">67</div><div class="sub">84% ของห้องทั้งหมด</div>
+            </div>
+            <div class="kpi neutral">
+              <div class="label">ห้องว่าง</div><div class="value">13</div><div class="sub">ไม่ออกบิลในรอบนี้</div>
+            </div>
+            <div class="kpi water">
+              <span class="ann" style="top:-11px;left:-11px">4</span>
+              <div class="label">ยอดค่าน้ำเดือนนี้</div><div class="value">฿18,540</div><div class="sub">1,030 หน่วย × 18.00</div>
+            </div>
+            <div class="kpi elec">
+              <div class="label">ยอดค่าไฟเดือนนี้</div><div class="value">฿62,480</div><div class="sub">7,810 หน่วย × 8.00</div>
+            </div>
+            <div class="kpi fee">
+              <div class="label">ยอดค่าส่วนกลาง</div><div class="value">฿70,350</div><div class="sub">67 ห้อง × 30 ตร.ม. × 35.00</div>
+            </div>
+            <div class="kpi">
+              <span class="ann" style="top:-11px;left:-11px">5</span>
+              <div class="label">ยอดเรียกเก็บทั้งหมด</div><div class="value">฿151,370</div><div class="sub">67 ใบ · ไม่รวมฉบับร่าง</div>
+            </div>
+            <div class="kpi paid">
+              <div class="label">รับชำระแล้ว</div><div class="value">฿124,180</div><div class="sub">52 ใบ · นับตามงวดของบิล</div>
+            </div>
+            <div class="kpi overdue">
+              <div class="label">ค้างชำระ</div><div class="value">฿27,190</div><div class="sub">15 ใบ · รอชำระ 9 · เกินกำหนด 6</div>
+            </div>
+            <div class="kpi overdue">
+              <span class="ann" style="top:-11px;right:-11px">6</span>
+              <div class="label">ค้างชำระสะสมทุกงวด</div><div class="value">฿27,190</div><div class="sub">ทุกงวด · งวดก่อนหน้าชำระครบแล้ว</div>
+            </div>
+          </div>
+
+          <div class="ad-cols">
+            <div>
+              <div class="card">
+                <div class="card-head">
+                  <span class="ann" style="top:-11px;left:-11px">7</span>
+                  <div class="card-title">การใช้น้ำรายเดือน</div>
+                  <span class="badge water">หน่วย · 12 เดือน</span>
+                </div>
+<svg viewBox="0 0 560 190" width="100%" role="img" aria-label="water">
+<line x1="44.0" y1="148.0" x2="552.0" y2="148.0" style="stroke:var(--ui-border)" stroke-width="1"/>
+<text x="36.0" y="151.5" text-anchor="end" style="fill:var(--ui-muted);font-size:10px">0</text>
+<line x1="44.0" y1="97.2" x2="552.0" y2="97.2" style="stroke:var(--ui-border)" stroke-width="1"/>
+<text x="36.0" y="100.7" text-anchor="end" style="fill:var(--ui-muted);font-size:10px">500</text>
+<line x1="44.0" y1="46.5" x2="552.0" y2="46.5" style="stroke:var(--ui-border)" stroke-width="1"/>
+<text x="36.0" y="50.0" text-anchor="end" style="fill:var(--ui-muted);font-size:10px">1,000</text>
+<path d="M50.2,148.0 V56.6 Q50.2,52.6 54.2,52.6 H76.2 Q80.2,52.6 80.2,56.6 V148.0 Z" style="fill:var(--ui-water)" opacity=".55"/>
+<text x="65.2" y="166" text-anchor="middle" style="fill:var(--ui-muted);font-size:10px">ต.ค.</text>
+<path d="M92.5,148.0 V59.1 Q92.5,55.1 96.5,55.1 H118.5 Q122.5,55.1 122.5,59.1 V148.0 Z" style="fill:var(--ui-water)" opacity=".55"/>
+<text x="107.5" y="166" text-anchor="middle" style="fill:var(--ui-muted);font-size:10px">พ.ย.</text>
+<path d="M134.8,148.0 V60.4 Q134.8,56.4 138.8,56.4 H160.8 Q164.8,56.4 164.8,60.4 V148.0 Z" style="fill:var(--ui-water)" opacity=".55"/>
+<text x="149.8" y="166" text-anchor="middle" style="fill:var(--ui-muted);font-size:10px">ธ.ค.</text>
+<path d="M177.2,148.0 V58.8 Q177.2,54.8 181.2,54.8 H203.2 Q207.2,54.8 207.2,58.8 V148.0 Z" style="fill:var(--ui-water)" opacity=".55"/>
+<text x="192.2" y="166" text-anchor="middle" style="fill:var(--ui-muted);font-size:10px">ม.ค.</text>
+<path d="M219.5,148.0 V53.7 Q219.5,49.7 223.5,49.7 H245.5 Q249.5,49.7 249.5,53.7 V148.0 Z" style="fill:var(--ui-water)" opacity=".55"/>
+<text x="234.5" y="166" text-anchor="middle" style="fill:var(--ui-muted);font-size:10px">ก.พ.</text>
+<path d="M261.8,148.0 V46.2 Q261.8,42.2 265.8,42.2 H287.8 Q291.8,42.2 291.8,46.2 V148.0 Z" style="fill:var(--ui-water)" opacity=".55"/>
+<text x="276.8" y="166" text-anchor="middle" style="fill:var(--ui-muted);font-size:10px">มี.ค.</text>
+<path d="M304.2,148.0 V38.8 Q304.2,34.8 308.2,34.8 H330.2 Q334.2,34.8 334.2,38.8 V148.0 Z" style="fill:var(--ui-water)"/>
+<text x="319.2" y="166" text-anchor="middle" style="fill:var(--ui-muted);font-size:10px">เม.ย.</text>
+<text x="319.2" y="28.8" text-anchor="middle" style="fill:var(--ui-text-2);font-size:11px;font-weight:600">1,115</text>
+<path d="M346.5,148.0 V40.7 Q346.5,36.7 350.5,36.7 H372.5 Q376.5,36.7 376.5,40.7 V148.0 Z" style="fill:var(--ui-water)" opacity=".55"/>
+<text x="361.5" y="166" text-anchor="middle" style="fill:var(--ui-muted);font-size:10px">พ.ค.</text>
+<path d="M388.8,148.0 V48.0 Q388.8,44.0 392.8,44.0 H414.8 Q418.8,44.0 418.8,48.0 V148.0 Z" style="fill:var(--ui-water)" opacity=".55"/>
+<text x="403.8" y="166" text-anchor="middle" style="fill:var(--ui-muted);font-size:10px">มิ.ย.</text>
+<path d="M431.2,148.0 V50.7 Q431.2,46.7 435.2,46.7 H457.2 Q461.2,46.7 461.2,50.7 V148.0 Z" style="fill:var(--ui-water)" opacity=".55"/>
+<text x="446.2" y="166" text-anchor="middle" style="fill:var(--ui-muted);font-size:10px">ก.ค.</text>
+<path d="M473.5,148.0 V49.2 Q473.5,45.2 477.5,45.2 H499.5 Q503.5,45.2 503.5,49.2 V148.0 Z" style="fill:var(--ui-water)" opacity=".55"/>
+<text x="488.5" y="166" text-anchor="middle" style="fill:var(--ui-muted);font-size:10px">ส.ค.</text>
+<path d="M515.8,148.0 V47.4 Q515.8,43.4 519.8,43.4 H541.8 Q545.8,43.4 545.8,47.4 V148.0 Z" style="fill:var(--ui-water)"/>
+<text x="530.8" y="166" text-anchor="middle" style="fill:var(--ui-muted);font-size:10px">ก.ย.</text>
+<text x="530.8" y="37.4" text-anchor="middle" style="fill:var(--ui-text-2);font-size:11px;font-weight:600">1,030</text>
+<line x1="44.0" y1="148.0" x2="552.0" y2="148.0" style="stroke:var(--ui-border-strong)" stroke-width="1"/>
+</svg>
+              </div>
+
+              <div class="card">
+                <div class="card-head">
+                  <div class="card-title">การใช้ไฟรายเดือน</div>
+                  <span class="badge elec">หน่วย · 12 เดือน</span>
+                </div>
+<svg viewBox="0 0 560 190" width="100%" role="img" aria-label="elec">
+<line x1="44.0" y1="148.0" x2="552.0" y2="148.0" style="stroke:var(--ui-border)" stroke-width="1"/>
+<text x="36.0" y="151.5" text-anchor="end" style="fill:var(--ui-muted);font-size:10px">0</text>
+<line x1="44.0" y1="108.4" x2="552.0" y2="108.4" style="stroke:var(--ui-border)" stroke-width="1"/>
+<text x="36.0" y="111.9" text-anchor="end" style="fill:var(--ui-muted);font-size:10px">3,000</text>
+<line x1="44.0" y1="68.8" x2="552.0" y2="68.8" style="stroke:var(--ui-border)" stroke-width="1"/>
+<text x="36.0" y="72.3" text-anchor="end" style="fill:var(--ui-muted);font-size:10px">6,000</text>
+<line x1="44.0" y1="29.2" x2="552.0" y2="29.2" style="stroke:var(--ui-border)" stroke-width="1"/>
+<text x="36.0" y="32.7" text-anchor="end" style="fill:var(--ui-muted);font-size:10px">9,000</text>
+<path d="M50.2,148.0 V59.9 Q50.2,55.9 54.2,55.9 H76.2 Q80.2,55.9 80.2,59.9 V148.0 Z" style="fill:var(--ui-elec)" opacity=".55"/>
+<text x="65.2" y="166" text-anchor="middle" style="fill:var(--ui-muted);font-size:10px">ต.ค.</text>
+<path d="M92.5,148.0 V64.4 Q92.5,60.4 96.5,60.4 H118.5 Q122.5,60.4 122.5,64.4 V148.0 Z" style="fill:var(--ui-elec)" opacity=".55"/>
+<text x="107.5" y="166" text-anchor="middle" style="fill:var(--ui-muted);font-size:10px">พ.ย.</text>
+<path d="M134.8,148.0 V68.6 Q134.8,64.6 138.8,64.6 H160.8 Q164.8,64.6 164.8,68.6 V148.0 Z" style="fill:var(--ui-elec)" opacity=".55"/>
+<text x="149.8" y="166" text-anchor="middle" style="fill:var(--ui-muted);font-size:10px">ธ.ค.</text>
+<path d="M177.2,148.0 V65.7 Q177.2,61.7 181.2,61.7 H203.2 Q207.2,61.7 207.2,65.7 V148.0 Z" style="fill:var(--ui-elec)" opacity=".55"/>
+<text x="192.2" y="166" text-anchor="middle" style="fill:var(--ui-muted);font-size:10px">ม.ค.</text>
+<path d="M219.5,148.0 V57.2 Q219.5,53.2 223.5,53.2 H245.5 Q249.5,53.2 249.5,57.2 V148.0 Z" style="fill:var(--ui-elec)" opacity=".55"/>
+<text x="234.5" y="166" text-anchor="middle" style="fill:var(--ui-muted);font-size:10px">ก.พ.</text>
+<path d="M261.8,148.0 V44.8 Q261.8,40.8 265.8,40.8 H287.8 Q291.8,40.8 291.8,44.8 V148.0 Z" style="fill:var(--ui-elec)" opacity=".55"/>
+<text x="276.8" y="166" text-anchor="middle" style="fill:var(--ui-muted);font-size:10px">มี.ค.</text>
+<path d="M304.2,148.0 V30.0 Q304.2,26.0 308.2,26.0 H330.2 Q334.2,26.0 334.2,30.0 V148.0 Z" style="fill:var(--ui-elec)"/>
+<text x="319.2" y="166" text-anchor="middle" style="fill:var(--ui-muted);font-size:10px">เม.ย.</text>
+<text x="319.2" y="20.0" text-anchor="middle" style="fill:var(--ui-text-2);font-size:11px;font-weight:600">9,240</text>
+<path d="M346.5,148.0 V35.0 Q346.5,31.0 350.5,31.0 H372.5 Q376.5,31.0 376.5,35.0 V148.0 Z" style="fill:var(--ui-elec)" opacity=".55"/>
+<text x="361.5" y="166" text-anchor="middle" style="fill:var(--ui-muted);font-size:10px">พ.ค.</text>
+<path d="M388.8,148.0 V45.7 Q388.8,41.7 392.8,41.7 H414.8 Q418.8,41.7 418.8,45.7 V148.0 Z" style="fill:var(--ui-elec)" opacity=".55"/>
+<text x="403.8" y="166" text-anchor="middle" style="fill:var(--ui-muted);font-size:10px">มิ.ย.</text>
+<path d="M431.2,148.0 V50.1 Q431.2,46.1 435.2,46.1 H457.2 Q461.2,46.1 461.2,50.1 V148.0 Z" style="fill:var(--ui-elec)" opacity=".55"/>
+<text x="446.2" y="166" text-anchor="middle" style="fill:var(--ui-muted);font-size:10px">ก.ค.</text>
+<path d="M473.5,148.0 V51.2 Q473.5,47.2 477.5,47.2 H499.5 Q503.5,47.2 503.5,51.2 V148.0 Z" style="fill:var(--ui-elec)" opacity=".55"/>
+<text x="488.5" y="166" text-anchor="middle" style="fill:var(--ui-muted);font-size:10px">ส.ค.</text>
+<path d="M515.8,148.0 V48.9 Q515.8,44.9 519.8,44.9 H541.8 Q545.8,44.9 545.8,48.9 V148.0 Z" style="fill:var(--ui-elec)"/>
+<text x="530.8" y="166" text-anchor="middle" style="fill:var(--ui-muted);font-size:10px">ก.ย.</text>
+<text x="530.8" y="38.9" text-anchor="middle" style="fill:var(--ui-text-2);font-size:11px;font-weight:600">7,810</text>
+<line x1="44.0" y1="148.0" x2="552.0" y2="148.0" style="stroke:var(--ui-border-strong)" stroke-width="1"/>
+</svg>
+              </div>
+            </div>
+
+            <div>
+              <div class="card">
+                <div class="card-head">
+                  <span class="ann" style="top:-11px;right:-11px">8</span>
+                  <div class="card-title">สถานะบิล · กันยายน 2026</div>
+                </div>
+                <div class="ad-donut">
+                  <svg viewBox="0 0 140 140" width="132" height="132" role="img" aria-label="สัดส่วนสถานะบิล ชำระแล้ว 52 รอชำระ 9 เกินกำหนด 6">
+                    <defs>
+                      <pattern id="ad-hatch-overdue" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                        <rect width="6" height="6" style="fill:var(--ui-overdue-soft)"></rect>
+                        <rect width="3" height="6" style="fill:var(--ui-overdue)"></rect>
+                      </pattern>
+                    </defs>
+                    <g transform="rotate(-90 70 70)" fill="none" stroke-width="20">
+                      <circle cx="70" cy="70" r="52" style="stroke:var(--ui-surface-2)"></circle>
+                      <circle cx="70" cy="70" r="52" style="stroke:var(--ui-paid)" stroke-dasharray="249.58 77.15" stroke-dashoffset="0"></circle>
+                      <circle cx="70" cy="70" r="52" style="stroke:var(--ui-unpaid)" stroke-dasharray="39.89 286.84" stroke-dashoffset="-253.58"></circle>
+                      <circle cx="70" cy="70" r="52" stroke="url(#ad-hatch-overdue)" stroke-dasharray="25.26 301.47" stroke-dashoffset="-297.47"></circle>
+                    </g>
+                    <text x="70" y="70" text-anchor="middle" style="fill:var(--ui-text);font-size:26px;font-weight:600">67</text>
+                    <text x="70" y="88" text-anchor="middle" style="fill:var(--ui-muted);font-size:11px">ใบในงวดนี้</text>
+                  </svg>
+                  <div class="ad-legend">
+                    <div class="row"><span class="ad-sw" style="background:var(--ui-paid)"></span><span>ชำระแล้ว</span><b class="num" style="margin-left:auto">52</b><span class="ui-sub">78%</span></div>
+                    <div class="row"><span class="ad-sw" style="background:var(--ui-unpaid)"></span><span>รอชำระ</span><b class="num" style="margin-left:auto">9</b><span class="ui-sub">13%</span></div>
+                    <div class="row"><span class="ad-sw" style="background:repeating-linear-gradient(45deg,var(--ui-overdue) 0 3px,var(--ui-overdue-soft) 3px 6px)"></span><span>เกินกำหนด</span><b class="num" style="margin-left:auto">6</b><span class="ui-sub">9%</span></div>
+                  </div>
+                </div>
+                <div class="ad-recon">
+                  <span class="ann" style="top:-11px;left:-11px">9</span>
+                  <div class="spread"><span class="ui-muted">ยอดเรียกเก็บทั้งหมด</span><span class="money">151,370.00</span></div>
+                  <div class="spread"><span class="ui-muted">− รับชำระแล้ว</span><span class="money">124,180.00</span></div>
+                  <div class="spread"><b>= ค้างชำระ</b><b class="money">27,190.00</b></div>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="card-head">
+                  <span class="ann" style="top:-11px;right:-11px">10</span>
+                  <div class="card-title">ทางลัด</div>
+                </div>
+                <div class="ad-quick">
+                  <a class="btn primary">รับชำระเงิน</a>
+                  <a class="btn secondary">บิลประจำเดือน</a>
+                  <a class="btn">จดมิเตอร์</a>
+                  <a class="btn">ส่งประกาศ</a>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <span class="ann" style="top:-11px;left:-11px">11</span>
+              <div class="card-title">ห้องที่ค้างชำระ · กันยายน 2026</div>
+              <a class="btn sm ghost">เปิดรายงานรายการค้างชำระ</a>
+            </div>
+            <div class="table-scroll">
+              <table class="zebra compact">
+                <thead>
+                  <tr>
+                    <th>ห้อง</th><th>ผู้เช่า</th><th>งวด</th><th class="num">ยอด (บาท)</th>
+                    <th>ครบกำหนด</th><th class="num">เกินกำหนด</th><th>สถานะ</th><th>LINE</th><th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>302</td><td>นางกาญจนา ใจดี</td><td>ก.ย. 2026</td><td class="num">2,342.00</td>
+                    <td>5 ก.ย. 2026</td><td class="num">3 วัน</td>
+                    <td><span class="badge overdue" data-status="Overdue">เกินกำหนด</span></td>
+                    <td><span class="badge ok">ผูกแล้ว</span></td>
+                    <td><a class="btn sm ghost">รับชำระเงิน</a></td>
+                  </tr>
+                  <tr>
+                    <td>411</td><td>นางสาวปิยะนุช บุญมี</td><td>ก.ย. 2026</td><td class="num">2,126.00</td>
+                    <td>5 ก.ย. 2026</td><td class="num">3 วัน</td>
+                    <td><span class="badge overdue" data-status="Overdue">เกินกำหนด</span></td>
+                    <td><span class="badge ok">ผูกแล้ว</span></td>
+                    <td><a class="btn sm ghost">รับชำระเงิน</a></td>
+                  </tr>
+                  <tr>
+                    <td>108</td><td>นางสาวศิริพร ทองสุข</td><td>ก.ย. 2026</td><td class="num">2,016.00</td>
+                    <td>5 ก.ย. 2026</td><td class="num">3 วัน</td>
+                    <td><span class="badge overdue" data-status="Overdue">เกินกำหนด</span></td>
+                    <td><span class="badge ok">ผูกแล้ว</span></td>
+                    <td><a class="btn sm ghost">รับชำระเงิน</a></td>
+                  </tr>
+                  <tr>
+                    <td>507</td><td>นายวีรยุทธ สมบูรณ์</td><td>ก.ย. 2026</td><td class="num">1,958.00</td>
+                    <td>5 ก.ย. 2026</td><td class="num">3 วัน</td>
+                    <td><span class="badge overdue" data-status="Overdue">เกินกำหนด</span></td>
+                    <td><span class="badge neutral">ไม่มี LINE</span></td>
+                    <td><a class="btn sm ghost">รับชำระเงิน</a></td>
+                  </tr>
+                  <tr>
+                    <td>405</td><td>นายธนกร แสงทอง</td><td>ก.ย. 2026</td><td class="num">1,884.00</td>
+                    <td>5 ก.ย. 2026</td><td class="num">3 วัน</td>
+                    <td><span class="badge overdue" data-status="Overdue">เกินกำหนด</span></td>
+                    <td><span class="badge ok">ผูกแล้ว</span></td>
+                    <td><a class="btn sm ghost">รับชำระเงิน</a></td>
+                  </tr>
+                  <tr>
+                    <td>214</td><td>นายอนุชา พรมมา</td><td>ก.ย. 2026</td><td class="num">1,880.00</td>
+                    <td>5 ก.ย. 2026</td><td class="num">3 วัน</td>
+                    <td><span class="badge overdue" data-status="Overdue">เกินกำหนด</span></td>
+                    <td><span class="badge neutral">ไม่มี LINE</span></td>
+                    <td><a class="btn sm ghost">รับชำระเงิน</a></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="card-foot">
+              <span class="ui-sub">รวมเกินกำหนด 6 ห้อง · 12,206.00 บาท — อีก 9 ใบ (14,984.00 บาท) ครบกำหนดวันนี้ จึงยังเป็น รอชำระ</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<ol class="annotations">
+  <li><b>Sidebar, built from the role matrix.</b> The header shows the apartment name from Settings with <span class="badge neutral">Juristic Platform</span> in 11 px beneath it (D-01). The eight working pages carry the D-02 Thai labels in workflow order; ผู้ใช้งานระบบ and ตั้งค่า sit under a ระบบ divider because they are configured once, not used daily. The <code>.count</code> pill on บิลประจำเดือน is the outstanding-bill count (15) for the selected period, not a notification badge — it disappears at zero. Staff render a three-item version of this list; the items are never rendered-and-hidden, because D-36 requires the amounts behind them to be absent from staff responses, not merely invisible.</li>
+  <li><b>Month picker — the only control on the page.</b> D-41 scopes <em>every</em> tile and the donut to one selected billing period, defaulting to the current calendar month. ‹ and › step one month and reload with <code>?period=YYYY-MM</code>; the label is the D-03 display form กันยายน 2026 while the query string stays ISO. Stepping past the newest period with data disables ›. The two 12-month charts deliberately do <em>not</em> follow the picker — they always end at the selected period and look eleven months back, which is what makes the current column comparable.</li>
+  <li><b>Room tiles — the only figures reproduced verbatim from PRD §16.</b> ห้องทั้งหมด = <code>COUNT(rooms)</code>; มีผู้เช่า = <code>COUNT(rooms WHERE status='Occupied')</code>; ห้องว่าง is the difference, never a third stored count. They are period-independent, which is why they are also the only money-free tiles staff can see. Not clickable in v1 — filtering ห้องพัก by status is that page's job.</li>
+  <li><b>Utility tiles carry their own arithmetic in the <code>.sub</code> line.</b> Each is <code>SUM(bill_items.amount)</code> by <code>item_type</code> over approved bills of the period, and the sub-line restates it as units × rate so an examiner can divide on the spot. The left rule is the utility accent (water / elec / fee) — the same three colours the LINE bill and the receipt use, so the colour means "ค่าน้ำ" everywhere in the product, never "series 1".</li>
+  <li><b>ยอดเรียกเก็บทั้งหมด excludes ฉบับร่าง, and says so.</b> "ไม่รวมฉบับร่าง" is not decoration: D-41 defines approved as the <em>stored</em> status being Unpaid or Paid, so a Draft bill contributes to no money tile. Without the sub-line the first question at the demo is why the total moved when nothing was paid. In this mockup all 67 bills are approved, so the three utility tiles sum exactly to this one: 18,540.00 + 62,480.00 + 70,350.00 = 151,370.00.</li>
+  <li><b>ค้างชำระสะสมทุกงวด is the one deliberately all-time tile</b> (D-41). It equals the period tile here only because D-44's seed leaves every earlier period fully paid; the sub-line says so, otherwise the repeated ฿27,190 reads as a copy-paste defect. In a real second month of operation the two diverge, and that divergence is the number the office chases.</li>
+  <li><b>12-month usage charts, inline SVG, one series each.</b> Units, not baht — the money view is the tiles, and a second y-axis is never added to a chart. One series means no legend: the card title names it. Only two bars are labelled, the twelve-month peak (เม.ย. 2026, hot season) and the selected period, so the eye lands on the comparison instead of reading twelve numbers. The other bars sit at 55% opacity, which is emphasis, not a second category. Bars are anchored to the baseline with 4 px rounded tops and a 12 px gap. In the running application the same series arrive from <code>GET /api/dashboard/charts?period=2026-09</code> and are drawn by Chart.js; hovering a bar shows "เม.ย. 2026 · 1,115 หน่วย".</li>
+  <li><b>Bill-status donut.</b> Counts, not amounts — the money is already in three tiles above, and D-41 specifies this chart as a Paid vs Unpaid+Overdue <em>count</em>. The centre carries the total (67 ใบ) so the ring never has to be measured. เกินกำหนด is hatched as well as red: red and amber sit closer together than a colourblind reader can resolve, and the palette itself is fixed by the design system, so texture is the available fix. Every slice is also named and counted in the legend, so identity is never carried by colour alone. Segments are separated by a 4 px gap.</li>
+  <li><b>The reconciliation block — the identity D-41 requires to hold on screen.</b> Billed − collected = outstanding, printed as a subtraction rather than left for the reader to do across three tiles. If these three ever disagree, a bill in the period is missing one of its three <code>bill_items</code>, which is a defect with its own assertion. Two decimals here, because this is a money statement and not a headline tile (D-03).</li>
+  <li><b>ทางลัด — navigation, not new actions.</b> Four links to pages that already exist, ordered by how often the office opens them: รับชำระเงิน is <code>.btn.primary</code> because taking cash at the counter is the daily job; บิลประจำเดือน is <code>.btn.secondary</code> because it is the monthly one. Nothing here performs an action, so nothing here opens a D-39 dialog — a "generate bills" button on the Dashboard would be a destructive action two clicks from a login.</li>
+  <li><b>ห้องที่ค้างชำระ — the one list on the page.</b> Sorted by amount descending, capped at the period's overdue bills; the ghost link opens D-42's full arrears report, which ages every Unpaid bill across all periods into 1-7 / 8-30 / 31-60 / 61+ buckets. Every status cell carries <code>data-status="Overdue"</code> (D-02) so a test asserts the English identifier while the reader sees เกินกำหนด. The LINE column exists because D-44 seeds 13 tenants with no binding and D-30 defines a ไม่มี LINE path — a room that cannot be reminded is a room the office must phone. The row action jumps to รับชำระเงิน with the room pre-filled; it never confirms a payment from this page. The footer states the split between the six overdue bills and the nine that merely came due today, so 15 ใบ in the tile above reconciles with 6 rows in the table.</li>
+</ol>
+
+<h4>Alternate view — staff phone 390 px, the reduced ภาพรวม of D-36</h4>
+
+<p>The same route, the same template, a different role. Shown on <strong>3 ก.ย. 2026</strong>, mid-round: the desktop frame above is the same billing period five days later, after the reading round closed and all 67 bills were approved.</p>
+
+<div class="device phone">
+  <div class="screen">
+    <div class="app">
+      <div class="main">
+        <header class="topbar">
+          <div class="title">ภาพรวม</div>
+          <div class="actions"><span class="ui-sub">ก.ย. 2026</span></div>
+        </header>
+
+        <div class="page">
+          <div class="notice">
+            <span class="ann" style="top:-11px;right:-4px">12</span>
+            <b>บัญชีเจ้าหน้าที่</b>
+            หน้านี้แสดงเฉพาะจำนวนห้องและความคืบหน้าการจดมิเตอร์
+          </div>
+
+          <div class="kpi-grid">
+            <div class="kpi neutral"><div class="label">ห้องทั้งหมด</div><div class="value">80</div></div>
+            <div class="kpi"><div class="label">มีผู้เช่า</div><div class="value">67</div></div>
+            <div class="kpi neutral"><div class="label">ห้องว่าง</div><div class="value">13</div><div class="sub">ไม่ต้องจด</div></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <span class="ann" style="top:-11px;left:-4px">13</span>
+              <div class="card-title">รอบ กันยายน 2026</div>
+            </div>
+            <div class="progress-label"><span>จดแล้ว 42/67 ห้อง</span><span>63%</span></div>
+            <div class="progress"><div class="bar" style="width:63%"></div></div>
+            <p class="ui-sub" style="margin-top:8px">เหลืออีก 25 ห้อง · ชั้น 4 และ ชั้น 5</p>
+            <a class="btn primary lg block">ไปจดมิเตอร์</a>
+          </div>
+        </div>
+
+        <nav class="bottom-tabs">
+          <span class="ann" style="top:-11px;left:8px">14</span>
+          <a class="tab active">
+            <span class="ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect></svg></span>
+            ภาพรวม
+          </a>
+          <a class="tab">
+            <span class="ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="4" y="3" width="16" height="18"></rect><path d="M10 21v-4h4v4"></path><path d="M8.5 8h0M12 8h0M15.5 8h0M8.5 12h0M12 12h0M15.5 12h0"></path></svg></span>
+            ห้องพัก
+          </a>
+          <a class="tab">
+            <span class="ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 12l4-3"></path><path d="M12 3v2M21 12h-2M12 21v-2M3 12h2"></path></svg></span>
+            จดมิเตอร์
+          </a>
+        </nav>
+      </div>
+    </div>
+  </div>
+</div>
+
+<ol class="annotations" start="12">
+  <li><b>The reduction is stated, not hidden.</b> One <code>.notice</code> explains why there are three tiles instead of ten. D-36 is emphatic that money is <em>absent</em> from staff responses rather than hidden in the template, so this banner is the honest UI for a server response that genuinely contains no amounts — and a tester can assert that no baht figure appears anywhere in the staff response body.</li>
+  <li><b>Reading progress replaces the money block.</b> The counter is the same X/Y that D-15 recomputes after every per-room save and that D-45's first acceptance target measures (67 rooms in ≤ 15 minutes). The denominator is billable rooms only — the 13 vacant rooms are excluded, which is why the ห้องว่าง tile carries "ไม่ต้องจด". The remaining-floors line tells the person holding the phone where to walk next; ไปจดมิเตอร์ is the one 44 px primary action and lands on จดมิเตอร์ with the ยังไม่จด filter already applied (D-15's default).</li>
+  <li><b>Bottom tabs, three items, matching the role matrix exactly.</b> The sidebar is not narrowed on a phone, it is replaced: the layout switch is a container query on <code>.app</code> at 767 px, so this same markup renders the sidebar on the desktop frame and the tab bar here. Every tap target is at least 44 × 44 px (D-45). A staff user typing an admin URL by hand still gets the Thai 403 page of D-40, not a hidden menu item.</li>
+</ol>
+
+<h4>States — Dashboard</h4>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>State</th><th>Trigger</th><th>What the screen does</th><th>Thai copy</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><span class="badge neutral">Empty — no bills</span></td>
+      <td>A period whose bills are all still ฉบับร่าง, or a period before the system went live</td>
+      <td>Room tiles keep their real values (they are period-independent); the six money tiles render <span class="badge neutral">฿0</span> with the sub-line explaining why; the donut, the arrears card and the reconciliation block are replaced by one <code>.empty-state</code> with a primary action to Monthly Billing. The two 12-month charts still draw, with a zero column for this period.</td>
+      <td>Money tile sub-line: <b>ยังไม่มีบิลที่อนุมัติในรอบนี้</b><br>Empty state: <b>ยังไม่มีบิลในรอบนี้</b> + button <b>ไปที่บิลประจำเดือน</b></td>
+    </tr>
+    <tr>
+      <td><span class="badge neutral">Empty — no arrears</span></td>
+      <td>Every bill of the period is ชำระแล้ว</td>
+      <td>Only the arrears card swaps to its empty state; the donut becomes a single full ring and the ค้างชำระ tile reads ฿0. Nothing else changes.</td>
+      <td><b>ไม่มีห้องค้างชำระ 🎉</b> <span style="color:var(--muted)">(verbatim from D-40)</span></td>
+    </tr>
+    <tr>
+      <td><span class="badge info">Loading</span></td>
+      <td>Page render, and every month change</td>
+      <td>Tiles render server-side, so they arrive complete — there is no tile skeleton. The two charts and the donut are the only asynchronous parts (<code>/api/dashboard/charts</code>); each shows <code>.skeleton</code> at the chart's height until the series land. The arrears table shows six <code>.skeleton.row</code> placeholders. Month-picker arrows are disabled during the fetch.</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td><span class="badge bad">Error — charts failed</span></td>
+      <td>The chart endpoint returns 500, or the fetch times out</td>
+      <td>Partial failure is contained: the tiles, the arrears table and the reconciliation block stay on screen, and only the three chart bodies are replaced by a <code>.notice.bad</code> with a retry. The page is never blanked because a chart failed.</td>
+      <td><b>โหลดกราฟไม่สำเร็จ</b> / <b>ลองอีกครั้ง</b></td>
+    </tr>
+    <tr>
+      <td><span class="badge bad">Error — page failed</span></td>
+      <td>500 from <code>services/reports.js</code></td>
+      <td>The shared Thai 500 page inside the normal shell, so the sidebar still works and the user is one click from any other page.</td>
+      <td><b>ระบบขัดข้องชั่วคราว</b> / กรุณาลองอีกครั้งในอีกสักครู่</td>
+    </tr>
+    <tr>
+      <td><span class="badge bad">Error — bad period</span></td>
+      <td><code>?period=</code> is malformed, or names a future month</td>
+      <td>422 handled in place: the page renders the current month and shows a warning banner rather than a blank error page. The picker never produces this; only a hand-edited URL does.</td>
+      <td><b>ไม่พบข้อมูลของงวดที่เลือก</b> / แสดงข้อมูลของ กันยายน 2026 แทน</td>
+    </tr>
+    <tr>
+      <td><span class="badge paid">Success</span></td>
+      <td>Normal admin load</td>
+      <td>The default frame. No toast and no flash message — arriving on a correct Dashboard is its own confirmation. A flash <em>does</em> appear when the user was redirected here after an action on another page (for example a completed bulk approval).</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td><span class="badge warn">Permission denied</span></td>
+      <td>A staff session opens <code>/dashboard</code></td>
+      <td>Not a 403: D-36 grants staff a reduced ภาพรวม, so the same route renders the three room tiles and the reading progress, and the response body contains no amount at all. The 403 page applies to the routes staff genuinely may not open — ผู้เช่า, บิลประจำเดือน, รับชำระเงิน, ใบเสร็จ, ประกาศ, รายงาน, ผู้ใช้งานระบบ, ตั้งค่า.</td>
+      <td>403 page: <b>ไม่มีสิทธิ์เข้าถึงหน้านี้</b> / บัญชีของคุณเป็นเจ้าหน้าที่ กรุณาติดต่อนิติบุคคล + button <b>ไปที่จดมิเตอร์</b></td>
+    </tr>
+    <tr>
+      <td><span class="badge warn">Session expired</span></td>
+      <td>The 8-hour rolling session lapses while the page is open</td>
+      <td>The next navigation or chart fetch returns 401 and the browser is sent to <code>/login</code> with the session-expired banner; the intended URL is restored after signing in.</td>
+      <td><b>เซสชันหมดอายุ</b> / กรุณาเข้าสู่ระบบอีกครั้ง</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h4>Thai copy — Dashboard</h4>
+<div class="table-wrap">
+<table class="zebra">
+  <thead><tr><th>Element</th><th>Thai copy</th><th>Source / formula</th></tr></thead>
+  <tbody>
+    <tr><td>Browser tab title</td><td>ภาพรวม · ศุภาลัย เรสซิเดนซ์</td><td>D-01, D-02</td></tr>
+    <tr><td>Page title</td><td>ภาพรวม</td><td>D-02 mapping of <em>Dashboard</em></td></tr>
+    <tr><td>Month picker label</td><td>กันยายน 2026</td><td>D-03 (period <code>2026-09</code> displayed in full Thai month + Gregorian year)</td></tr>
+    <tr><td>Freshness line</td><td>ข้อมูล ณ 8 ก.ย. 2026 09:12 น.</td><td>D-03 short date + 24-hour time with น.</td></tr>
+    <tr><td>KPI 1</td><td>ห้องทั้งหมด</td><td><code>COUNT(rooms)</code></td></tr>
+    <tr><td>KPI 2</td><td>มีผู้เช่า</td><td><code>COUNT(rooms WHERE status='Occupied')</code></td></tr>
+    <tr><td>KPI 3</td><td>ห้องว่าง</td><td>ห้องทั้งหมด − มีผู้เช่า</td></tr>
+    <tr><td>KPI 4</td><td>ยอดค่าน้ำเดือนนี้</td><td><code>SUM(bill_items.amount)</code> where <code>item_type='water'</code>, approved bills of the period</td></tr>
+    <tr><td>KPI 5</td><td>ยอดค่าไฟเดือนนี้</td><td>same, <code>item_type='electric'</code></td></tr>
+    <tr><td>KPI 6</td><td>ยอดค่าส่วนกลาง</td><td>same, <code>item_type='common'</code></td></tr>
+    <tr><td>KPI 7</td><td>ยอดเรียกเก็บทั้งหมด</td><td><code>SUM(bills.total)</code> where stored status is Unpaid or Paid</td></tr>
+    <tr><td>KPI 8</td><td>รับชำระแล้ว</td><td><code>SUM(bills.total)</code> where status = Paid, counted by billing period</td></tr>
+    <tr><td>KPI 9</td><td>ค้างชำระ</td><td>KPI 7 − KPI 8</td></tr>
+    <tr><td>KPI 10</td><td>ค้างชำระสะสมทุกงวด</td><td><code>SUM(total)</code> over every Unpaid bill of every period (all-time, D-41)</td></tr>
+    <tr><td>Chart titles</td><td>การใช้น้ำรายเดือน · การใช้ไฟรายเดือน</td><td>PRD §17, D-41</td></tr>
+    <tr><td>Chart unit badge</td><td>หน่วย · 12 เดือน</td><td>D-03 (units are integers with thousands separators)</td></tr>
+    <tr><td>Donut title</td><td>สถานะบิล · กันยายน 2026</td><td>D-41</td></tr>
+    <tr><td>Donut centre</td><td>67 / ใบในงวดนี้</td><td>—</td></tr>
+    <tr><td>Donut legend</td><td>ชำระแล้ว · รอชำระ · เกินกำหนด</td><td>D-02 status mapping (Paid / Unpaid / Overdue)</td></tr>
+    <tr><td>Reconciliation rows</td><td>ยอดเรียกเก็บทั้งหมด · − รับชำระแล้ว · = ค้างชำระ</td><td>D-41 identity</td></tr>
+    <tr><td>Quick actions title</td><td>ทางลัด</td><td>—</td></tr>
+    <tr><td>Quick action buttons</td><td>รับชำระเงิน · บิลประจำเดือน · จดมิเตอร์ · ส่งประกาศ</td><td>D-02 page mapping</td></tr>
+    <tr><td>Arrears card title</td><td>ห้องที่ค้างชำระ · กันยายน 2026</td><td>PRD §17 "ห้องที่ยังไม่ชำระเงิน"</td></tr>
+    <tr><td>Arrears columns</td><td>ห้อง · ผู้เช่า · งวด · ยอด (บาท) · ครบกำหนด · เกินกำหนด · สถานะ · LINE</td><td>D-42 report 2</td></tr>
+    <tr><td>Arrears link</td><td>เปิดรายงานรายการค้างชำระ</td><td>D-42</td></tr>
+    <tr><td>Arrears row action</td><td>รับชำระเงิน</td><td>D-02, D-24</td></tr>
+    <tr><td>LINE binding badges</td><td>ผูกแล้ว · ไม่มี LINE</td><td>D-29, D-30</td></tr>
+    <tr><td>Status badges</td><td>ฉบับร่าง · รอชำระ · ชำระแล้ว · เกินกำหนด</td><td>D-02, each with <code>data-status="Draft|Unpaid|Paid|Overdue"</code></td></tr>
+    <tr><td>Staff banner</td><td>บัญชีเจ้าหน้าที่ / หน้านี้แสดงเฉพาะจำนวนห้องและความคืบหน้าการจดมิเตอร์</td><td>D-36</td></tr>
+    <tr><td>Staff progress</td><td>จดแล้ว 42/67 ห้อง · เหลืออีก 25 ห้อง · ชั้น 4 และ ชั้น 5</td><td>D-15 counter</td></tr>
+    <tr><td>Staff primary button</td><td>ไปจดมิเตอร์</td><td>D-02, D-15</td></tr>
+    <tr><td>Staff tabs</td><td>ภาพรวม · ห้องพัก · จดมิเตอร์</td><td>D-36 role matrix</td></tr>
+    <tr><td>Empty — no bills</td><td>ยังไม่มีบิลในรอบนี้ + <b>ไปที่บิลประจำเดือน</b></td><td>D-40</td></tr>
+    <tr><td>Empty — no arrears</td><td>ไม่มีห้องค้างชำระ 🎉</td><td>D-40 (verbatim)</td></tr>
+    <tr><td>Error — charts</td><td>โหลดกราฟไม่สำเร็จ + <b>ลองอีกครั้ง</b></td><td>D-40</td></tr>
+    <tr><td>Error — bad period</td><td>ไม่พบข้อมูลของงวดที่เลือก / แสดงข้อมูลของ กันยายน 2026 แทน</td><td>D-40</td></tr>
+    <tr><td>403 page</td><td>ไม่มีสิทธิ์เข้าถึงหน้านี้ / บัญชีของคุณเป็นเจ้าหน้าที่ กรุณาติดต่อนิติบุคคล + <b>ไปที่จดมิเตอร์</b></td><td>D-40 (verbatim)</td></tr>
+    <tr><td>Logout action</td><td>ออกจากระบบ</td><td>D-37 — a plain POST, no confirmation dialog</td></tr>
+    <tr><td>Confirmation dialogs</td><td style="color:var(--muted)">none — the six D-39 call sites all live on other screens</td><td>D-39</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="callout note">
+  <div class="title">Handover notes for the engineer</div>
+  <ul>
+    <li><b>Ten tiles, one query.</b> All ten KPI values come from <code>services/reports.js</code> in the page render, not from <code>/api/dashboard/charts</code>; only the three chart series are fetched. That keeps the D-45 target of a list page in ≤ 2 seconds honest even when the chart endpoint is slow.</li>
+    <li><b>The staff branch is a different query, not a different template.</b> <code>views/pages/dashboard.ejs</code> renders whatever tiles the controller passes; the controller asks <code>services/reports.js</code> for the staff set when <code>req.user.role === 'staff'</code>, so no amount is ever serialised into a staff response (D-36).</li>
+    <li><b>Charts in production are Chart.js, not this SVG.</b> The inline SVG here exists so the mockup needs no library; the shipped page uses the same geometry — one series per chart, units on the y-axis, the current period as the last column, direct labels only on the peak and the current period.</li>
+    <li><b>The hatched เกินกำหนด segment is a requirement, not decoration.</b> <code>--ui-overdue</code> and <code>--ui-unpaid</code> are 11.6 ΔE apart in normal vision and 5.3 ΔE under protanopia — below the readable floor. The design system's status colours are fixed, so the segment carries a 45° texture and the legend carries the count. Reproduce both in Chart.js with a pattern fill, or the chart is unreadable for roughly one examiner in twelve.</li>
+    <li><b>Every status element needs <code>data-status</code>.</b> Six table cells and three legend rows on this page. It is what lets the test plan assert on Draft / Unpaid / Paid / Overdue while the screen stays Thai (D-02).</li>
+  </ul>
+</div>
+
+</section>

@@ -1,0 +1,1255 @@
+<section id="rooms-tenants">
+<h2>Rooms &amp; Tenants</h2>
+
+<p>Five screens hold the master data every other screen reads: the room a bill is addressed to, the area the common-area fee is computed from, the meter baselines the very first reading resolves against, and the tenant whose LINE account receives the message. Nothing here computes money, but every number here ends up on a receipt, so the screens are built around three rules the decision log makes non-negotiable: room status is <em>derived</em> from the tenant link and is never a field (D-07), baselines live on the room and are frozen the moment the room has a reading (D-06), and a LINE User ID is never typed by a human — it arrives through the six-character code flow (D-29).</p>
+
+<div class="callout note">
+  <div class="title">How to read these screens</div>
+  <p>Every mockup is real HTML using only the <code>tokens.css</code> product classes, rendered at the surface it is designed for: the Admin desktop frame is ~1,000&nbsp;px of a 1,280&nbsp;px browser, the phone frame is 390&nbsp;px. Numbered markers on the mockup match the list beneath it. All names, phone numbers and LINE display names are fictional seed values (D-44); room 205 carries the PRD §28 demo data verbatim.</p>
+</div>
+
+<style>
+/* Layout specifics for the Rooms &amp; Tenants mockups only. Every rule is scoped
+   under .screen so it cannot reach the documentation stylesheet. */
+#rooms-tenants .screen{position:relative}
+#rooms-tenants .screen .cols{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:var(--ui-sp-4);align-items:start}
+#rooms-tenants .screen .cols-even{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:var(--ui-sp-4);align-items:start}
+#rooms-tenants .screen .facts{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:var(--ui-sp-2) var(--ui-sp-4);margin:0}
+#rooms-tenants .screen .facts dt{font-size:var(--ui-fs-sm);color:var(--ui-muted)}
+#rooms-tenants .screen .facts dd{margin:0;font-size:var(--ui-fs-md)}
+#rooms-tenants .screen .code-slip{display:flex;flex-direction:column;align-items:center;gap:var(--ui-sp-1);padding:var(--ui-sp-4);border:1px dashed var(--ui-border-strong);border-radius:var(--ui-r-md);background:var(--ui-brand-soft)}
+#rooms-tenants .screen .code-slip .code{font-family:var(--ui-mono);font-size:var(--ui-fs-3xl);font-weight:var(--ui-fw-bold);letter-spacing:.24em;color:var(--ui-brand);padding-left:.24em}
+#rooms-tenants .screen .spark{display:block;width:100%;height:112px}
+#rooms-tenants .screen .form-narrow{max-width:660px}
+</style>
+
+<h3>1. Rooms list — <code>GET /rooms</code></h3>
+
+<div class="screen-meta">
+  <span><b>Page:</b> Rooms · ห้องพัก</span>
+  <span><b>Roles:</b> admin (full) · staff (read-only, no amounts)</span>
+  <span><b>Entry points:</b> sidebar ห้องพัก · staff bottom tab ห้องพัก · Dashboard room-count tile</span>
+  <span><b>Primary action:</b> เพิ่มห้อง (admin only)</span>
+</div>
+
+<div class="device desktop">
+  <div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/rooms</span></div>
+  <div class="screen">
+    <div class="app" style="min-height:704px">
+      <nav class="sidebar">
+        <div class="brand"><b>ศุภาลัย เรสซิเดนซ์</b><span>Juristic Platform</span></div>
+        <a class="nav-item">📊 ภาพรวม</a>
+        <a class="nav-item">📝 จดมิเตอร์</a>
+        <a class="nav-item">🧾 บิลประจำเดือน <span class="count">3</span></a>
+        <a class="nav-item">💵 รับชำระเงิน</a>
+        <a class="nav-item active">🚪 ห้องพัก</a>
+        <a class="nav-item">👤 ผู้เช่า</a>
+        <a class="nav-item">📢 ประกาศ</a>
+        <a class="nav-item">📈 รายงาน</a>
+        <div class="nav-section">ตั้งค่าระบบ</div>
+        <a class="nav-item">⚙️ ตั้งค่า</a>
+        <a class="nav-item">👥 ผู้ใช้งานระบบ</a>
+        <div class="user">นิติบุคคล · admin · ออกจากระบบ</div>
+      </nav>
+      <div class="main">
+        <div class="topbar">
+          <span class="title">ห้องพัก</span>
+          <span class="actions"><button class="btn primary">เพิ่มห้อง</button></span>
+        </div>
+        <div class="page">
+          <div class="toolbar">
+            <span class="search" style="flex:1;min-width:220px"><span aria-hidden="true">🔍</span><input type="search" placeholder="ค้นหาหมายเลขห้อง หรือชื่อผู้เช่า" value=""></span>
+            <select class="select" style="width:150px"><option>ทุกชั้น</option><option>ชั้น 1</option><option selected>ชั้น 2</option><option>ชั้น 3</option><option>ชั้น 4</option><option>ชั้น 5</option></select>
+          </div>
+          <div class="chip-row">
+            <span class="chip active">ทั้งหมด <span class="count">80</span></span>
+            <span class="chip">มีผู้เช่า <span class="count">67</span></span>
+            <span class="chip">ว่าง <span class="count">13</span></span>
+            <span class="chip">ปิดใช้งาน <span class="count">0</span></span>
+          </div>
+          <div class="table-scroll">
+            <table class="zebra sticky">
+              <thead>
+                <tr>
+                  <th scope="col">ห้อง</th><th scope="col">ชั้น</th><th scope="col">ประเภท</th>
+                  <th scope="col" class="num">ขนาด (ตร.ม.)</th><th scope="col">ผู้เช่าปัจจุบัน</th>
+                  <th scope="col">สถานะ</th><th scope="col"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td><b>201</b></td><td>2</td><td>สตูดิโอ</td><td class="num">30.00</td><td>สมหญิง รักเรียน</td><td><span class="badge occupied">มีผู้เช่า</span></td><td><button class="btn ghost sm">ดูรายละเอียด</button></td></tr>
+                <tr><td><b>202</b></td><td>2</td><td>สตูดิโอ</td><td class="num">30.00</td><td>อารยา ศรีสุวรรณ</td><td><span class="badge occupied">มีผู้เช่า</span></td><td><button class="btn ghost sm">ดูรายละเอียด</button></td></tr>
+                <tr><td><b>203</b></td><td>2</td><td>สตูดิโอ</td><td class="num">30.00</td><td class="ui-muted">—</td><td><span class="badge vacant">ว่าง</span></td><td><button class="btn ghost sm">ดูรายละเอียด</button></td></tr>
+                <tr><td><b>204</b></td><td>2</td><td>สตูดิโอ</td><td class="num">30.00</td><td>ธนกฤต วงศ์ทอง</td><td><span class="badge occupied">มีผู้เช่า</span></td><td><button class="btn ghost sm">ดูรายละเอียด</button></td></tr>
+                <tr class="is-selected"><td><b>205</b></td><td>2</td><td>สตูดิโอ</td><td class="num">30.00</td><td>สมชาย ใจดี</td><td><span class="badge occupied">มีผู้เช่า</span></td><td><button class="btn ghost sm">ดูรายละเอียด</button></td></tr>
+                <tr><td><b>206</b></td><td>2</td><td>สตูดิโอ</td><td class="num">30.00</td><td>ปรียานุช แก้วมณี</td><td><span class="badge occupied">มีผู้เช่า</span></td><td><button class="btn ghost sm">ดูรายละเอียด</button></td></tr>
+                <tr><td><b>207</b></td><td>2</td><td>สตูดิโอ</td><td class="num">30.00</td><td>กิตติศักดิ์ พูนสิน</td><td><span class="badge occupied">มีผู้เช่า</span></td><td><button class="btn ghost sm">ดูรายละเอียด</button></td></tr>
+                <tr><td><b>208</b></td><td>2</td><td>สตูดิโอ</td><td class="num">30.00</td><td class="ui-muted">—</td><td><span class="badge vacant">ว่าง</span></td><td><button class="btn ghost sm">ดูรายละเอียด</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pagination">
+            <a class="page-link">‹</a><a class="page-link active">1</a><a class="page-link">2</a><a class="page-link">3</a>
+            <a class="page-link">…</a><a class="page-link">10</a><a class="page-link">›</a>
+            <span class="page-info">แสดง 1–8 จาก 80 ห้อง</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <span class="ann" style="top:25px;left:2px">1</span>
+    <span class="ann" style="top:16px;right:7px">2</span>
+    <span class="ann" style="top:81px;left:227px">3</span>
+    <span class="ann" style="top:81px;right:11px">4</span>
+    <span class="ann" style="top:135px;left:227px">5</span>
+    <span class="ann" style="top:447px;left:228px">6</span>
+    <span class="ann" style="top:447px;right:294px">7</span>
+    <span class="ann" style="top:447px;right:184px">8</span>
+    <span class="ann" style="top:677px;left:227px">9</span>
+  </div>
+</div>
+
+<ol class="annotations">
+  <li><span class="ann">1</span> <b>Admin sidebar, ห้องพัก active.</b> Staff never render this markup — their shell is the three bottom tabs shown in the alternate frame below (D-36).</li>
+  <li><span class="ann">2</span> <b>เพิ่มห้อง</b> — the one page-level primary action, admin only. Opens the Rooms form (screen 3). The button is absent, not disabled, for staff: a control a role can never use is not rendered.</li>
+  <li><span class="ann">3</span> <b>Search.</b> One box matching room code <em>or</em> tenant name, submitted as <code>?q=</code> on Enter or blur. No live search: the list is 80 rows and a keystroke-per-request loop is a cost with no benefit. Typing <code>205</code> and pressing Enter lands directly on the filtered list, not on the detail page.</li>
+  <li><span class="ann">4</span> <b>Floor filter</b> — reads <code>rooms.floor</code>, the stored column, never a substring of the room code, so <code>A-205</code> filters correctly (D-47). Combines with the search and the status chip as <code>?q=&amp;floor=2&amp;status=all</code>.</li>
+  <li><span class="ann">5</span> <b>Status chips</b> with live counts, 80 / 67 / 13 / 0. ปิดใช้งาน is the only way to see deactivated rooms — they are excluded from every other view (D-47). Clicking a chip reloads the list; the active chip is also the page's <code>?status=</code> value, so the URL is shareable.</li>
+  <li><span class="ann">6</span> <b>Room code</b> is the row's identity and the link target (<code>/rooms/205</code>). The whole row is clickable; the trailing ดูรายละเอียด button exists for keyboard and screen-reader users, who never get a row-click affordance.</li>
+  <li><span class="ann">7</span> <b>ผู้เช่าปัจจุบัน</b> renders the single Active tenant (D-10) and links to that tenant. A vacant room shows an em dash, never an empty cell, so a missing value is distinguishable from a rendering fault.</li>
+  <li><span class="ann">8</span> <b>Status badge.</b> Derived from the tenant link and read-only everywhere in the product — there is no status control on any room form (D-07). ว่าง is grey, never red: an empty room is a fact, not a failure.</li>
+  <li><span class="ann">9</span> <b>Pagination</b>, 8 rows per page over 80 rooms. Server-side <code>LIMIT/OFFSET</code>; the counter reads <code>แสดง 1–8 จาก 80 ห้อง</code> so the operator can tell a filtered list from a short one. Target: this page renders in ≤ 2 s against the full seed (D-45).</li>
+</ol>
+
+<p><b>Alternate state — the same page for a staff login on a 390&nbsp;px phone.</b> The layout switch is a container query on <code>.app</code>, so this is the same template and the same stylesheet, not a mobile variant (D-45).</p>
+
+<div class="device phone">
+  <div class="screen">
+    <div class="app" style="min-height:744px;flex-direction:column">
+      <div class="main">
+        <div class="topbar"><span class="title">ห้องพัก</span><span class="actions"><span class="badge neutral">อ่านอย่างเดียว</span></span></div>
+        <div class="page">
+          <div class="search" style="margin-bottom:12px"><span aria-hidden="true">🔍</span><input type="search" placeholder="ค้นหาห้อง"></div>
+          <div class="chip-row">
+            <span class="chip active">ทั้งหมด <span class="count">80</span></span>
+            <span class="chip">มีผู้เช่า <span class="count">67</span></span>
+            <span class="chip">ว่าง <span class="count">13</span></span>
+          </div>
+          <div class="group-head">ชั้น 2</div>
+          <div class="list-item"><span class="lead">204</span><span class="meta">ธนกฤต วงศ์ทอง · 30.00 ตร.ม.</span><span class="end"><span class="badge occupied">มีผู้เช่า</span></span></div>
+          <div class="list-item"><span class="lead">205</span><span class="meta">สมชาย ใจดี · 30.00 ตร.ม.</span><span class="end"><span class="badge occupied">มีผู้เช่า</span></span></div>
+          <div class="list-item"><span class="lead">206</span><span class="meta">ปรียานุช แก้วมณี · 30.00 ตร.ม.</span><span class="end"><span class="badge occupied">มีผู้เช่า</span></span></div>
+          <div class="list-item"><span class="lead">207</span><span class="meta">กิตติศักดิ์ พูนสิน · 30.00 ตร.ม.</span><span class="end"><span class="badge occupied">มีผู้เช่า</span></span></div>
+          <div class="list-item"><span class="lead">208</span><span class="meta ui-muted">ยังไม่มีผู้เช่า · 30.00 ตร.ม.</span><span class="end"><span class="badge vacant">ว่าง</span></span></div>
+          <div class="group-head">ชั้น 3</div>
+          <div class="list-item"><span class="lead">301</span><span class="meta">อรุณี ทองแท้ · 30.00 ตร.ม.</span><span class="end"><span class="badge occupied">มีผู้เช่า</span></span></div>
+        </div>
+      </div>
+      <nav class="bottom-tabs">
+        <a class="tab"><span class="ico">📝</span>จดมิเตอร์</a>
+        <a class="tab active"><span class="ico">🚪</span>ห้องพัก</a>
+        <a class="tab"><span class="ico">📊</span>ภาพรวม</a>
+      </nav>
+    </div>
+    <span class="ann" style="top:16px;left:258px">1</span>
+    <span class="ann" style="top:169px;left:3px">2</span>
+    <span class="ann" style="top:272px;left:52px">3</span>
+    <span class="ann" style="top:697px;left:2px">4</span>
+  </div>
+</div>
+
+<ol class="annotations">
+  <li><span class="ann">1</span> <b>อ่านอย่างเดียว</b> badge replaces the primary action. Staff have no เพิ่มห้อง, no แก้ไขห้อง and no ปิดใช้งานห้อง, and a direct POST is refused by <code>requireRole('admin')</code>, not merely hidden (D-36).</li>
+  <li><span class="ann">2</span> <b>Rows collapse to <code>.list-item</code></b> grouped by <code>.group-head</code> floor headers — the same grouping the reading round uses, so a technician sees one mental model on both tabs.</li>
+  <li><span class="ann">3</span> <b>No money, ever.</b> The staff response body carries no rate, no bill total and no arrears figure — the columns are absent from the query, not hidden with CSS (D-36).</li>
+  <li><span class="ann">4</span> <b>Three bottom tabs</b>, จดมิเตอร์ first because it is the staff job and the staff landing page.</li>
+</ol>
+
+<div class="table-wrap">
+<table>
+<caption class="muted" style="text-align:left;font-size:13px;padding-bottom:6px">Rooms list — states</caption>
+<thead><tr><th>State</th><th>What renders</th><th>Copy / behaviour</th></tr></thead>
+<tbody>
+<tr><td><span class="badge neutral">Empty</span></td><td><code>.empty-state</code> replacing the table; toolbar and chips stay</td><td>🚪 <b>ยังไม่มีข้อมูลห้อง</b> with primary <b>เพิ่มห้อง</b> (D-40). A filtered result with zero rows shows <b>ไม่พบห้องที่ตรงกับเงื่อนไข</b> and a <b>ล้างตัวกรอง</b> ghost button — never the same sentence, because "no data" and "no matches" need different fixes.</td></tr>
+<tr><td><span class="badge info">Loading</span></td><td>5 × <code>.skeleton.row</code> in place of <code>tbody</code>; header, toolbar and chips render immediately</td><td>No centred spinner over an empty page. Chip counts render as <code>.skeleton</code> pills until the count query returns.</td></tr>
+<tr><td><span class="badge bad">Error</span></td><td><code>.notice.bad</code> above the table, table area empty</td><td><b>โหลดรายการห้องไม่สำเร็จ</b> · <b>ลองอีกครั้ง</b>. The typed search term and the selected filters survive the retry.</td></tr>
+<tr><td><span class="badge ok">Success</span></td><td>Redirect back to <code>/rooms</code> after a create, with the new room's row highlighted and a <code>.toast</code></td><td><b>เพิ่มห้อง 209 แล้ว</b>. Low-stakes and reversible by editing, so a toast is correct here; no undo link (D-39).</td></tr>
+<tr><td><span class="badge warn">Permission denied</span></td><td>Staff opening this page: the list renders read-only. Staff POSTing to <code>/rooms</code>: full Thai 403 page</td><td><b>ไม่มีสิทธิ์เข้าถึงหน้านี้ · บัญชีของคุณเป็นเจ้าหน้าที่ กรุณาติดต่อนิติบุคคล</b> + <b>กลับไปหน้าจดมิเตอร์</b> (D-40).</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="table-wrap">
+<table>
+<caption class="muted" style="text-align:left;font-size:13px;padding-bottom:6px">Rooms list — exact Thai copy</caption>
+<thead><tr><th>Element</th><th>Thai</th><th>Note</th></tr></thead>
+<tbody>
+<tr><td>Page title / nav item</td><td>ห้องพัก</td><td>Fixed mapping for the English identifier <code>Rooms</code> (D-02)</td></tr>
+<tr><td>Primary button</td><td>เพิ่มห้อง</td><td>Admin only</td></tr>
+<tr><td>Search placeholder</td><td>ค้นหาหมายเลขห้อง หรือชื่อผู้เช่า</td><td>Placeholder only; the field's own label is visually hidden, never replaced by the placeholder</td></tr>
+<tr><td>Filter chips</td><td>ทั้งหมด · มีผู้เช่า · ว่าง · ปิดใช้งาน</td><td>Counts appended in <code>.count</code></td></tr>
+<tr><td>Columns</td><td>ห้อง · ชั้น · ประเภท · ขนาด (ตร.ม.) · ผู้เช่าปัจจุบัน · สถานะ</td><td>—</td></tr>
+<tr><td>Status badges</td><td>มีผู้เช่า · ว่าง · ปิดใช้งาน</td><td><code>Occupied</code> / <code>Vacant</code> / <code>is_active = 0</code></td></tr>
+<tr><td>Row action</td><td>ดูรายละเอียด</td><td>—</td></tr>
+<tr><td>Pagination</td><td>แสดง 1–8 จาก 80 ห้อง</td><td>Numerals are Latin digits everywhere (D-03)</td></tr>
+<tr><td>Empty</td><td>ยังไม่มีข้อมูลห้อง / ไม่พบห้องที่ตรงกับเงื่อนไข</td><td>D-40 verbatim for the first</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>2. Room detail — <code>GET /rooms/:id</code></h3>
+
+<div class="screen-meta">
+  <span><b>Page:</b> Room detail · รายละเอียดห้อง</span>
+  <span><b>Roles:</b> admin (full) · staff (no amounts, no bills panel)</span>
+  <span><b>Entry points:</b> row click on ห้องพัก · ผู้เช่า detail · Bill Detail room link</span>
+  <span><b>Primary action:</b> แก้ไขห้อง</span>
+</div>
+
+<div class="device desktop">
+  <div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/rooms/205</span></div>
+  <div class="screen">
+    <div class="app" style="min-height:860px">
+      <nav class="sidebar">
+        <div class="brand"><b>ศุภาลัย เรสซิเดนซ์</b><span>Juristic Platform</span></div>
+        <a class="nav-item">📊 ภาพรวม</a>
+        <a class="nav-item">📝 จดมิเตอร์</a>
+        <a class="nav-item">🧾 บิลประจำเดือน <span class="count">3</span></a>
+        <a class="nav-item">💵 รับชำระเงิน</a>
+        <a class="nav-item active">🚪 ห้องพัก</a>
+        <a class="nav-item">👤 ผู้เช่า</a>
+        <a class="nav-item">📢 ประกาศ</a>
+        <a class="nav-item">📈 รายงาน</a>
+        <div class="nav-section">ตั้งค่าระบบ</div>
+        <a class="nav-item">⚙️ ตั้งค่า</a>
+        <a class="nav-item">👥 ผู้ใช้งานระบบ</a>
+        <div class="user">นิติบุคคล · admin · ออกจากระบบ</div>
+      </nav>
+      <div class="main">
+        <div class="topbar">
+          <span class="title">ห้อง 205</span>
+          <span class="badge occupied">มีผู้เช่า</span>
+          <span class="actions">
+            <button class="btn ghost">‹ กลับไปรายการห้อง</button>
+            <button class="btn danger">ปิดใช้งานห้อง</button>
+            <button class="btn primary">แก้ไขห้อง</button>
+          </span>
+        </div>
+        <div class="page">
+          <div class="cols">
+            <div>
+              <div class="card">
+                <div class="card-head"><span class="card-title">ข้อมูลห้อง</span><span class="ui-sub">แก้ไขได้เฉพาะผู้ดูแลระบบ</span></div>
+                <dl class="facts">
+                  <dt>หมายเลขห้อง</dt><dd>205</dd>
+                  <dt>ชั้น</dt><dd>2</dd>
+                  <dt>ประเภทห้อง</dt><dd>สตูดิโอ</dd>
+                  <dt>ขนาดพื้นที่</dt><dd>30.00 ตร.ม.</dd>
+                  <dt>สถานะ</dt><dd><span class="badge occupied">มีผู้เช่า</span> <span class="ui-sub">กำหนดจากผู้เช่าโดยอัตโนมัติ</span></dd>
+                  <dt>เลขมิเตอร์น้ำเริ่มต้น</dt><dd>1,143</dd>
+                  <dt>เลขมิเตอร์ไฟเริ่มต้น</dt><dd>4,559</dd>
+                  <dt>วันที่เริ่มต้น</dt><dd>30 ก.ย. 2025 <span class="ui-sub">· ล็อกแล้ว เพราะห้องนี้มีการจดมิเตอร์แล้ว</span></dd>
+                </dl>
+              </div>
+
+              <div class="card">
+                <div class="card-head"><span class="card-title">ประวัติการจดมิเตอร์</span><span class="ui-sub">12 รอบล่าสุด</span></div>
+                <div class="table-scroll">
+                  <table class="compact zebra">
+                    <thead>
+                      <tr>
+                        <th scope="col">รอบบิล</th>
+                        <th scope="col" class="num">💧 เดือนก่อน</th><th scope="col" class="num">💧 เดือนนี้</th><th scope="col" class="num">💧 หน่วย</th>
+                        <th scope="col" class="num">⚡ เดือนก่อน</th><th scope="col" class="num">⚡ เดือนนี้</th><th scope="col" class="num">⚡ หน่วย</th>
+                        <th scope="col">ผู้บันทึก</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr><td><b>ก.ย. 2026</b></td><td class="num">1,250</td><td class="num">1,260</td><td class="num">10</td><td class="num">5,280</td><td class="num">5,350</td><td class="num">70</td><td>เจ้าหน้าที่</td></tr>
+                      <tr><td>ส.ค. 2026</td><td class="num">1,238</td><td class="num">1,250</td><td class="num">12</td><td class="num">5,208</td><td class="num">5,280</td><td class="num">72</td><td>เจ้าหน้าที่</td></tr>
+                      <tr><td>ก.ค. 2026</td><td class="num">1,229</td><td class="num">1,238</td><td class="num">9</td><td class="num">5,143</td><td class="num">5,208</td><td class="num">65</td><td>เจ้าหน้าที่</td></tr>
+                      <tr><td>มิ.ย. 2026</td><td class="num">1,218</td><td class="num">1,229</td><td class="num">11</td><td class="num">5,062</td><td class="num">5,143</td><td class="num">81</td><td>เจ้าหน้าที่</td></tr>
+                      <tr><td>พ.ค. 2026</td><td class="num">1,210</td><td class="num">1,218</td><td class="num">8</td><td class="num">4,994</td><td class="num">5,062</td><td class="num">68</td><td>เจ้าหน้าที่</td></tr>
+                      <tr><td>เม.ย. 2026</td><td class="num">1,200</td><td class="num">1,210</td><td class="num">10</td><td class="num">4,935</td><td class="num">4,994</td><td class="num">59</td><td>เจ้าหน้าที่</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <p class="ui-sub" style="margin:8px 0 0">รอบแรกของห้องนี้ (ต.ค. 2025) อ้างอิงเลขมิเตอร์เริ่มต้นของห้อง แสดงเป็น <b>ค่าเริ่มต้น</b> ในคอลัมน์เดือนก่อน</p>
+                <div class="card-foot"><button class="btn sm">ดูทั้ง 12 รอบ</button></div>
+              </div>
+
+              <div class="card">
+                <div class="card-head"><span class="card-title">ประวัติบิล</span><span class="ui-sub">12 รอบล่าสุด · ยอดจากบิลที่บันทึกไว้</span></div>
+                <div class="table-scroll">
+                  <table class="compact zebra">
+                    <thead><tr><th scope="col">รอบบิล</th><th scope="col" class="num">💧 ค่าน้ำ</th><th scope="col" class="num">⚡ ค่าไฟ</th><th scope="col" class="num">🏢 ค่าส่วนกลาง</th><th scope="col" class="num">รวม</th><th scope="col">สถานะ</th><th scope="col"></th></tr></thead>
+                    <tbody>
+                      <tr><td><b>ก.ย. 2026</b></td><td class="num">180.00</td><td class="num">560.00</td><td class="num">1,050.00</td><td class="num"><b>1,790.00</b></td><td><span class="badge draft" data-status="Draft">ฉบับร่าง</span></td><td><button class="btn ghost sm">ดูบิล</button></td></tr>
+                      <tr><td>ส.ค. 2026</td><td class="num">216.00</td><td class="num">576.00</td><td class="num">1,050.00</td><td class="num">1,842.00</td><td><span class="badge paid" data-status="Paid">ชำระแล้ว</span></td><td><button class="btn ghost sm">ดูบิล</button></td></tr>
+                      <tr><td>ก.ค. 2026</td><td class="num">162.00</td><td class="num">520.00</td><td class="num">1,050.00</td><td class="num">1,732.00</td><td><span class="badge paid" data-status="Paid">ชำระแล้ว</span></td><td><button class="btn ghost sm">ดูบิล</button></td></tr>
+                      <tr><td>มิ.ย. 2026</td><td class="num">198.00</td><td class="num">648.00</td><td class="num">1,050.00</td><td class="num">1,896.00</td><td><span class="badge paid" data-status="Paid">ชำระแล้ว</span></td><td><button class="btn ghost sm">ดูบิล</button></td></tr>
+                      <tr><td>พ.ค. 2026</td><td class="num">144.00</td><td class="num">544.00</td><td class="num">1,050.00</td><td class="num">1,738.00</td><td><span class="badge paid" data-status="Paid">ชำระแล้ว</span></td><td><button class="btn ghost sm">ดูบิล</button></td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div class="card">
+                <div class="card-head"><span class="card-title">ผู้เช่าปัจจุบัน</span></div>
+                <dl class="facts">
+                  <dt>ชื่อ-นามสกุล</dt><dd><b>สมชาย ใจดี</b></dd>
+                  <dt>เบอร์โทรศัพท์</dt><dd>081-234-5678</dd>
+                  <dt>วันที่เข้าอยู่</dt><dd>1 ต.ค. 2025</dd>
+                  <dt>สถานะ</dt><dd><span class="badge ok">กำลังเช่า</span></dd>
+                  <dt>LINE</dt><dd><span class="badge ok">ผูกแล้ว</span> <span class="ui-sub">สมชาย · 15 ส.ค. 2026</span></dd>
+                </dl>
+                <div class="card-foot"><button class="btn sm">ดูข้อมูลผู้เช่า</button></div>
+              </div>
+
+              <div class="card">
+                <div class="card-head"><span class="card-title">💧 หน่วยน้ำ 12 เดือน</span><span class="badge water">หน่วย</span></div>
+                <svg class="spark" viewBox="0 0 348 100" role="img" aria-label="กราฟแท่งหน่วยน้ำ 12 เดือน สูงสุด 12 หน่วย ล่าสุด 10 หน่วย">
+                  <line x1="0" y1="80" x2="348" y2="80" stroke="var(--ui-border)" stroke-width="1"></line>
+                  <g fill="var(--ui-water)" opacity=".55">
+                    <rect x="4" y="26" width="20" height="54" rx="2"></rect>
+                    <rect x="33" y="8" width="20" height="72" rx="2"></rect>
+                    <rect x="62" y="32" width="20" height="48" rx="2"></rect>
+                    <rect x="91" y="14" width="20" height="66" rx="2"></rect>
+                    <rect x="120" y="38" width="20" height="42" rx="2"></rect>
+                    <rect x="149" y="20" width="20" height="60" rx="2"></rect>
+                    <rect x="178" y="20" width="20" height="60" rx="2"></rect>
+                    <rect x="207" y="32" width="20" height="48" rx="2"></rect>
+                    <rect x="236" y="14" width="20" height="66" rx="2"></rect>
+                    <rect x="265" y="26" width="20" height="54" rx="2"></rect>
+                    <rect x="294" y="8" width="20" height="72" rx="2"></rect>
+                  </g>
+                  <rect x="323" y="20" width="20" height="60" rx="2" fill="var(--ui-water)"></rect>
+                  <g fill="var(--ui-muted)" font-size="9" text-anchor="middle" font-family="var(--ui-font)">
+                    <text x="14" y="94">ต.ค.</text><text x="101" y="94">ม.ค.</text><text x="188" y="94">เม.ย.</text><text x="275" y="94">ก.ค.</text><text x="333" y="94">ก.ย.</text>
+                  </g>
+                </svg>
+                <p class="ui-sub" style="margin:6px 0 0">รอบนี้ 10 หน่วย · เฉลี่ย 9.8 หน่วย/เดือน</p>
+              </div>
+
+              <div class="card">
+                <div class="card-head"><span class="card-title">⚡ หน่วยไฟ 12 เดือน</span><span class="badge elec">หน่วย</span></div>
+                <svg class="spark" viewBox="0 0 348 100" role="img" aria-label="กราฟแท่งหน่วยไฟ 12 เดือน สูงสุด 81 หน่วย ล่าสุด 70 หน่วย">
+                  <line x1="0" y1="80" x2="348" y2="80" stroke="var(--ui-border)" stroke-width="1"></line>
+                  <g fill="var(--ui-elec)" opacity=".55">
+                    <rect x="4" y="25" width="20" height="55" rx="2"></rect>
+                    <rect x="33" y="28" width="20" height="52" rx="2"></rect>
+                    <rect x="62" y="31" width="20" height="49" rx="2"></rect>
+                    <rect x="91" y="26" width="20" height="54" rx="2"></rect>
+                    <rect x="120" y="21" width="20" height="59" rx="2"></rect>
+                    <rect x="149" y="14" width="20" height="66" rx="2"></rect>
+                    <rect x="178" y="28" width="20" height="52" rx="2"></rect>
+                    <rect x="207" y="20" width="20" height="60" rx="2"></rect>
+                    <rect x="236" y="8" width="20" height="72" rx="2"></rect>
+                    <rect x="265" y="22" width="20" height="58" rx="2"></rect>
+                    <rect x="294" y="16" width="20" height="64" rx="2"></rect>
+                  </g>
+                  <rect x="323" y="18" width="20" height="62" rx="2" fill="var(--ui-elec)"></rect>
+                  <g fill="var(--ui-muted)" font-size="9" text-anchor="middle" font-family="var(--ui-font)">
+                    <text x="14" y="94">ต.ค.</text><text x="101" y="94">ม.ค.</text><text x="188" y="94">เม.ย.</text><text x="275" y="94">ก.ค.</text><text x="333" y="94">ก.ย.</text>
+                  </g>
+                </svg>
+                <p class="ui-sub" style="margin:6px 0 0">รอบนี้ 70 หน่วย · สูงสุด 81 หน่วย (มิ.ย. 2026)</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="toast-stack"><div class="toast">✅ บันทึกข้อมูลห้อง 205 แล้ว</div></div>
+    <span class="ann" style="top:15px;left:223px">1</span>
+    <span class="ann" style="top:16px;right:103px">2</span>
+    <span class="ann" style="top:16px;right:7px">3</span>
+    <span class="ann" style="top:249px;left:360px">4</span>
+    <span class="ann" style="top:280px;left:244px">5</span>
+    <span class="ann" style="top:85px;right:247px">6</span>
+    <span class="ann" style="top:253px;right:28px">7</span>
+    <span class="ann" style="top:403px;left:244px">8</span>
+    <span class="ann" style="top:378px;right:197px">9</span>
+    <span class="ann" style="top:1063px;right:364px">10</span>
+    <span class="ann" style="top:1323px;right:7px">11</span>
+  </div>
+</div>
+
+<ol class="annotations">
+  <li><span class="ann">1</span> <b>Title carries the room code and the derived status badge.</b> The room code, not the surrogate id, is what a human recognises — the id appears only in the URL.</li>
+  <li><span class="ann">2</span> <b>ปิดใช้งานห้อง</b> — <code>.btn.danger</code>, admin only, and the sixth D-39 confirmation (alternate frame below). A room with no bills at all offers ลบห้อง instead; once any bill references the room, deactivation is the only option, because deleting it would break the reprint guarantee (D-09, D-47).</li>
+  <li><span class="ann">3</span> <b>แก้ไขห้อง</b> opens the edit form (screen 3) pre-filled. Staff see neither this button nor the two panels on the right that carry money.</li>
+  <li><span class="ann">4</span> <b>สถานะ is a badge, not a control</b>, with the sentence กำหนดจากผู้เช่าโดยอัตโนมัติ beside it. There is no way to set Occupied by hand anywhere in the product; only the tenant transaction moves it (D-07).</li>
+  <li><span class="ann">5</span> <b>Baselines</b> — <code>baseline_water</code> 1,143, <code>baseline_electric</code> 4,559, <code>baseline_date</code> 30 ก.ย. 2025. They are shown here because the office needs to know how old the opening numbers are, and marked ล็อกแล้ว because this room already has readings: D-06 permits editing them only while the room has no <code>meter_readings</code> row at all.</li>
+  <li><span class="ann">6</span> <b>ผู้เช่าปัจจุบัน</b> — the single Active tenant (D-10). For a vacant room this card becomes an <code>.empty-state</code> reading ห้องนี้ยังไม่มีผู้เช่า with a เพิ่มผู้เช่า action for admins.</li>
+  <li><span class="ann">7</span> <b>LINE binding shown, never edited here.</b> ผูกแล้ว plus the LINE display name and the linked date; the actions that change it live on the tenant screen (D-29).</li>
+  <li><span class="ann">8</span> <b>Meter history</b>, newest first, both utilities on one row so a reader can see that the electricity spike in มิ.ย. was not matched by water. Previous / current / units are the stored values, not recomputed — a reading is <code>previous_reading</code>, <code>current_reading</code>, <code>units</code> exactly as saved (D-12).</li>
+  <li><span class="ann">9</span> <b>Mini usage charts</b>, inline SVG, one per utility with its own scale — a shared axis would flatten 10 water units against 70 electricity units into a straight line. The current period is the solid bar. These are static server-rendered SVG, not Chart.js: the four Chart.js charts belong to the Dashboard (D-41).</li>
+  <li><span class="ann">10</span> <b>Bill history with real statuses.</b> ฉบับร่าง for the current period; a bill whose due date has passed while still Unpaid renders เกินกำหนด — a display value only, computed at render time, never stored (D-21). Amounts come from the bill's own snapshot, so changing the room's area today does not move a single historical figure (D-09).</li>
+  <li><span class="ann">11</span> <b>Toast</b> after returning from a successful edit: ✅ บันทึกข้อมูลห้อง 205 แล้ว. No undo link — the change is reversible by editing again, and nothing was sent to a phone (D-39).</li>
+</ol>
+
+<p><b>Alternate state — ปิดใช้งานห้อง confirmation (D-39, call site 6).</b> Shown on room 108, a vacant room that still has paid bills in its history. The primary button stays disabled until the reason reaches 10 characters.</p>
+
+<div class="device desktop">
+  <div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/rooms/108</span></div>
+  <div class="screen" style="min-height:0">
+    <div class="app" style="min-height:420px">
+      <nav class="sidebar">
+        <div class="brand"><b>ศุภาลัย เรสซิเดนซ์</b><span>Juristic Platform</span></div>
+        <a class="nav-item">📊 ภาพรวม</a>
+        <a class="nav-item">📝 จดมิเตอร์</a>
+        <a class="nav-item">🧾 บิลประจำเดือน <span class="count">3</span></a>
+        <a class="nav-item">💵 รับชำระเงิน</a>
+        <a class="nav-item active">🚪 ห้องพัก</a>
+        <a class="nav-item">👤 ผู้เช่า</a>
+        <div class="user">นิติบุคคล · admin · ออกจากระบบ</div>
+      </nav>
+      <div class="main">
+        <div class="topbar">
+          <span class="title">ห้อง 108</span>
+          <span class="badge vacant">ว่าง</span>
+          <span class="actions"><button class="btn danger">ปิดใช้งานห้อง</button><button class="btn primary">แก้ไขห้อง</button></span>
+        </div>
+        <div class="page">
+          <div class="card">
+            <div class="card-head"><span class="card-title">ข้อมูลห้อง</span></div>
+            <dl class="facts">
+              <dt>หมายเลขห้อง</dt><dd>108</dd>
+              <dt>ชั้น</dt><dd>1</dd>
+              <dt>ขนาดพื้นที่</dt><dd>30.00 ตร.ม.</dd>
+              <dt>สถานะ</dt><dd><span class="badge vacant">ว่าง</span></dd>
+              <dt>ประวัติบิล</dt><dd>11 ใบ · ชำระแล้วทั้งหมด</dd>
+            </dl>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal">
+      <div class="dialog">
+        <div class="dialog-title">ปิดใช้งานห้อง 108</div>
+        <div class="dialog-body">
+          <p>ห้องนี้จะไม่ถูกสร้างบิล ไม่ปรากฏในหน้าจดมิเตอร์ และไม่แสดงในรายการห้อง ยกเว้นเมื่อเลือกตัวกรอง <b>ปิดใช้งาน</b></p>
+          <p><b>ประวัติบิลและใบเสร็จจะยังคงอยู่</b></p>
+          <div class="field" style="margin-bottom:0">
+            <span class="label">เหตุผล <span class="req">*</span></span>
+            <textarea class="textarea" placeholder="เช่น ปิดปรับปรุงห้อง ไม่ปล่อยเช่าในปีนี้"></textarea>
+            <span class="hint">อย่างน้อย 10 ตัวอักษร · บันทึกลงประวัติการแก้ไข</span>
+          </div>
+        </div>
+        <div class="dialog-actions">
+          <button class="btn">ยกเลิก</button>
+          <button class="btn danger is-disabled">ปิดใช้งานห้อง</button>
+        </div>
+      </div>
+    </div>
+    <span class="ann" style="top:47px;left:320px">1</span>
+    <span class="ann" style="top:138px;left:336px">2</span>
+    <span class="ann" style="top:166px;left:336px">3</span>
+    <span class="ann" style="top:341px;right:336px">4</span>
+  </div>
+</div>
+
+<ol class="annotations">
+  <li><span class="ann">1</span> <b>The dialog names the room in its title</b> and states the exact effect in the body, with counts where there are any. The shared component is the only confirmation pattern in the product — never the browser's <code>confirm()</code> (D-39).</li>
+  <li><span class="ann">2</span> <b>What survives is stated in bold</b>: ประวัติบิลและใบเสร็จจะยังคงอยู่. Deactivation is not deletion; the room row stays and every bill that references it keeps rendering (D-09, D-47).</li>
+  <li><span class="ann">3</span> <b>Reason is required</b>, minimum 10 characters, and is written to <code>audit_log.reason</code> with action <code>ROOM_DEACTIVATE</code> (D-38). Collecting a reason and discarding it would be a defect.</li>
+  <li><span class="ann">4</span> <b>The primary button repeats the verb</b> — ปิดใช้งานห้อง, not ตกลง — and carries <code>.is-disabled</code> until the reason is long enough. <kbd>Esc</kbd> and ยกเลิก both close without acting; focus returns to the button that opened the dialog.</li>
+</ol>
+
+<div class="table-wrap">
+<table>
+<caption class="muted" style="text-align:left;font-size:13px;padding-bottom:6px">Room detail — states</caption>
+<thead><tr><th>State</th><th>What renders</th><th>Copy / behaviour</th></tr></thead>
+<tbody>
+<tr><td><span class="badge neutral">Empty</span></td><td>A new room: tenant card, meter history and bill history are each their own empty state; the room facts card is always populated</td><td>ห้องนี้ยังไม่มีผู้เช่า (+ <b>เพิ่มผู้เช่า</b>) · ยังไม่มีการจดมิเตอร์สำหรับห้องนี้ · ยังไม่มีบิลของห้องนี้. Baselines render as editable in the facts card, because a room with no readings may still have them corrected (D-06).</td></tr>
+<tr><td><span class="badge info">Loading</span></td><td>Facts card renders first from the row already fetched; the two history tables show 3 × <code>.skeleton.row</code>; charts show an empty axis</td><td>The page never blocks on the chart query.</td></tr>
+<tr><td><span class="badge bad">Error</span></td><td>Unknown or deactivated id: full 404 page. Panel query failure: <code>.notice.bad</code> inside that card only</td><td><b>ไม่พบห้องนี้</b> + <b>กลับไปรายการห้อง</b> · <b>โหลดประวัติบิลไม่สำเร็จ</b> + <b>ลองอีกครั้ง</b> — one failing panel never blanks the page.</td></tr>
+<tr><td><span class="badge ok">Success</span></td><td>After an edit or a deactivation, redirect back here with a toast; a deactivated room shows a <code>.notice.warn</code> banner at the top of the page</td><td><b>บันทึกข้อมูลห้อง 205 แล้ว</b> · banner: <b>ห้องนี้ถูกปิดใช้งาน</b> เมื่อ 7 ก.ย. 2026 · เหตุผล: ปิดปรับปรุงห้อง — with <b>เปิดใช้งานอีกครั้ง</b>.</td></tr>
+<tr><td><span class="badge warn">Permission denied</span></td><td>Staff: the page renders without the bill panel, without the two action buttons and without any amount. Staff POSTing to <code>/rooms/:id</code> or <code>/rooms/:id/deactivate</code>: Thai 403 page</td><td>Staff see ข้อมูลห้อง, ผู้เช่าปัจจุบัน (name and room only) and ประวัติการจดมิเตอร์, which is the history their own job needs (D-36).</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="table-wrap">
+<table>
+<caption class="muted" style="text-align:left;font-size:13px;padding-bottom:6px">Room detail — exact Thai copy</caption>
+<thead><tr><th>Element</th><th>Thai</th><th>Note</th></tr></thead>
+<tbody>
+<tr><td>Title</td><td>ห้อง 205</td><td>Room code, plus the status badge beside it</td></tr>
+<tr><td>Buttons</td><td>แก้ไขห้อง · ปิดใช้งานห้อง · ‹ กลับไปรายการห้อง · ดูข้อมูลผู้เช่า · ดูบิล · ดูทั้ง 12 รอบ</td><td>ลบห้อง replaces ปิดใช้งานห้อง only when the room has no bills (D-47)</td></tr>
+<tr><td>Card titles</td><td>ข้อมูลห้อง · ผู้เช่าปัจจุบัน · ประวัติการจดมิเตอร์ · ประวัติบิล · 💧 หน่วยน้ำ 12 เดือน · ⚡ หน่วยไฟ 12 เดือน</td><td>—</td></tr>
+<tr><td>Field labels</td><td>หมายเลขห้อง · ชั้น · ประเภทห้อง · ขนาดพื้นที่ · สถานะ · เลขมิเตอร์น้ำเริ่มต้น · เลขมิเตอร์ไฟเริ่มต้น · วันที่เริ่มต้น</td><td>D-06 and D-47 field names verbatim</td></tr>
+<tr><td>Derived-status hint</td><td>กำหนดจากผู้เช่าโดยอัตโนมัติ</td><td>D-07</td></tr>
+<tr><td>Baseline lock hint</td><td>ล็อกแล้ว เพราะห้องนี้มีการจดมิเตอร์แล้ว</td><td>D-06</td></tr>
+<tr><td>Baseline row label</td><td>ค่าเริ่มต้น</td><td>Rendering of <code>previous_period = 'baseline'</code> (D-06, D-14)</td></tr>
+<tr><td>Bill statuses</td><td>ฉบับร่าง · รอชำระ · ชำระแล้ว · เกินกำหนด</td><td><code>data-status="Draft|Unpaid|Paid|Overdue"</code> on every badge (D-02, D-21)</td></tr>
+<tr><td>Confirmation dialog</td><td>Title <b>ปิดใช้งานห้อง 108</b> · body <b>ประวัติบิลและใบเสร็จจะยังคงอยู่</b> · reason label <b>เหตุผล *</b> · buttons <b>ยกเลิก</b> / <b>ปิดใช้งานห้อง</b></td><td>D-39 call site 6</td></tr>
+<tr><td>Toast</td><td>บันทึกข้อมูลห้อง 205 แล้ว</td><td>No undo (D-39)</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>3. Room form — <code>GET /rooms/new</code> · <code>GET /rooms/:id/edit</code></h3>
+
+<div class="screen-meta">
+  <span><b>Page:</b> Rooms (form mode) · เพิ่มห้อง / แก้ไขห้อง</span>
+  <span><b>Roles:</b> admin only</span>
+  <span><b>Entry points:</b> เพิ่มห้อง on ห้องพัก · แก้ไขห้อง on the room detail</span>
+  <span><b>Primary action:</b> บันทึก (POST <code>/rooms</code> or <code>/rooms/:id</code>, then redirect)</span>
+</div>
+
+<div class="device desktop">
+  <div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/rooms/new</span></div>
+  <div class="screen" style="min-height:0">
+    <div class="app" style="min-height:660px">
+      <nav class="sidebar">
+        <div class="brand"><b>ศุภาลัย เรสซิเดนซ์</b><span>Juristic Platform</span></div>
+        <a class="nav-item">📊 ภาพรวม</a>
+        <a class="nav-item">📝 จดมิเตอร์</a>
+        <a class="nav-item">🧾 บิลประจำเดือน <span class="count">3</span></a>
+        <a class="nav-item">💵 รับชำระเงิน</a>
+        <a class="nav-item active">🚪 ห้องพัก</a>
+        <a class="nav-item">👤 ผู้เช่า</a>
+        <a class="nav-item">📢 ประกาศ</a>
+        <a class="nav-item">📈 รายงาน</a>
+        <div class="user">นิติบุคคล · admin · ออกจากระบบ</div>
+      </nav>
+      <div class="main">
+        <div class="topbar">
+          <span class="title">เพิ่มห้อง</span>
+          <span class="actions"><button class="btn">ยกเลิก</button><button class="btn primary">บันทึก</button></span>
+        </div>
+        <div class="page">
+          <div class="form-narrow">
+            <div class="card">
+              <div class="card-head"><span class="card-title">ข้อมูลห้อง</span></div>
+              <div class="field-row">
+                <label class="field">
+                  <span class="label">หมายเลขห้อง <span class="req">*</span></span>
+                  <input class="input" value="209" inputmode="numeric">
+                  <span class="hint">ไม่ซ้ำกับห้องอื่น · ใส่ตัวอักษรได้ เช่น A-205</span>
+                </label>
+                <label class="field">
+                  <span class="label">ชั้น <span class="req">*</span></span>
+                  <select class="select"><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option></select>
+                  <span class="hint">ใช้จัดกลุ่มในหน้าจดมิเตอร์และเลือกผู้รับประกาศ</span>
+                </label>
+              </div>
+              <div class="field-row">
+                <label class="field">
+                  <span class="label">ประเภทห้อง</span>
+                  <input class="input" value="สตูดิโอ" placeholder="เช่น สตูดิโอ, 1 ห้องนอน">
+                  <span class="hint">ไม่บังคับ · เป็นป้ายกำกับเท่านั้น ไม่มีผลต่อการคิดเงิน</span>
+                </label>
+                <label class="field">
+                  <span class="label">ขนาดพื้นที่ (ตร.ม.) <span class="req">*</span></span>
+                  <input class="input" value="30.00" inputmode="decimal">
+                  <span class="hint">ใช้คูณกับอัตราค่าส่วนกลาง เช่น 30 × 35 = 1,050 บาท</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-head"><span class="card-title">เลขมิเตอร์เริ่มต้น</span><span class="badge info">แก้ไขได้ก่อนจดมิเตอร์ครั้งแรกเท่านั้น</span></div>
+              <div class="notice">
+                <b>ทำไมต้องกรอก</b>
+                รอบแรกของห้องนี้จะคิดหน่วยจากเลขที่กรอกไว้ตรงนี้ ถ้ากรอกผิด บิลใบแรกจะผิดทั้งใบ — ให้ลอกเลขจากหน้าปัดมิเตอร์ ณ วันที่เริ่มต้น
+              </div>
+              <div class="field-row">
+                <label class="field">
+                  <span class="label">💧 เลขมิเตอร์น้ำเริ่มต้น <span class="req">*</span></span>
+                  <input class="input" value="1,143" inputmode="numeric">
+                </label>
+                <label class="field">
+                  <span class="label">⚡ เลขมิเตอร์ไฟเริ่มต้น <span class="req">*</span></span>
+                  <input class="input" value="4,559" inputmode="numeric">
+                </label>
+                <label class="field">
+                  <span class="label">วันที่เริ่มต้น <span class="req">*</span></span>
+                  <input class="input" type="date" value="2025-09-30">
+                </label>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-head"><span class="card-title">สถานะห้อง</span></div>
+              <p class="ui-muted" style="margin:0">สถานะห้องกำหนดจากผู้เช่าโดยอัตโนมัติ — ห้องที่ยังไม่มีผู้เช่าจะเป็น <span class="badge vacant">ว่าง</span> และเปลี่ยนเป็น <span class="badge occupied">มีผู้เช่า</span> เมื่อเพิ่มผู้เช่าให้ห้องนี้</p>
+            </div>
+
+            <div class="toolbar" style="justify-content:flex-end;margin:0">
+              <button class="btn">ยกเลิก</button>
+              <button class="btn primary">บันทึก</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <span class="ann" style="top:134px;left:244px">1</span>
+    <span class="ann" style="top:134px;right:190px">2</span>
+    <span class="ann" style="top:238px;left:244px">3</span>
+    <span class="ann" style="top:238px;right:190px">4</span>
+    <span class="ann" style="top:391px;left:244px">5</span>
+    <span class="ann" style="top:667px;left:244px">6</span>
+    <span class="ann" style="top:803px;right:173px">7</span>
+  </div>
+</div>
+
+<ol class="annotations">
+  <li><span class="ann">1</span> <b>หมายเลขห้อง</b> — free text up to 10 characters, unique system-wide. The hint says <code>A-205</code> is accepted so nobody invents a numeric-only rule that the column does not have (D-04). Uniqueness is a database constraint, so the error can only be reported after submit (annotation 3 of the alternate frame).</li>
+  <li><span class="ann">2</span> <b>ชั้น is entered, never parsed</b> from the room code — a select of 1–5 seeded from the existing floors. Two features read this column directly: the floor grouping on จดมิเตอร์ and the floor audience on ประกาศ (D-47).</li>
+  <li><span class="ann">3</span> <b>ประเภทห้อง is optional and display-only.</b> The hint says so out loud, because a "type" field is exactly the kind of column somebody later tries to price against — and pricing per type is not in this product.</li>
+  <li><span class="ann">4</span> <b>ขนาดพื้นที่</b>, <code>DECIMAL(6,2)</code>, admin only, audited on every change (<code>ROOM_AREA_CHANGE</code>). The hint shows the arithmetic it drives so the operator can sanity-check their own entry against a bill they have seen (D-09, D-38).</li>
+  <li><span class="ann">5</span> <b>The baselines get their own card and their own explanation.</b> This is the highest-consequence field pair on the screen: entered wrong, the room's first bill charges 1,260 units instead of 10. They are written to <code>rooms</code>, not to <code>meter_readings</code>, so nothing can collide with the room's first real reading (D-06).</li>
+  <li><span class="ann">6</span> <b>No status control.</b> The card explains the rule instead of offering a select; there is no way to make a room Occupied except by giving it an Active tenant (D-07).</li>
+  <li><span class="ann">7</span> <b>บันทึก</b> POSTs and, on success, redirects to the new room's detail page with a toast. On failure the same page re-renders with every typed value preserved — never a redirect, never a lost form (D-40).</li>
+</ol>
+
+<p><b>Alternate state — edit mode with a rejected save.</b> Room 108, whose code was changed to one that already exists and whose area was typed with a stray character. The values the operator typed are still on screen.</p>
+
+<div class="device desktop">
+  <div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/rooms/108/edit</span></div>
+  <div class="screen" style="min-height:0">
+    <div class="app" style="min-height:600px">
+      <nav class="sidebar">
+        <div class="brand"><b>ศุภาลัย เรสซิเดนซ์</b><span>Juristic Platform</span></div>
+        <a class="nav-item">📊 ภาพรวม</a>
+        <a class="nav-item">📝 จดมิเตอร์</a>
+        <a class="nav-item">🧾 บิลประจำเดือน <span class="count">3</span></a>
+        <a class="nav-item">💵 รับชำระเงิน</a>
+        <a class="nav-item active">🚪 ห้องพัก</a>
+        <a class="nav-item">👤 ผู้เช่า</a>
+        <div class="user">นิติบุคคล · admin · ออกจากระบบ</div>
+      </nav>
+      <div class="main">
+        <div class="topbar">
+          <span class="title">แก้ไขห้อง 108</span>
+          <span class="actions"><button class="btn">ยกเลิก</button><button class="btn primary is-loading">บันทึก</button></span>
+        </div>
+        <div class="page">
+          <div class="form-narrow">
+            <div class="notice bad">
+              <b>บันทึกไม่สำเร็จ — ตรวจสอบ 2 ช่องด้านล่าง</b>
+              ข้อมูลที่กรอกไว้ยังอยู่ครบ แก้ไขแล้วกด บันทึก อีกครั้ง
+            </div>
+            <div class="card">
+              <div class="card-head"><span class="card-title">ข้อมูลห้อง</span></div>
+              <div class="field-row">
+                <label class="field invalid">
+                  <span class="label">หมายเลขห้อง <span class="req">*</span></span>
+                  <input class="input" value="205" aria-invalid="true">
+                  <span class="error">หมายเลขห้องนี้ถูกใช้แล้ว กรุณาใช้หมายเลขอื่น</span>
+                </label>
+                <label class="field">
+                  <span class="label">ชั้น <span class="req">*</span></span>
+                  <select class="select"><option selected>1</option><option>2</option><option>3</option></select>
+                </label>
+              </div>
+              <div class="field-row">
+                <label class="field">
+                  <span class="label">ประเภทห้อง</span>
+                  <input class="input" value="สตูดิโอ">
+                </label>
+                <label class="field invalid">
+                  <span class="label">ขนาดพื้นที่ (ตร.ม.) <span class="req">*</span></span>
+                  <input class="input" value="30.0.0" aria-invalid="true">
+                  <span class="error">กรอกเป็นตัวเลข เช่น 30.00 (มากกว่า 0 และไม่เกิน 9999.99)</span>
+                </label>
+              </div>
+              <div class="notice warn">
+                <b>การแก้ไขขนาดพื้นที่มีผลกับบิลรอบถัดไปเท่านั้น</b>
+                บิลและใบเสร็จที่ออกไปแล้วใช้ขนาดพื้นที่ที่บันทึกไว้ในบิลใบนั้น และจะไม่เปลี่ยนตาม · การแก้ไขนี้จะถูกบันทึกลงประวัติการแก้ไข
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-head"><span class="card-title">เลขมิเตอร์เริ่มต้น</span><span class="badge neutral">ล็อกแล้ว</span></div>
+              <div class="field-row">
+                <label class="field">
+                  <span class="label">💧 เลขมิเตอร์น้ำเริ่มต้น</span>
+                  <input class="input readonly" value="1,088" readonly>
+                </label>
+                <label class="field">
+                  <span class="label">⚡ เลขมิเตอร์ไฟเริ่มต้น</span>
+                  <input class="input readonly" value="4,201" readonly>
+                </label>
+                <label class="field">
+                  <span class="label">วันที่เริ่มต้น</span>
+                  <input class="input readonly" value="30 ก.ย. 2025" readonly>
+                </label>
+              </div>
+              <span class="hint">ห้องนี้มีการจดมิเตอร์แล้ว 11 รอบ จึงแก้ไขเลขเริ่มต้นไม่ได้ — หากมิเตอร์ถูกเปลี่ยน ให้ใช้ <b>เปลี่ยนมิเตอร์ในรอบนี้</b> ในหน้าจดมิเตอร์</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <span class="ann" style="top:81px;left:227px">1</span>
+    <span class="ann" style="top:282px;left:244px">2</span>
+    <span class="ann" style="top:386px;right:190px">3</span>
+    <span class="ann" style="top:429px;left:244px">4</span>
+    <span class="ann" style="top:565px;left:244px">5</span>
+    <span class="ann" style="top:16px;right:7px">6</span>
+  </div>
+</div>
+
+<ol class="annotations">
+  <li><span class="ann">1</span> <b>One <code>.notice.bad</code> above the form</b> with the number of bad fields, and the promise that nothing was lost. The page was re-rendered, not redirected, so the browser's back button is not part of the recovery path (D-40).</li>
+  <li><span class="ann">2</span> <b>Duplicate room code</b> — the one error that cannot be caught before submit, because it is <code>uq_rooms_room_code</code>. The service catches <code>ER_DUP_ENTRY</code> and maps it to this field's message rather than letting a 500 escape.</li>
+  <li><span class="ann">3</span> <b>Field-level Thai message keyed by input name.</b> The same string is the 422 payload's message for that field — the API message and the form message are one definition in <code>lib/schemas.js</code>, so they cannot drift apart.</li>
+  <li><span class="ann">4</span> <b>Area-change warning appears only in edit mode</b>, and only states what is true: past bills keep their own snapshot and this edit is audited (D-09, D-38). It is a warning, not a confirmation dialog — the change is reversible and reaches no phone.</li>
+  <li><span class="ann">5</span> <b>Baselines are readonly here</b>, dashed borders, with the count of readings that locked them and the correct alternative named: a replaced meter is handled by เปลี่ยนมิเตอร์ในรอบนี้ on จดมิเตอร์, which records the swap instead of silently rewriting history (D-06, D-13).</li>
+  <li><span class="ann">6</span> <b>The pressed button carries <code>.is-loading</code> and is disabled</b>; the rest of the page stays interactive so the operator can keep reading their own entry while the request is in flight.</li>
+</ol>
+
+<div class="table-wrap">
+<table>
+<caption class="muted" style="text-align:left;font-size:13px;padding-bottom:6px">Room form — validation rules</caption>
+<thead><tr><th>Field</th><th>Rule</th><th>Thai message</th><th>When it fires</th></tr></thead>
+<tbody>
+<tr><td>หมายเลขห้อง</td><td>required, ≤ 10 chars</td><td>กรุณากรอกหมายเลขห้อง</td><td>blur · submit</td></tr>
+<tr><td>หมายเลขห้อง</td><td>unique</td><td>หมายเลขห้องนี้ถูกใช้แล้ว กรุณาใช้หมายเลขอื่น</td><td>after submit (database constraint)</td></tr>
+<tr><td>ชั้น</td><td>required, 1–127</td><td>กรุณาเลือกชั้น</td><td>submit</td></tr>
+<tr><td>ประเภทห้อง</td><td>optional, ≤ 20 chars</td><td>ประเภทห้องต้องไม่เกิน 20 ตัวอักษร</td><td>blur</td></tr>
+<tr><td>ขนาดพื้นที่</td><td>required, numeric &gt; 0, ≤ 9999.99, 2 decimals</td><td>กรอกเป็นตัวเลข เช่น 30.00 (มากกว่า 0 และไม่เกิน 9999.99)</td><td>blur · submit</td></tr>
+<tr><td>เลขมิเตอร์น้ำ/ไฟเริ่มต้น</td><td>required on create, integer ≥ 0</td><td>กรอกเลขมิเตอร์เริ่มต้นเป็นจำนวนเต็ม</td><td>blur · submit</td></tr>
+<tr><td>เลขมิเตอร์เริ่มต้น</td><td>immutable once the room has any reading</td><td>ห้องนี้มีการจดมิเตอร์แล้ว จึงแก้ไขเลขเริ่มต้นไม่ได้</td><td>server-side guard; the inputs are already readonly</td></tr>
+<tr><td>วันที่เริ่มต้น</td><td>required, a valid date, not in the future</td><td>วันที่เริ่มต้นต้องไม่เป็นวันในอนาคต</td><td>blur · submit</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="table-wrap">
+<table>
+<caption class="muted" style="text-align:left;font-size:13px;padding-bottom:6px">Room form — states and copy</caption>
+<thead><tr><th>State</th><th>What renders</th><th>Copy</th></tr></thead>
+<tbody>
+<tr><td><span class="badge neutral">Empty</span></td><td>Create mode: all fields blank except ชั้น, which defaults to the floor the operator was filtering</td><td>Title <b>เพิ่มห้อง</b> · buttons <b>ยกเลิก</b> / <b>บันทึก</b></td></tr>
+<tr><td><span class="badge info">Loading</span></td><td>Edit mode fetches one row, so the form renders populated or not at all; on submit the primary button takes <code>.is-loading</code></td><td>—</td></tr>
+<tr><td><span class="badge bad">Error</span></td><td><code>.notice.bad</code> above the form plus <code>.field.invalid</code> per field; typed values preserved</td><td><b>บันทึกไม่สำเร็จ — ตรวจสอบ 2 ช่องด้านล่าง</b> · <b>ข้อมูลที่กรอกไว้ยังอยู่ครบ แก้ไขแล้วกด บันทึก อีกครั้ง</b></td></tr>
+<tr><td><span class="badge ok">Success</span></td><td>Redirect to <code>/rooms/:id</code> with a toast</td><td><b>เพิ่มห้อง 209 แล้ว</b> · <b>บันทึกข้อมูลห้อง 108 แล้ว</b></td></tr>
+<tr><td><span class="badge warn">Permission denied</span></td><td>Staff on either route, GET or POST: Thai 403 page. No read-only variant of this form exists</td><td><b>ไม่มีสิทธิ์เข้าถึงหน้านี้ · บัญชีของคุณเป็นเจ้าหน้าที่ กรุณาติดต่อนิติบุคคล</b> + <b>กลับไปหน้าจดมิเตอร์</b></td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>4. Tenants list — <code>GET /tenants</code></h3>
+
+<div class="screen-meta">
+  <span><b>Page:</b> Tenants · ผู้เช่า</span>
+  <span><b>Roles:</b> admin only — staff cannot see this page at all (D-36)</span>
+  <span><b>Entry points:</b> sidebar ผู้เช่า · ดูข้อมูลผู้เช่า on a room</span>
+  <span><b>Primary action:</b> เพิ่มผู้เช่า (page) · สร้างรหัสผูก LINE (row)</span>
+</div>
+
+<div class="device desktop">
+  <div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/tenants</span></div>
+  <div class="screen">
+    <div class="app" style="min-height:720px">
+      <nav class="sidebar">
+        <div class="brand"><b>ศุภาลัย เรสซิเดนซ์</b><span>Juristic Platform</span></div>
+        <a class="nav-item">📊 ภาพรวม</a>
+        <a class="nav-item">📝 จดมิเตอร์</a>
+        <a class="nav-item">🧾 บิลประจำเดือน <span class="count">3</span></a>
+        <a class="nav-item">💵 รับชำระเงิน</a>
+        <a class="nav-item">🚪 ห้องพัก</a>
+        <a class="nav-item active">👤 ผู้เช่า</a>
+        <a class="nav-item">📢 ประกาศ</a>
+        <a class="nav-item">📈 รายงาน</a>
+        <div class="nav-section">ตั้งค่าระบบ</div>
+        <a class="nav-item">⚙️ ตั้งค่า</a>
+        <a class="nav-item">👥 ผู้ใช้งานระบบ</a>
+        <div class="user">นิติบุคคล · admin · ออกจากระบบ</div>
+      </nav>
+      <div class="main">
+        <div class="topbar">
+          <span class="title">ผู้เช่า</span>
+          <span class="actions"><button class="btn primary">เพิ่มผู้เช่า</button></span>
+        </div>
+        <div class="page">
+          <div class="notice">
+            <b>LINE ผูกแล้ว 54 จาก 67 ห้องที่มีผู้เช่า</b>
+            ผู้เช่าที่ยังไม่ผูก LINE จะไม่ได้รับบิลและประกาศ ต้องพิมพ์ใบแจ้งค่าใช้จ่ายให้ที่สำนักงานแทน
+          </div>
+          <div class="toolbar">
+            <span class="search" style="flex:1;min-width:220px"><span aria-hidden="true">🔍</span><input type="search" placeholder="ค้นหาชื่อผู้เช่า เบอร์โทร หรือหมายเลขห้อง"></span>
+          </div>
+          <div class="chip-row">
+            <span class="chip active">กำลังเช่า <span class="count">67</span></span>
+            <span class="chip">ผูก LINE แล้ว <span class="count">54</span></span>
+            <span class="chip">ยังไม่ผูก LINE <span class="count">13</span></span>
+            <span class="chip">สิ้นสุดสัญญาแล้ว <span class="count">1</span></span>
+          </div>
+          <div class="table-scroll">
+            <table class="zebra sticky">
+              <thead>
+                <tr>
+                  <th scope="col">ชื่อ-นามสกุล</th><th scope="col">เบอร์โทรศัพท์</th><th scope="col">ห้อง</th>
+                  <th scope="col">วันที่เข้าอยู่</th><th scope="col">สถานะ LINE</th><th scope="col"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td><b>สมหญิง รักเรียน</b></td><td>081-777-2130</td><td>201</td><td>1 ก.ค. 2024</td><td><span class="badge ok">ผูกแล้ว</span> <span class="ui-sub">สมหญิง · 2 ส.ค. 2026</span></td><td><button class="btn ghost sm">ยกเลิกการผูก</button></td></tr>
+                <tr><td><b>อารยา ศรีสุวรรณ</b></td><td>089-555-0142</td><td>202</td><td>15 พ.ค. 2025</td><td><span class="badge ok">ผูกแล้ว</span> <span class="ui-sub">Araya · 20 ก.ค. 2026</span></td><td><button class="btn ghost sm">ยกเลิกการผูก</button></td></tr>
+                <tr><td><b>ธนกฤต วงศ์ทอง</b></td><td>062-889-3311</td><td>204</td><td>1 ก.พ. 2026</td><td><span class="badge warn">ยังไม่ผูก</span></td><td><button class="btn secondary sm">สร้างรหัสผูก LINE</button></td></tr>
+                <tr class="is-selected"><td><b>สมชาย ใจดี</b></td><td>081-234-5678</td><td>205</td><td>1 ต.ค. 2025</td><td><span class="badge ok">ผูกแล้ว</span> <span class="ui-sub">สมชาย · 15 ส.ค. 2026</span></td><td><button class="btn ghost sm">ยกเลิกการผูก</button></td></tr>
+                <tr><td><b>ปรียานุช แก้วมณี</b></td><td>095-410-7788</td><td>206</td><td>1 ธ.ค. 2025</td><td><span class="badge ok">ผูกแล้ว</span> <span class="ui-sub">Preeya · 1 ส.ค. 2026</span></td><td><button class="btn ghost sm">ยกเลิกการผูก</button></td></tr>
+                <tr><td><b>กิตติศักดิ์ พูนสิน</b></td><td>084-220-6690</td><td>207</td><td>1 มี.ค. 2026</td><td><span class="badge info">รอผูก · รหัส K7QM9X</span> <span class="ui-sub">หมดอายุ 12 ก.ย. 2026</span></td><td><button class="btn ghost sm">สร้างรหัสใหม่</button></td></tr>
+                <tr><td><b>วิภาดา นาคเกษม</b></td><td>090-118-4402</td><td>312</td><td>1 ก.ย. 2026</td><td><span class="badge warn">ยังไม่ผูก</span></td><td><button class="btn secondary sm">สร้างรหัสผูก LINE</button></td></tr>
+                <tr><td><span class="ui-muted">ประเสริฐ ชูเกียรติ</span></td><td class="ui-muted">086-303-9915</td><td class="ui-muted">312</td><td class="ui-muted">1 มี.ค. 2024 – 31 ส.ค. 2026</td><td><span class="badge neutral">สิ้นสุดสัญญาแล้ว</span></td><td><button class="btn ghost sm">ดูประวัติ</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pagination">
+            <a class="page-link">‹</a><a class="page-link active">1</a><a class="page-link">2</a><a class="page-link">3</a>
+            <a class="page-link">…</a><a class="page-link">9</a><a class="page-link">›</a>
+            <span class="page-info">แสดง 1–8 จาก 68 รายชื่อ</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <span class="ann" style="top:16px;right:7px">1</span>
+    <span class="ann" style="top:81px;left:227px">2</span>
+    <span class="ann" style="top:159px;left:227px">3</span>
+    <span class="ann" style="top:213px;left:227px">4</span>
+    <span class="ann" style="top:502px;right:161px">5</span>
+    <span class="ann" style="top:450px;right:24px">6</span>
+    <span class="ann" style="top:516px;right:52px">7</span>
+    <span class="ann" style="top:768px;left:228px">8</span>
+  </div>
+</div>
+
+<ol class="annotations">
+  <li><span class="ann">1</span> <b>เพิ่มผู้เช่า</b> — admin only, opens the tenant form (screen 5). Creating a tenant is what makes a room Occupied; there is no other route to that status (D-07, D-10).</li>
+  <li><span class="ann">2</span> <b>Standing LINE-coverage banner</b>, 54 of 67. This is the number D-35's announcement preview quotes and the number the demo asserts is still 54 after a full bulk approve, so it is worth a permanent line rather than a report nobody opens (D-44).</li>
+  <li><span class="ann">3</span> <b>Search across name, phone and room</b>, submitted on Enter. The room column is the fastest handle a cashier has: a tenant at the counter says their room number, not their surname.</li>
+  <li><span class="ann">4</span> <b>Filter chips.</b> กำลังเช่า is the default view — a list that mixes 67 active with every past tenant is unusable — and สิ้นสุดสัญญาแล้ว is how a departed tenant is found, because tenant records are never deleted (D-10).</li>
+  <li><span class="ann">5</span> <b>สถานะ LINE, three renderings.</b> ผูกแล้ว with the LINE display name and the linked date; ยังไม่ผูก; รอผูก with the outstanding code and its expiry. The LINE User ID itself is never shown — it is meaningless to a human and useless to type (D-29).</li>
+  <li><span class="ann">6</span> <b>สร้างรหัสผูก LINE</b> is the row action for an unlinked tenant. It POSTs to <code>/tenants/:id/link-code</code>, generates a six-character code from <code>ABCDEFGHJKLMNPQRSTUVWXYZ23456789</code> — no O, no 0, no I, no 1 — valid 7 days, single use, and redirects to the tenant's detail page where the code and its printable slip live (screen 5, alternate frame).</li>
+  <li><span class="ann">7</span> <b>ยกเลิกการผูก</b> clears the binding for this tenancy only. It is deliberately <em>not</em> one of the six confirmation dialogs (D-39): it destroys nothing, is undone by issuing a new code, and reaches no phone. It POSTs and returns a toast.</li>
+  <li><span class="ann">8</span> <b>An ended tenancy is greyed, not hidden</b> — its bills, payments and receipts stay attached to it forever and are reachable through ดูประวัติ (D-08).</li>
+</ol>
+
+<p><b>Alternate state — a staff login opening <code>/tenants</code> directly.</b> This is the whole permission model made visible: a page a role cannot use returns a page, not a redirect (D-40).</p>
+
+<div class="device phone">
+  <div class="screen">
+    <div class="app" style="min-height:480px;flex-direction:column">
+      <div class="main">
+        <div class="topbar"><span class="title">ไม่มีสิทธิ์เข้าถึง</span></div>
+        <div class="page">
+          <div class="empty-state">
+            <span class="ico" aria-hidden="true">🚫</span>
+            <p><b>ไม่มีสิทธิ์เข้าถึงหน้านี้</b></p>
+            <p>บัญชีของคุณเป็นเจ้าหน้าที่ กรุณาติดต่อนิติบุคคล</p>
+            <button class="btn primary lg">กลับไปหน้าจดมิเตอร์</button>
+          </div>
+        </div>
+      </div>
+      <nav class="bottom-tabs">
+        <a class="tab"><span class="ico">📝</span>จดมิเตอร์</a>
+        <a class="tab"><span class="ico">🚪</span>ห้องพัก</a>
+        <a class="tab"><span class="ico">📊</span>ภาพรวม</a>
+      </nav>
+    </div>
+    <span class="ann" style="top:159px;left:19px">1</span>
+    <span class="ann" style="top:232px;left:91px">2</span>
+  </div>
+</div>
+
+<ol class="annotations">
+  <li><span class="ann">1</span> <b>HTTP 403 with a real page.</b> The Thai sentence is fixed by D-40 and used verbatim on every Admin-only route; the JSON equivalent returns 403 with an error code, never an empty 200.</li>
+  <li><span class="ann">2</span> <b>One way out, and it is the role's own landing page</b> — จดมิเตอร์. A dead end with only a back button is what makes a tester call this a bug instead of a rule.</li>
+</ol>
+
+<div class="table-wrap">
+<table>
+<caption class="muted" style="text-align:left;font-size:13px;padding-bottom:6px">Tenants list — states</caption>
+<thead><tr><th>State</th><th>What renders</th><th>Copy / behaviour</th></tr></thead>
+<tbody>
+<tr><td><span class="badge neutral">Empty</span></td><td><code>.empty-state</code> in place of the table</td><td>👤 <b>ยังไม่มีผู้เช่า</b> — D-40 fixes this sentence with no action button; the filtered variant is <b>ไม่พบผู้เช่าที่ตรงกับเงื่อนไข</b> + <b>ล้างตัวกรอง</b>.</td></tr>
+<tr><td><span class="badge info">Loading</span></td><td>5 × <code>.skeleton.row</code>; the coverage banner renders only after its count query returns</td><td>A wrong LINE coverage number is worse than a late one, so that banner never renders a guess.</td></tr>
+<tr><td><span class="badge bad">Error</span></td><td><code>.notice.bad</code> above the table; a failed code generation returns to this page with the error and no code issued</td><td><b>โหลดรายชื่อผู้เช่าไม่สำเร็จ</b> + <b>ลองอีกครั้ง</b> · <b>สร้างรหัสผูกไม่สำเร็จ กรุณาลองอีกครั้ง</b></td></tr>
+<tr><td><span class="badge ok">Success</span></td><td>Code generated: redirect to <code>/tenants/:id</code> with the code panel open. Unlink: back to this list with a toast</td><td><b>สร้างรหัสผูก LINE สำหรับห้อง 204 แล้ว</b> · <b>ยกเลิกการผูก LINE ของ สมชาย ใจดี แล้ว</b></td></tr>
+<tr><td><span class="badge warn">Permission denied</span></td><td>Staff, GET or POST, on every <code>/tenants</code> route: the 403 page above</td><td>The nav item is absent for staff as well, so the 403 exists for a typed URL, a stale bookmark and the test plan.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="table-wrap">
+<table>
+<caption class="muted" style="text-align:left;font-size:13px;padding-bottom:6px">Tenants list — exact Thai copy</caption>
+<thead><tr><th>Element</th><th>Thai</th><th>Note</th></tr></thead>
+<tbody>
+<tr><td>Page title / nav item</td><td>ผู้เช่า</td><td>D-02 mapping for <code>Tenants</code></td></tr>
+<tr><td>Buttons</td><td>เพิ่มผู้เช่า · สร้างรหัสผูก LINE · สร้างรหัสใหม่ · ยกเลิกการผูก · ดูประวัติ</td><td>—</td></tr>
+<tr><td>Columns</td><td>ชื่อ-นามสกุล · เบอร์โทรศัพท์ · ห้อง · วันที่เข้าอยู่ · สถานะ LINE</td><td>PRD §19 field list, minus LINE User ID, which is never displayed (D-29)</td></tr>
+<tr><td>LINE badges</td><td>ผูกแล้ว · ยังไม่ผูก · รอผูก · สิ้นสุดสัญญาแล้ว</td><td>รอผูก carries the code and its expiry date</td></tr>
+<tr><td>Coverage banner</td><td>LINE ผูกแล้ว 54 จาก 67 ห้องที่มีผู้เช่า</td><td>Matches D-35's preview count and the D-44 seed</td></tr>
+<tr><td>Filter chips</td><td>กำลังเช่า · ผูก LINE แล้ว · ยังไม่ผูก LINE · สิ้นสุดสัญญาแล้ว</td><td>—</td></tr>
+<tr><td>Empty</td><td>ยังไม่มีผู้เช่า</td><td>D-40 verbatim</td></tr>
+<tr><td>403</td><td>ไม่มีสิทธิ์เข้าถึงหน้านี้ · บัญชีของคุณเป็นเจ้าหน้าที่ กรุณาติดต่อนิติบุคคล</td><td>D-40 verbatim, button กลับไปหน้าจดมิเตอร์</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>5. Tenant form and detail — <code>GET /tenants/new</code> · <code>GET /tenants/:id</code></h3>
+
+<div class="screen-meta">
+  <span><b>Page:</b> Tenants (form and detail) · เพิ่มผู้เช่า / ข้อมูลผู้เช่า</span>
+  <span><b>Roles:</b> admin only</span>
+  <span><b>Entry points:</b> เพิ่มผู้เช่า · row click on ผู้เช่า · ดูข้อมูลผู้เช่า on a room</span>
+  <span><b>Primary action:</b> บันทึก (form) · สร้างรหัสผูก LINE / สิ้นสุดสัญญาเช่า (detail)</span>
+</div>
+
+<div class="device desktop">
+  <div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/tenants/new</span></div>
+  <div class="screen" style="min-height:0">
+    <div class="app" style="min-height:600px">
+      <nav class="sidebar">
+        <div class="brand"><b>ศุภาลัย เรสซิเดนซ์</b><span>Juristic Platform</span></div>
+        <a class="nav-item">📊 ภาพรวม</a>
+        <a class="nav-item">📝 จดมิเตอร์</a>
+        <a class="nav-item">🧾 บิลประจำเดือน <span class="count">3</span></a>
+        <a class="nav-item">💵 รับชำระเงิน</a>
+        <a class="nav-item">🚪 ห้องพัก</a>
+        <a class="nav-item active">👤 ผู้เช่า</a>
+        <a class="nav-item">📢 ประกาศ</a>
+        <a class="nav-item">📈 รายงาน</a>
+        <div class="user">นิติบุคคล · admin · ออกจากระบบ</div>
+      </nav>
+      <div class="main">
+        <div class="topbar">
+          <span class="title">เพิ่มผู้เช่า</span>
+          <span class="actions"><button class="btn">ยกเลิก</button><button class="btn primary">บันทึก</button></span>
+        </div>
+        <div class="page">
+          <div class="form-narrow">
+            <div class="card">
+              <div class="card-head"><span class="card-title">ข้อมูลผู้เช่า</span></div>
+              <label class="field">
+                <span class="label">ชื่อ-นามสกุล <span class="req">*</span></span>
+                <input class="input" value="วิภาดา นาคเกษม">
+                <span class="hint">ชื่อนี้จะถูกบันทึกลงบิลและใบเสร็จของรอบที่ออกในช่วงที่เช่าอยู่</span>
+              </label>
+              <div class="field-row">
+                <label class="field invalid">
+                  <span class="label">เบอร์โทรศัพท์ <span class="req">*</span></span>
+                  <input class="input" value="09-0118-4402" inputmode="tel" aria-invalid="true">
+                  <span class="error">กรอกเบอร์มือถือ 10 หลัก ขึ้นต้นด้วย 0 เช่น 0901184402</span>
+                </label>
+                <label class="field">
+                  <span class="label">วันที่เข้าอยู่ <span class="req">*</span></span>
+                  <input class="input" type="date" value="2026-09-01">
+                  <span class="hint">ใช้แสดงผลเท่านั้น ไม่มีผลต่อการคิดเงินในรอบใด</span>
+                </label>
+              </div>
+              <label class="field">
+                <span class="label">ห้อง <span class="req">*</span></span>
+                <select class="select">
+                  <option>เลือกห้อง</option>
+                  <option>108 · ชั้น 1 · 30.00 ตร.ม.</option>
+                  <option>203 · ชั้น 2 · 30.00 ตร.ม.</option>
+                  <option>208 · ชั้น 2 · 30.00 ตร.ม.</option>
+                  <option selected>312 · ชั้น 3 · 30.00 ตร.ม.</option>
+                </select>
+                <span class="hint">แสดงเฉพาะห้องว่าง 13 ห้อง · หนึ่งห้องมีผู้เช่าที่กำลังเช่าอยู่ได้ครั้งละหนึ่งราย</span>
+              </label>
+            </div>
+
+            <div class="card">
+              <div class="card-head"><span class="card-title">การผูก LINE</span><span class="badge neutral">ทำหลังบันทึก</span></div>
+              <label class="field" style="margin-bottom:0">
+                <span class="label">LINE User ID</span>
+                <input class="input readonly" value="ยังไม่ผูก" readonly>
+                <span class="hint">กรอกเองไม่ได้ — หลังบันทึก ให้กด <b>สร้างรหัสผูก LINE</b> แล้วให้ผู้เช่าส่งรหัสเข้ามาในไลน์ของนิติบุคคล</span>
+              </label>
+            </div>
+
+            <div class="notice">
+              <b>สถานะห้อง 312 จะเปลี่ยนเป็น มีผู้เช่า ทันทีที่บันทึก</b>
+              และห้องนี้จะถูกรวมในการสร้างบิลของรอบถัดไป
+            </div>
+
+            <div class="toolbar" style="justify-content:flex-end;margin:0">
+              <button class="btn">ยกเลิก</button>
+              <button class="btn primary">บันทึก</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <span class="ann" style="top:134px;left:244px">1</span>
+    <span class="ann" style="top:308px;left:244px">2</span>
+    <span class="ann" style="top:308px;right:190px">3</span>
+    <span class="ann" style="top:412px;left:244px">4</span>
+    <span class="ann" style="top:616px;left:244px">5</span>
+    <span class="ann" style="top:676px;left:227px">6</span>
+  </div>
+</div>
+
+<ol class="annotations">
+  <li><span class="ann">1</span> <b>ชื่อ-นามสกุล</b>, required. The hint states the consequence: this string is snapshotted onto every bill generated during the tenancy, so a typo corrected next year does not rewrite a receipt already issued (D-09).</li>
+  <li><span class="ann">2</span> <b>เบอร์โทรศัพท์</b> — Thai mobile format <code>0XXXXXXXXX</code>, 10 digits, validated on blur. The error shows the accepted shape rather than the rejected one; separators are stripped before validation but the field keeps exactly what was typed (D-10, D-40).</li>
+  <li><span class="ann">3</span> <b>วันที่เข้าอยู่</b> is required and is <em>display only</em> — no proration exists anywhere in this product, so this date changes no amount on any bill (D-08).</li>
+  <li><span class="ann">4</span> <b>ห้อง lists vacant rooms only.</b> An occupied room is not offered, because the database enforces one Active tenant per room through <code>UNIQUE(active_room_id)</code> — the select simply does not present a choice that the constraint would reject anyway (D-10).</li>
+  <li><span class="ann">5</span> <b>LINE User ID is readonly and empty on purpose.</b> A tenant cannot read their own userId anywhere in LINE, so staff literally cannot type it; the field exists to say so and to point at the code flow (D-29).</li>
+  <li><span class="ann">6</span> <b>The status consequence is stated before the save</b>, not discovered after it: saving this form flips room 312 to มีผู้เช่า and pulls it into the next generation run (D-07, D-18).</li>
+</ol>
+
+<p><b>Tenant detail — the LINE link code panel.</b> Room 207's tenant has an outstanding code. This is the whole of D-29's flow on one screen: generate, hand over, tenant sends it in chat, binding lands.</p>
+
+<div class="device desktop">
+  <div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/tenants/2070</span></div>
+  <div class="screen">
+    <div class="app" style="min-height:760px">
+      <nav class="sidebar">
+        <div class="brand"><b>ศุภาลัย เรสซิเดนซ์</b><span>Juristic Platform</span></div>
+        <a class="nav-item">📊 ภาพรวม</a>
+        <a class="nav-item">📝 จดมิเตอร์</a>
+        <a class="nav-item">🧾 บิลประจำเดือน <span class="count">3</span></a>
+        <a class="nav-item">💵 รับชำระเงิน</a>
+        <a class="nav-item">🚪 ห้องพัก</a>
+        <a class="nav-item active">👤 ผู้เช่า</a>
+        <a class="nav-item">📢 ประกาศ</a>
+        <a class="nav-item">📈 รายงาน</a>
+        <div class="user">นิติบุคคล · admin · ออกจากระบบ</div>
+      </nav>
+      <div class="main">
+        <div class="topbar">
+          <span class="title">กิตติศักดิ์ พูนสิน</span>
+          <span class="badge ok">กำลังเช่า</span>
+          <span class="actions">
+            <button class="btn ghost">‹ กลับไปรายชื่อผู้เช่า</button>
+            <button class="btn danger is-disabled">สิ้นสุดสัญญาเช่า</button>
+            <button class="btn primary">แก้ไขข้อมูล</button>
+          </span>
+        </div>
+        <div class="page">
+          <div class="cols">
+            <div>
+              <div class="card">
+                <div class="card-head"><span class="card-title">ข้อมูลผู้เช่า</span></div>
+                <dl class="facts">
+                  <dt>ชื่อ-นามสกุล</dt><dd><b>กิตติศักดิ์ พูนสิน</b></dd>
+                  <dt>เบอร์โทรศัพท์</dt><dd>084-220-6690</dd>
+                  <dt>ห้อง</dt><dd>207 · ชั้น 2 · 30.00 ตร.ม.</dd>
+                  <dt>วันที่เข้าอยู่</dt><dd>1 มี.ค. 2026</dd>
+                  <dt>วันที่ย้ายออก</dt><dd class="ui-muted">—</dd>
+                  <dt>สถานะ</dt><dd><span class="badge ok">กำลังเช่า</span></dd>
+                </dl>
+              </div>
+
+              <div class="card">
+                <div class="card-head"><span class="card-title">บิลของผู้เช่ารายนี้</span><span class="ui-sub">7 รอบ</span></div>
+                <div class="table-scroll">
+                  <table class="compact zebra">
+                    <thead><tr><th scope="col">รอบบิล</th><th scope="col" class="num">รวม</th><th scope="col">ครบกำหนด</th><th scope="col">สถานะ</th><th scope="col"></th></tr></thead>
+                    <tbody>
+                      <tr><td><b>ก.ย. 2026</b></td><td class="num">1,684.00</td><td>5 ก.ย. 2026</td><td><span class="badge overdue" data-status="Overdue">เกินกำหนด</span></td><td><button class="btn ghost sm">ดูบิล</button></td></tr>
+                      <tr><td>ส.ค. 2026</td><td class="num">1,742.00</td><td>5 ส.ค. 2026</td><td><span class="badge paid" data-status="Paid">ชำระแล้ว</span></td><td><button class="btn ghost sm">ดูบิล</button></td></tr>
+                      <tr><td>ก.ค. 2026</td><td class="num">1,668.00</td><td>5 ก.ค. 2026</td><td><span class="badge paid" data-status="Paid">ชำระแล้ว</span></td><td><button class="btn ghost sm">ดูบิล</button></td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div class="card">
+                <div class="card-head"><span class="card-title">การผูก LINE</span><span class="badge info">รอผูก</span></div>
+                <div class="code-slip">
+                  <span class="ui-sub">รหัสผูกบัญชีของห้อง 207</span>
+                  <span class="code">K7QM9X</span>
+                  <span class="ui-sub">ใช้ได้ครั้งเดียว · หมดอายุ 12 ก.ย. 2026 (อีก 5 วัน)</span>
+                </div>
+                <ol style="margin:16px 0 0;padding-left:20px;font-size:13px;line-height:1.7;color:var(--ui-text-2)">
+                  <li>ให้ผู้เช่าสแกน QR เพิ่มเพื่อนบัญชีทางการของนิติบุคคล</li>
+                  <li>ให้ผู้เช่าพิมพ์รหัส <b>K7QM9X</b> ส่งเข้าไปในแชท</li>
+                  <li>ระบบตอบกลับว่าผูกสำเร็จ และชื่อ LINE จะขึ้นในหน้านี้ทันที</li>
+                </ol>
+                <div class="card-foot">
+                  <button class="btn sm">สร้างรหัสใหม่</button>
+                  <button class="btn secondary sm">พิมพ์ใบผูกบัญชี</button>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="card-head"><span class="card-title">ตัวอย่างการตอบกลับใน LINE</span></div>
+                <div class="line-chat" style="width:100%">
+                  <div class="line-header"><span class="avatar">น</span> นิติบุคคล ศุภาลัย เรสซิเดนซ์</div>
+                  <div class="line-body">
+                    <div class="bubble user">K7QM9X<span class="time">09:41</span></div>
+                    <div class="bubble oa">✅ ผูกบัญชีสำเร็จ
+คุณจะได้รับบิลและประกาศของห้อง 207 ผ่าน LINE นี้<span class="time">09:41</span></div>
+                    <div class="bubble oa">❌ ไม่พบรหัสนี้ หรือรหัสหมดอายุแล้ว กรุณาติดต่อสำนักงานนิติบุคคล<span class="time">ตัวอย่างกรณีรหัสผิด</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <span class="ann" style="top:16px;right:112px">1</span>
+    <span class="ann" style="top:185px;right:98px">2</span>
+    <span class="ann" style="top:220px;right:54px">3</span>
+    <span class="ann" style="top:320px;right:28px">4</span>
+    <span class="ann" style="top:547px;right:28px">5</span>
+    <span class="ann" style="top:248px;left:244px">6</span>
+    <span class="ann" style="top:445px;right:465px">7</span>
+  </div>
+</div>
+
+<ol class="annotations">
+  <li><span class="ann">1</span> <b>สิ้นสุดสัญญาเช่า is disabled here</b>, because this tenant's ก.ย. 2026 bill is เกินกำหนด. D-08 blocks ending a tenancy until a final reading exists for both utilities and the bill covering it is Paid; hovering the button shows <span lang="th">ปิดสัญญาไม่ได้: ห้อง 207 ยังมีบิลค้างชำระ 1 ใบ</span>. Disabling it with a stated reason is what turns an office rule into something the system can actually hold.</li>
+  <li><span class="ann">2</span> <b>The code panel is the payload of the whole flow</b>: six characters from <code>ABCDEFGHJKLMNPQRSTUVWXYZ23456789</code>, set in the monospace face at 28&nbsp;px with wide letter-spacing so it can be read aloud across a counter. No O/0 and no I/1 exist in the alphabet, so there is nothing to misread (D-29).</li>
+  <li><span class="ann">3</span> <b>Single use, 7 days, with the expiry spelled out</b> both as a date and as a remaining-days count. An expired code is not silently reused: สร้างรหัสใหม่ issues a fresh one and invalidates the old.</li>
+  <li><span class="ann">4</span> <b>The three steps are printed on the screen the admin is looking at</b>, in the order the tenant will perform them, because the person explaining the flow at the counter is reading this panel, not the manual. พิมพ์ใบผูกบัญชี prints the same three lines plus the OA QR code on a slip.</li>
+  <li><span class="ann">5</span> <b>The two replies the tenant can receive</b>, quoted verbatim from D-31's template set so support can recognise a screenshot a tenant sends them. v1 sends plain text only — no Flex message, no rich menu.</li>
+  <li><span class="ann">6</span> <b>วันที่ย้ายออก is shown but never editable.</b> It is written by the สิ้นสุดสัญญาเช่า action as the date that action was taken, and is never typed and never future-dated (D-10).</li>
+  <li><span class="ann">7</span> <b>Bills follow the tenant, not the room.</b> This list is the tenant's own bills, so a departed tenant's history stays reachable after a new tenant moves in (D-08). Statuses carry <code>data-status</code>; เกินกำหนด is computed at render time from an Unpaid bill with a past due date and is never stored (D-21).</li>
+</ol>
+
+<p><b>Alternate state — สิ้นสุดสัญญาเช่า (D-39, call site 6).</b> Room 312's departing tenant: final readings recorded, final bill Paid, so the action is available. The dialog spells out the four things that happen in one transaction.</p>
+
+<div class="device desktop">
+  <div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/tenants/2312</span></div>
+  <div class="screen" style="min-height:0">
+    <div class="app" style="min-height:460px">
+      <nav class="sidebar">
+        <div class="brand"><b>ศุภาลัย เรสซิเดนซ์</b><span>Juristic Platform</span></div>
+        <a class="nav-item">📊 ภาพรวม</a>
+        <a class="nav-item">📝 จดมิเตอร์</a>
+        <a class="nav-item">🧾 บิลประจำเดือน <span class="count">3</span></a>
+        <a class="nav-item">💵 รับชำระเงิน</a>
+        <a class="nav-item">🚪 ห้องพัก</a>
+        <a class="nav-item active">👤 ผู้เช่า</a>
+        <div class="user">นิติบุคคล · admin · ออกจากระบบ</div>
+      </nav>
+      <div class="main">
+        <div class="topbar">
+          <span class="title">ประเสริฐ ชูเกียรติ</span>
+          <span class="badge ok">กำลังเช่า</span>
+          <span class="actions"><button class="btn danger">สิ้นสุดสัญญาเช่า</button><button class="btn primary">แก้ไขข้อมูล</button></span>
+        </div>
+        <div class="page">
+          <div class="notice ok">
+            <b>พร้อมสิ้นสุดสัญญาเช่า</b>
+            จดมิเตอร์รอบสุดท้ายแล้ว (ส.ค. 2026 · 💧 1,402 · ⚡ 6,118) และบิลรอบ ส.ค. 2026 ชำระแล้ว · ใบเสร็จ REC-202608-000774
+          </div>
+          <div class="card">
+            <div class="card-head"><span class="card-title">ข้อมูลผู้เช่า</span></div>
+            <dl class="facts">
+              <dt>ห้อง</dt><dd>312 · ชั้น 3</dd>
+              <dt>วันที่เข้าอยู่</dt><dd>1 มี.ค. 2024</dd>
+              <dt>LINE</dt><dd><span class="badge ok">ผูกแล้ว</span> <span class="ui-sub">Prasert · 4 มิ.ย. 2026</span></dd>
+            </dl>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal">
+      <div class="dialog">
+        <div class="dialog-title">สิ้นสุดสัญญาเช่าห้อง 312</div>
+        <div class="dialog-body">
+          <p>เมื่อยืนยัน ระบบจะทำสี่อย่างพร้อมกัน</p>
+          <ul style="margin:0 0 12px;padding-left:18px;line-height:1.7">
+            <li>เปลี่ยนสถานะผู้เช่าเป็น <b>สิ้นสุดสัญญาแล้ว</b></li>
+            <li>บันทึกวันที่ย้ายออกเป็น <b>7 ก.ย. 2026</b></li>
+            <li>ยกเลิกการผูก LINE ของผู้เช่ารายนี้</li>
+            <li>เปลี่ยนสถานะห้อง 312 เป็น <b>ว่าง</b></li>
+          </ul>
+          <p><b>ประวัติบิลและใบเสร็จจะยังคงอยู่</b></p>
+          <div class="field" style="margin-bottom:0">
+            <span class="label">เหตุผล <span class="req">*</span></span>
+            <textarea class="textarea" placeholder="เช่น ครบกำหนดสัญญา ผู้เช่าย้ายออกเอง">ครบกำหนดสัญญา ผู้เช่าแจ้งย้ายออก</textarea>
+            <span class="hint">อย่างน้อย 10 ตัวอักษร · บันทึกลงประวัติการแก้ไข</span>
+          </div>
+        </div>
+        <div class="dialog-actions">
+          <button class="btn">ยกเลิก</button>
+          <button class="btn danger">สิ้นสุดสัญญาเช่า</button>
+        </div>
+      </div>
+    </div>
+    <span class="ann" style="top:81px;left:227px">1</span>
+    <span class="ann" style="top:99px;left:336px">2</span>
+    <span class="ann" style="top:206px;left:336px">3</span>
+    <span class="ann" style="top:234px;left:336px">4</span>
+    <span class="ann" style="top:409px;right:336px">5</span>
+  </div>
+</div>
+
+<ol class="annotations">
+  <li><span class="ann">1</span> <b>The precondition is shown as a green banner, not assumed.</b> D-08's gate is checked before the button is enabled, and the evidence — the final reading round and the paid bill's receipt number — is named on screen so the admin can see <em>why</em> the action is available.</li>
+  <li><span class="ann">2</span> <b>Four effects, listed.</b> The dialog does not say "are you sure"; it says exactly what will change, including the two changes that are easy to forget — the LINE unbinding and the room flipping to ว่าง. All four happen in one transaction, with the audit row written on the same connection (D-10, D-38).</li>
+  <li><span class="ann">3</span> <b>What survives, in bold</b> — ประวัติบิลและใบเสร็จจะยังคงอยู่. A tenant record is never deleted; bills, payments and receipts reference it forever (D-10).</li>
+  <li><span class="ann">4</span> <b>Reason required, ≥ 10 characters</b>, stored as <code>audit_log.reason</code> under action <code>TENANCY_END</code>. The button enables only once the field is long enough.</li>
+  <li><span class="ann">5</span> <b>The primary button repeats the verb</b> and is <code>.btn.danger</code>. After it commits, the page reloads showing the tenant as สิ้นสุดสัญญาแล้ว with วันที่ย้ายออก filled in, and room 312 is now available in the ห้อง select of the tenant form.</li>
+</ol>
+
+<div class="table-wrap">
+<table>
+<caption class="muted" style="text-align:left;font-size:13px;padding-bottom:6px">Tenant form — validation rules</caption>
+<thead><tr><th>Field</th><th>Rule</th><th>Thai message</th><th>When it fires</th></tr></thead>
+<tbody>
+<tr><td>ชื่อ-นามสกุล</td><td>required, ≤ 100 chars</td><td>กรุณากรอกชื่อ-นามสกุลของผู้เช่า</td><td>blur · submit</td></tr>
+<tr><td>เบอร์โทรศัพท์</td><td>required, <code>0</code> + 9 digits</td><td>กรอกเบอร์มือถือ 10 หลัก ขึ้นต้นด้วย 0 เช่น 0901184402</td><td>blur · submit</td></tr>
+<tr><td>ห้อง</td><td>required, must be a vacant active room</td><td>กรุณาเลือกห้อง</td><td>submit</td></tr>
+<tr><td>ห้อง</td><td>room taken between page load and submit</td><td>ห้องนี้มีผู้เช่าอยู่แล้ว กรุณาเลือกห้องอื่น</td><td>after submit — <code>UNIQUE(active_room_id)</code> is the real guard (D-10)</td></tr>
+<tr><td>วันที่เข้าอยู่</td><td>required, valid date, not in the future</td><td>วันที่เข้าอยู่ต้องไม่เป็นวันในอนาคต</td><td>blur · submit</td></tr>
+<tr><td>LINE User ID</td><td>never accepted from the form</td><td>—</td><td>the field is readonly; a posted value is ignored, not merged (D-29)</td></tr>
+<tr><td>วันที่ย้ายออก</td><td>never accepted from the form</td><td>—</td><td>written only by สิ้นสุดสัญญาเช่า (D-10)</td></tr>
+<tr><td>สิ้นสุดสัญญาเช่า</td><td>blocked until the final reading exists and its bill is Paid</td><td>ปิดสัญญาไม่ได้: ห้อง 207 ยังมีบิลค้างชำระ 1 ใบ · ปิดสัญญาไม่ได้: ยังไม่ได้จดมิเตอร์รอบสุดท้ายของห้อง 207</td><td>button disabled with the reason; the POST is refused as well (D-08)</td></tr>
+<tr><td>เหตุผล (dialog)</td><td>required, ≥ 10 chars</td><td>กรุณาระบุเหตุผลอย่างน้อย 10 ตัวอักษร</td><td>keystroke — the primary button stays disabled (D-39)</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="table-wrap">
+<table>
+<caption class="muted" style="text-align:left;font-size:13px;padding-bottom:6px">Tenant form and detail — states</caption>
+<thead><tr><th>State</th><th>What renders</th><th>Copy / behaviour</th></tr></thead>
+<tbody>
+<tr><td><span class="badge neutral">Empty</span></td><td>Create with no vacant rooms: the ห้อง select renders disabled with a notice. Detail with no bills yet: an empty state inside that card</td><td><b>ไม่มีห้องว่างในขณะนี้</b> — ต้องสิ้นสุดสัญญาเช่าของห้องใดห้องหนึ่งก่อน หรือเพิ่มห้องใหม่ · <b>ยังไม่มีบิลของผู้เช่ารายนี้</b></td></tr>
+<tr><td><span class="badge info">Loading</span></td><td>Detail: facts card first, bill table as 3 × <code>.skeleton.row</code>. Code generation: the button takes <code>.is-loading</code> and the panel is replaced only when the code exists</td><td>A code is never rendered optimistically — a code shown but not stored would be handed to a tenant and then rejected by the webhook.</td></tr>
+<tr><td><span class="badge bad">Error</span></td><td>Save failure: <code>.notice.bad</code> above the form, values preserved. Blocked tenancy end: <code>.notice.warn</code> on the detail page and a disabled button</td><td><b>บันทึกไม่สำเร็จ — ตรวจสอบช่องที่ไฮไลต์ไว้</b> · <b>ยังสิ้นสุดสัญญาเช่าไม่ได้</b> ห้อง 207 มีบิลค้างชำระ 1 ใบ — รับชำระและออกใบเสร็จก่อน</td></tr>
+<tr><td><span class="badge ok">Success</span></td><td>Create: redirect to the new tenant's detail with a toast. Tenancy ended: the detail page reloads in its ended form with a <code>.notice</code> banner, not a toast — it changed a room's billability</td><td><b>เพิ่มผู้เช่าห้อง 312 แล้ว</b> · banner <b>สิ้นสุดสัญญาเช่าห้อง 312 แล้ว เมื่อ 7 ก.ย. 2026</b> · ห้อง 312 เปลี่ยนเป็น ว่าง · ยกเลิกการผูก LINE แล้ว</td></tr>
+<tr><td><span class="badge warn">Permission denied</span></td><td>Staff on any <code>/tenants</code> route: the Thai 403 page. Admin acting on an already-ended tenancy: 409 with an inline notice</td><td><b>ผู้เช่ารายนี้สิ้นสุดสัญญาแล้ว ไม่สามารถแก้ไขได้</b> — the record stays visible and read-only.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="table-wrap">
+<table>
+<caption class="muted" style="text-align:left;font-size:13px;padding-bottom:6px">Tenant form and detail — exact Thai copy</caption>
+<thead><tr><th>Element</th><th>Thai</th><th>Note</th></tr></thead>
+<tbody>
+<tr><td>Titles</td><td>เพิ่มผู้เช่า · แก้ไขข้อมูลผู้เช่า · the tenant's own name on the detail page</td><td>—</td></tr>
+<tr><td>Buttons</td><td>บันทึก · ยกเลิก · แก้ไขข้อมูล · สิ้นสุดสัญญาเช่า · สร้างรหัสผูก LINE · สร้างรหัสใหม่ · พิมพ์ใบผูกบัญชี · ยกเลิกการผูก · ‹ กลับไปรายชื่อผู้เช่า</td><td>—</td></tr>
+<tr><td>Field labels</td><td>ชื่อ-นามสกุล · เบอร์โทรศัพท์ · ห้อง · วันที่เข้าอยู่ · วันที่ย้ายออก · สถานะ · LINE User ID</td><td>D-10 field list verbatim</td></tr>
+<tr><td>LINE panel</td><td>รหัสผูกบัญชีของห้อง 207 · ใช้ได้ครั้งเดียว · หมดอายุ 12 ก.ย. 2026 (อีก 5 วัน)</td><td>6 characters, 7 days, single use (D-29)</td></tr>
+<tr><td>LINE panel steps</td><td>1) ให้ผู้เช่าสแกน QR เพิ่มเพื่อนบัญชีทางการของนิติบุคคล 2) ให้ผู้เช่าพิมพ์รหัส K7QM9X ส่งเข้าไปในแชท 3) ระบบตอบกลับว่าผูกสำเร็จ และชื่อ LINE จะขึ้นในหน้านี้ทันที</td><td>The order the tenant performs them (D-29)</td></tr>
+<tr><td>LINE replies</td><td>✅ ผูกบัญชีสำเร็จ / คุณจะได้รับบิลและประกาศของห้อง 207 ผ่าน LINE นี้ · ❌ ไม่พบรหัสนี้ หรือรหัสหมดอายุแล้ว กรุณาติดต่อสำนักงานนิติบุคคล</td><td>D-29 verbatim, plain text only (D-31)</td></tr>
+<tr><td>Blocked-action hint</td><td>ปิดสัญญาไม่ได้: ห้อง 207 ยังมีบิลค้างชำระ 1 ใบ</td><td>D-08 gate</td></tr>
+<tr><td>Confirmation dialog</td><td>Title <b>สิ้นสุดสัญญาเช่าห้อง 312</b> · body lists the four effects · <b>ประวัติบิลและใบเสร็จจะยังคงอยู่</b> · buttons <b>ยกเลิก</b> / <b>สิ้นสุดสัญญาเช่า</b></td><td>D-39 call site 6</td></tr>
+<tr><td>Toasts</td><td>เพิ่มผู้เช่าห้อง 312 แล้ว · ยกเลิกการผูก LINE ของ สมชาย ใจดี แล้ว · สร้างรหัสผูก LINE สำหรับห้อง 204 แล้ว</td><td>No undo anywhere (D-39)</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>6. Assumptions recorded by these screens</h3>
+
+<ol>
+  <li><b>Form routes.</b> The Design Foundations site map counts fifteen navigable pages and the ADR's <code>views/pages/</code> list names <code>rooms.ejs</code>, <code>room-detail.ejs</code> and <code>tenants.ejs</code>. The four form and detail surfaces here — <code>/rooms/new</code>, <code>/rooms/:id/edit</code>, <code>/tenants/new</code>, <code>/tenants/:id</code>, plus <code>/tenants/:id/edit</code> — are treated as <em>form modes of those same templates</em>, not new page files, and every mutation is an ordinary form POST with POST-Redirect-GET. No new JSON endpoint is introduced: the ADR fixes the API at exactly seven, and an eighth is a decision, not a convenience.</li>
+  <li><b>Room 205's meter baselines.</b> D-44 requires twelve periods of history, so room 205's opening values are shown as <code>baseline_water</code> 1,143 and <code>baseline_electric</code> 4,559 at 30 ก.ย. 2025 — the only values from which twelve months of realistic consumption land exactly on the PRD §28 demo (1,250 → 1,260 and 5,280 → 5,350). The engineering data model's worked example uses 1,192 / 5,215 for a deliberately minimal two-period extract; both reproduce the binding demo arithmetic, and neither is an expected value in any test.</li>
+  <li><b>Tenant name for room 205.</b> สมชาย ใจดี, matching the seed in the engineering data model and API spec. Design Foundations §8.7 prints a different name on its receipt sample; the seed value is the one used here and in every table that names room 205's tenant.</li>
+  <li><b>Room codes and ids.</b> The URL bar shows <code>/rooms/205</code> and <code>/tenants/2050</code>, following the data model's seed ids. The room code is the only room identifier a human ever reads; the surrogate id appears nowhere on screen.</li>
+  <li><b>Uniform 30.00 ตร.ม.</b> Every room in the list carries the same area and type because D-44 seeds a uniform studio block — that is what makes PRD §16's 70,350.00 = 67 × 30 × 35 come out exactly. It is a seed property, not a product constraint: the area field is per-room and free.</li>
+  <li><b>Fictional data.</b> All tenant names, phone numbers, LINE display names and the link code K7QM9X are invented for the mockups. Amounts other than room 205's 180 / 560 / 1,050 / 1,790 are illustrative and are never expected values in a test (D-44).</li>
+  <li><b>Row actions on the tenants list.</b> ยกเลิกการผูก is rendered as a plain POST with a toast rather than a confirmation dialog, because D-39 fixes the dialog at exactly six call sites and unlinking destroys nothing that a new code cannot restore.</li>
+</ol>
+
+</section>

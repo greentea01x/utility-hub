@@ -1,0 +1,1343 @@
+<section id="tc-payment-line">
+<h2>Payments, Receipts, LINE Notifications, Announcements &amp; Reports</h2>
+
+<p>Sixty-nine executable test cases covering the money end of the system and every outbound channel: the cash counter and its receipt, the LINE Official Account (bill delivery, reminders, payment confirmation, announcements, account linking, webhook security and the notification log) and the four reports plus the history views. Every case is written against the <code>db/seed.sql</code> dataset of D-44 and the demo fixture ids of engineering spec §3.1.10, so a tester can run them in order without inventing data. Each row names the endpoint, the exact input, the exact expected output — status code, error code, Thai message, badge, stored value — and the requirements it discharges.</p>
+
+<div class="grid">
+  <div class="card">
+    <h4>Fixture ids used throughout</h4>
+    <dl class="kv">
+      <dt>Admin user</dt><dd><code>1</code> · <code>admin</code> · ชื่อที่แสดง นิติบุคคล</dd>
+      <dt>Staff user</dt><dd><code>2</code> · <code>staff</code> · ชื่อที่แสดง เจ้าหน้าที่</dd>
+      <dt>Room</dt><dd><code>41</code> · <code>room_code "205"</code> · floor 2 · <code>area_sqm "30.00"</code></dd>
+      <dt>Tenant</dt><dd><code>37</code> · Active · <code>0812345678</code> · linked</dd>
+      <dt>Readings</dt><dd><code>812</code> water · <code>813</code> electric · period <code>2026-09</code></dd>
+      <dt>Bill</dt><dd><code>118</code> · period <code>2026-09</code> · total <code>"1790.00"</code></dd>
+      <dt>Bill items</dt><dd><code>352</code> / <code>353</code> / <code>354</code> = 180.00 / 560.00 / 1050.00</dd>
+      <dt>Payment · receipt</dt><dd><code>96</code> · <code>REC-202609-000852</code></dd>
+      <dt>Announcement</dt><dd><code>7</code> · ปิดน้ำเพื่อซ่อมบำรุง</dd>
+    </dl>
+  </div>
+  <div class="card">
+    <h4>Priority</h4>
+    <p><span class="badge p0">P0</span> demo-critical or money-touching. A red P0 blocks the PRD §28 demo path or can produce a wrong amount, a duplicate receipt or a message a tenant should never have received. All P0s run before every push and on the morning of the defence.</p>
+    <p><span class="badge p1">P1</span> required behaviour that a grader or the office will exercise, but whose failure does not corrupt money.</p>
+    <p><span class="badge p2">P2</span> polish, copy and non-blocking hints.</p>
+    <p><b>Type</b> follows ADR §6.9's three tiers: <code>unit</code> (no database), <code>API</code> and <code>e2e</code> (integration, scratch schema, built-in <code>fetch</code> + the cookie helper), <code>UI</code> (rendered page or print sheet, asserted by hand or by <code>data-*</code> hook).</p>
+  </div>
+</div>
+
+<div class="callout warn">
+  <div class="title">Three rules that decide whether a case is written correctly</div>
+  <ol>
+    <li><b>Assert the arithmetic, never the calendar (D-44).</b> <code>seed.sql</code> computes every date from the run date. Any case below that quotes 5 ก.ย. 2026 or <code>REC-202609-000852</code> is quoting a documentation value; the executable assertion is on <code>due_date = MAX(due day, approval + 3 days)</code>, on <code>REC-&lt;payment month YYYYMM&gt;-&lt;6 digits&gt;</code>, and on 10 × 18 = 180 / 70 × 8 = 560 / 30 × 35 = 1,050 / total 1,790.00.</li>
+    <li><b>Receipt numbers are unique and monotonic, <em>not</em> gapless (D-05 #10, D-27).</b> No case asserts that sequence numbers are consecutive. A case that did would fail against the seed's starting offset before the application was even opened.</li>
+    <li><b>Money format differs by surface (D-03).</b> Tables, Bill Detail and the receipt render <code>1,790.00</code>; LINE messages and sentence text render <code>1,790 บาท</code> with the trailing <code>.00</code> dropped. A case that asserts the wrong one on the wrong surface is a defective case, not a defect.</li>
+  </ol>
+</div>
+
+<!-- ================================================================ -->
+<h3>1. Cash payment — ยืนยันรับเงินสด (<code>POST /payments</code>)</h3>
+
+<p>Full payment only, one live payment per bill, Admin only. The stored amount is copied from <code>bills.total</code> in SQL and is never an input (D-24); every duplicate-prevention guarantee is a database constraint, never a disabled button (D-26).</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr>
+<th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th>
+</tr></thead>
+<tbody>
+
+<tr>
+<td><b>TC-PAY-001</b></td>
+<td>Confirm cash payment for room 205 end to end</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Seed loaded; bill <code>118</code> approved, stored status <code>Unpaid</code>, total <code>"1790.00"</code>; tenant 37 linked; signed in as <code>admin</code>.</td>
+<td><ol>
+<li>Open <code>/payments?q=205</code>.</li>
+<li>Select the บิลที่ยังไม่ชำระ row for รอบ กันยายน 2026.</li>
+<li>Press ยืนยันรับเงินสด.</li>
+<li>Press ยืนยันรับเงินสด in the dialog.</li>
+</ol></td>
+<td><code>bill_id=118</code><br><code>expected_total=1790.00</code><br><code>_csrf=&lt;token&gt;</code></td>
+<td><b>303</b> → <code>/receipts/96</code>. <code>bills.status='Paid'</code>; one <code>payments</code> row (<code>bill_id=118</code>, <code>amount="1790.00"</code>, <code>method='cash'</code>, <code>received_by_user_id=1</code>); one <code>receipts</code> row <code>REC-202609-000852</code>; one <code>audit_log</code> row <code>PAYMENT_CONFIRM</code> with <code>bill_id=118</code>; one <code>notifications</code> row <code>type='PAID'</code>. Banner: <span lang="th">บันทึกการรับเงินเรียบร้อย · ห้อง 205 · รอบ กันยายน 2026 · เลขที่ใบเสร็จ REC-202609-000852</span>. Status element carries <code>data-status="Paid"</code>, badge <span class="badge paid">ชำระแล้ว</span>.</td>
+<td>FR-22, FR-23, FR-24, FR-39 · D-24, D-26, D-36, D-38</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-002</b></td>
+<td>The amount is never an input and cannot be overridden</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Bill <code>118</code> <code>Unpaid</code>, total <code>"1790.00"</code>; admin session.</td>
+<td><ol>
+<li>Render <code>/payments?q=205</code> and inspect the form.</li>
+<li>POST <code>/payments</code> with an extra <code>amount</code> field carrying a different value.</li>
+<li>Read back the stored payment.</li>
+</ol></td>
+<td>Form contains no editable amount control. POST body: <code>bill_id=118&amp;expected_total=1790.00&amp;amount=100.00</code></td>
+<td>The rendered page shows <span lang="th">ยอดที่ต้องชำระ 1,790.00 บาท</span> as read-only text plus <span lang="th">ระบบรับชำระเต็มจำนวนเท่านั้น · แก้ไขยอดไม่ได้</span>; no <code>&lt;input name="amount"&gt;</code> exists. The POST succeeds and <code>payments.amount = "1790.00"</code> — the injected <code>100.00</code> is ignored because the value is copied by <code>INSERT … SELECT id, total FROM bills</code>. Arithmetic: 180.00 + 560.00 + 1,050.00 = 1,790.00 = <code>bills.total</code> = <code>payments.amount</code>.</td>
+<td>FR-22 · D-24, D-05 #2</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-003</b></td>
+<td>Double-submitted confirm produces one payment and one receipt</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Bill <code>118</code> <code>Unpaid</code>; admin session; CSRF token captured.</td>
+<td><ol>
+<li>POST <code>/payments</code> for bill 118.</li>
+<li>POST the identical body a second time.</li>
+<li>Count payments and receipts for bill 118.</li>
+</ol></td>
+<td>Two identical bodies: <code>bill_id=118&amp;expected_total=1790.00</code></td>
+<td>First call <b>303</b> → <code>/receipts/96</code>. Second call <b>409</b> <code>BILL_ALREADY_PAID</code>, Thai message <span lang="th">บิลนี้ถูกชำระไปแล้ว</span> — raised because <code>UPDATE bills SET status='Paid' WHERE id=118 AND status='Unpaid'</code> affected 0 rows. <code>SELECT COUNT(*) FROM payments WHERE bill_id=118 AND voided_at IS NULL</code> = 1; <code>COUNT(*) FROM receipts</code> for that payment = 1. The page shows <code>.notice.bad</code> <span lang="th">บิลนี้ถูกชำระไปแล้ว · ดูใบเสร็จ</span>.</td>
+<td>FR-22, FR-23 · D-26, D-24</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-004</b></td>
+<td>Two cashiers on one bill — the database, not the button, is the guarantee</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Bill <code>118</code> <code>Unpaid</code>; two admin sessions A and B, each with its own CSRF token.</td>
+<td><ol>
+<li>Fire both POSTs concurrently (no delay between them).</li>
+<li>Read both responses.</li>
+<li>Inspect <code>payments</code> and <code>receipts</code>.</li>
+</ol></td>
+<td>Session A and session B both POST <code>bill_id=118&amp;expected_total=1790.00</code></td>
+<td>Exactly one <b>303</b> and one <b>409</b> <code>BILL_ALREADY_PAID</code> <span lang="th">บิลนี้ถูกชำระไปแล้ว</span>. One live <code>payments</code> row — enforced by the conditional UPDATE and, behind it, by <code>uq_payments(active_bill_id)</code> on the generated column <code>active_bill_id = IF(voided_at IS NULL, bill_id, NULL)</code>. One receipt number issued, never two. No test asserts on the disabled button: the UI spinner is a courtesy.</td>
+<td>FR-22 · D-26</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-005</b></td>
+<td>A Draft bill cannot be paid</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Room 205's bill for the current period is still <code>Draft</code> (fresh seed, before the demo approval).</td>
+<td><ol>
+<li>POST <code>/payments</code> naming the Draft bill.</li>
+<li>Re-read the bill.</li>
+</ol></td>
+<td><code>bill_id=118&amp;expected_total=1790.00</code> with <code>bills.status='Draft'</code></td>
+<td><b>422</b> <code>BILL_NOT_PAYABLE</code>, <span lang="th">บิลนี้ยังไม่ได้อนุมัติ ไม่สามารถรับชำระได้</span>. No <code>payments</code> row, no receipt number consumed, bill still <code>Draft</code> (<code>data-status="Draft"</code>, badge <span class="badge draft">ฉบับร่าง</span>). The Payment screen never lists a Draft bill in บิลที่ยังไม่ชำระ.</td>
+<td>FR-22 · D-24, D-18</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-006</b></td>
+<td>A stale Payment screen is refused, not silently accepted</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Cashier has <code>/payments?q=205</code> open showing 1,790.00. Meanwhile Admin reverted bill 118 to Draft, corrected a reading and re-approved it at 1,810.00.</td>
+<td><ol>
+<li>Press ยืนยันรับเงินสด on the stale screen.</li>
+<li>Reload and repeat with the fresh total.</li>
+</ol></td>
+<td>Stale: <code>bill_id=118&amp;expected_total=1790.00</code> against <code>bills.total="1810.00"</code>.<br>Fresh: <code>expected_total=1810.00</code>.</td>
+<td>Stale call <b>409</b> <code>BILL_TOTAL_CHANGED</code>, <span lang="th">ยอดบิลเปลี่ยนแปลง กรุณาโหลดหน้าใหม่ก่อนรับเงิน</span>; nothing written. Fresh call <b>303</b> and <code>payments.amount = "1810.00"</code> — the stored amount still comes from <code>bills.total</code>, never from the posted field.</td>
+<td>FR-22 · D-24, D-22</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-007</b></td>
+<td>A bill displaying as เกินกำหนด is payable</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Bill 118 stored status <code>Unpaid</code>, <code>due_date</code> already in the past (set <code>due_date = CURDATE() - INTERVAL 3 DAY</code>).</td>
+<td><ol>
+<li>Open <code>/payments?q=205</code> and read the badge.</li>
+<li>Confirm the payment.</li>
+</ol></td>
+<td><code>due_date = CURDATE() − 3</code>; total <code>"1790.00"</code></td>
+<td>Row renders <span class="badge overdue">เกินกำหนด</span> with <code>data-status="Overdue"</code>, but the stored status is <code>Unpaid</code>, so the payment succeeds: <b>303</b> → receipt, <code>bills.status='Paid'</code>. <code>Overdue</code> is never written to the column by anything, and no late fee, interest or penalty is added anywhere — the total is still exactly 1,790.00.</td>
+<td>FR-22, FR-23 · D-21, D-05 #3</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-008</b></td>
+<td>Staff is refused the counter, and no amount reaches a Staff response</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Signed in as <code>staff</code> (user 2).</td>
+<td><ol>
+<li>GET <code>/payments</code>.</li>
+<li>POST <code>/payments</code> with a valid body and a valid Staff CSRF token.</li>
+<li>Grep both response bodies for any amount.</li>
+</ol></td>
+<td>Staff session cookie; <code>bill_id=118&amp;expected_total=1790.00</code></td>
+<td>Both <b>403</b>. The page surface renders the Thai 403 page <span lang="th">ไม่มีสิทธิ์เข้าถึงหน้านี้ · บัญชีของคุณเป็นเจ้าหน้าที่ กรุณาติดต่อนิติบุคคล</span> with a button back to จดมิเตอร์ and the code <code>FORBIDDEN_ROLE</code> — never a silent redirect. No payment is written. Neither body contains <code>1790</code>, <code>1,790</code>, <code>18.00</code>, <code>8.00</code> or <code>35.00</code>: money is absent from the query, not hidden in the template.</td>
+<td>FR-02, FR-22 · D-36, D-40</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-009</b></td>
+<td>No session and no CSRF token are both refused</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Bill 118 <code>Unpaid</code>.</td>
+<td><ol>
+<li>GET <code>/payments</code> with no cookie.</li>
+<li>POST <code>/payments</code> with no cookie.</li>
+<li>POST <code>/payments</code> with a valid admin cookie but <code>_csrf</code> omitted.</li>
+</ol></td>
+<td>No <code>connect.sid</code>; then a valid cookie with <code>_csrf</code> removed.</td>
+<td>(1) redirect to <code>/login</code>. (2) redirect to <code>/login</code>; a JSON caller gets <b>401</b> <code>UNAUTHENTICATED</code> <span lang="th">เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่</span>. (3) <b>403</b> <code>CSRF_INVALID</code> <span lang="th">แบบฟอร์มหมดอายุ กรุณาโหลดหน้าใหม่แล้วลองอีกครั้ง</span>. No payment row in any of the three.</td>
+<td>FR-22 · D-37, D-40</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-010</b></td>
+<td>The รับเงิน / เงินทอน cashier aid is screen-only and never blocks</td>
+<td>UI</td><td><span class="badge p1">P1</span></td>
+<td>Payment screen open with bill 118 selected; network tab recording.</td>
+<td><ol>
+<li>Type <code>2000</code> into รับเงิน and read เงินทอน.</li>
+<li>Clear it and type <code>1500</code>.</li>
+<li>Confirm the payment and inspect the request body, the stored row and the printed receipt.</li>
+</ol></td>
+<td>รับเงิน <code>2000</code>, then <code>1500</code>; total 1,790.00</td>
+<td>เงินทอน renders <b>210.00</b> live — arithmetic 2,000 − 1,790.00 = 210.00. With <code>1500</code> the screen shows the non-blocking hint <span lang="th">รับเงินน้อยกว่ายอดที่ต้องชำระ 1,790.00 บาท</span> and ยืนยันรับเงินสด <b>stays enabled</b>. The POST body contains only <code>bill_id</code>, <code>expected_total</code> and <code>_csrf</code>; neither value appears in <code>payments</code>, on the receipt, or in the PAID LINE message. A non-numeric entry shows <span lang="th">กรอกเป็นตัวเลขเท่านั้น</span> on the aid only.</td>
+<td>FR-22 · D-24</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-011</b></td>
+<td>Confirm dialog states amount, room and period, and cancelling writes nothing</td>
+<td>UI</td><td><span class="badge p1">P1</span></td>
+<td>Payment screen open with bill 118 selected and รับเงิน 2000 typed.</td>
+<td><ol>
+<li>Press ยืนยันรับเงินสด.</li>
+<li>Read the dialog verbatim.</li>
+<li>Press Escape.</li>
+<li>Re-open and press ยกเลิก.</li>
+</ol></td>
+<td>Room 205 · รอบ กันยายน 2026 · 1,790 บาท</td>
+<td>The shared <code>confirm-dialog</code> partial opens — never the browser's <code>confirm()</code>. Title <span lang="th">ยืนยันรับเงินสด</span>; body <span lang="th">ยืนยันรับเงินสด 1,790 บาท · ห้อง 205 · รอบ กันยายน 2026 และออกใบเสร็จ</span> (sentence money form, no trailing <code>.00</code>); sub-line <span lang="th">ระบบจะเปลี่ยนสถานะบิลเป็น ชำระแล้ว ออกเลขที่ใบเสร็จ และส่งข้อความยืนยันผ่าน LINE</span>; buttons <span lang="th">ยกเลิก</span> / <span lang="th">ยืนยันรับเงินสด</span> — the primary repeats the verb, never ตกลง. Escape and ยกเลิก both close it with no request sent, the selected bill and the typed รับเงิน value intact. No toast-with-undo exists anywhere.</td>
+<td>FR-46 · D-39, D-03</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<!-- ================================================================ -->
+<h3>2. Voiding a payment — ยกเลิกการชำระเงิน (<code>POST /payments/:id/void</code>)</h3>
+
+<p>The only correction path for cash taken against the wrong room or the wrong month. Nothing is ever deleted, the receipt keeps its number, and the cash is returned across the counter before the button is pressed (D-25). There is no refund, credit note or balance anywhere in the system (D-05 #4).</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr>
+<th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th>
+</tr></thead>
+<tbody>
+
+<tr>
+<td><b>TC-PAY-012</b></td>
+<td>Void a payment — nothing deleted, number retained, bill reopened</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>TC-PAY-001 has run: payment <code>96</code> live, receipt <code>REC-202609-000852</code>, bill 118 <code>Paid</code>. Admin session.</td>
+<td><ol>
+<li>Open <code>/receipts/96</code>.</li>
+<li>Press ยกเลิกการชำระเงิน.</li>
+<li>Type a reason of at least 10 characters.</li>
+<li>Confirm.</li>
+</ol></td>
+<td><code>reason=รับเงินผิดห้อง ที่ถูกคือห้อง 305</code> (28 characters)</td>
+<td><b>303</b> back to <code>/receipts/96</code>. <code>payments.voided_at</code>, <code>voided_by</code>, <code>void_reason</code> set; the row is <b>not</b> deleted and <code>active_bill_id</code> becomes NULL. <code>receipts</code> row marked voided and <b>keeps</b> <code>REC-202609-000852</code>. <code>bills.status</code> returns to <code>Unpaid</code>. One <code>audit_log</code> row <code>PAYMENT_VOID</code> carrying the reason and before/after JSON, written on the same connection as the change. The receipt renders stamped <span lang="th">ยกเลิก</span> in red and a <code>.notice.bad</code>: <span lang="th">ใบเสร็จนี้ถูกยกเลิกเมื่อ … โดย นิติบุคคล · เหตุผล: รับเงินผิดห้อง ที่ถูกคือห้อง 305</span>.</td>
+<td>FR-35, FR-23, FR-39 · D-25, D-27, D-38</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-013</b></td>
+<td>A void without a real reason is refused on the server, not only in the dialog</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Payment 96 live.</td>
+<td><ol>
+<li>In the dialog, type <code>รับเงิน</code> (7 characters) and observe the primary button.</li>
+<li>Bypass the form: POST <code>/payments/96/void</code> with the same short reason.</li>
+<li>POST with <code>reason</code> omitted entirely.</li>
+</ol></td>
+<td><code>reason=รับเงิน</code> (7 chars); then no <code>reason</code> field</td>
+<td>Dialog: <code>.field.invalid</code> with <span lang="th">กรุณาระบุเหตุผลอย่างน้อย 10 ตัวอักษร</span> and the <code>.btn.danger</code> ยกเลิกการชำระเงิน disabled. Both POSTs return <b>422</b> <code>REASON_TOO_SHORT</code> with the identical Thai sentence — the rule holds server-side, so a disabled button is never the only defence. Payment 96 still live, receipt not voided, bill still <code>Paid</code>.</td>
+<td>FR-35, FR-46 · D-25, D-39</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-014</b></td>
+<td>Voiding twice is rejected</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Payment 96 already voided by TC-PAY-012.</td>
+<td><ol>
+<li>POST <code>/payments/96/void</code> again with a valid reason.</li>
+<li>POST <code>/payments/999999/void</code>.</li>
+</ol></td>
+<td><code>reason=ยกเลิกซ้ำเพื่อทดสอบระบบ</code>; unknown id <code>999999</code></td>
+<td>(1) <b>409</b> <code>PAYMENT_ALREADY_VOIDED</code>, <span lang="th">การชำระเงินนี้ถูกยกเลิกไปแล้ว</span> — <code>UPDATE payments … WHERE id=96 AND voided_at IS NULL</code> affected 0 rows while the row exists. No second audit row. (2) <b>404</b> <code>NOT_FOUND</code> <span lang="th">ไม่พบข้อมูลที่ต้องการ</span>.</td>
+<td>FR-35 · D-25</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-015</b></td>
+<td>Void then re-pay issues a new number while the old one stays taken</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Payment 96 voided; bill 118 back to <code>Unpaid</code>; <code>counters.seq</code> for <code>receipt</code> is 852.</td>
+<td><ol>
+<li>POST <code>/payments</code> for bill 118 again.</li>
+<li>Read the new receipt number.</li>
+<li>Query all receipts for bill 118.</li>
+</ol></td>
+<td><code>bill_id=118&amp;expected_total=1790.00</code></td>
+<td><b>303</b> to the new receipt. The new number is <code>REC-&lt;payment month&gt;-000853</code> — the counter advanced 852 → 853 inside the payment transaction. Two <code>receipts</code> rows exist for bill 118: <code>…000852</code> flagged voided, <code>…000853</code> live. <code>uq_payments(active_bill_id)</code> permits this because the voided payment's generated column is NULL. Assertions: no two receipts share a number, and the later payment's sequence (853) is greater than the earlier one's (852). <b>No assertion of gaplessness.</b></td>
+<td>FR-24, FR-35 · D-25, D-26, D-27</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-016</b></td>
+<td>A voided bill is excluded from every automatic reminder</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Bill 118 has one voided payment as its most recent payment and is back to <code>Unpaid</code>; <code>due_date = CURDATE() - INTERVAL 1 DAY</code>.</td>
+<td><ol>
+<li>POST <code>/internal/jobs/daily</code> with a valid <code>X-Job-Token</code>.</li>
+<li>Query <code>notifications</code> for bill 118.</li>
+<li>Set <code>due_date = CURDATE() + INTERVAL 2 DAY</code> and run the job again (new run date).</li>
+<li>Open Bill Detail.</li>
+</ol></td>
+<td><code>days_overdue = 1</code>, then <code>due_date − today = 2</code></td>
+<td>No <code>OVERDUE</code> row and no <code>PRE_DUE</code> row is created for bill 118 in either run — the eligibility predicate carries <code>NOT EXISTS (… payments … voided_at IS NOT NULL …)</code> on the bill's most recent payment. Bill Detail shows the badge <span lang="th">ระงับการแจ้งเตือนอัตโนมัติ</span> and the payload carries <code>auto_notify_suspended: true</code>. Admin's per-bill ส่งแจ้งเตือนอีกครั้ง still works.</td>
+<td>FR-21, FR-35 · D-25, D-33</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-017</b></td>
+<td>Voiding sends no LINE message at all</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Payment 96 live and its PAID row already <code>sent</code>; <code>LINE_MOCK=1</code>; the fake client's outbox is emptied.</td>
+<td><ol>
+<li>Void payment 96 with a valid reason.</li>
+<li>Inspect the fake client outbox.</li>
+<li>Count <code>notifications</code> rows for bill 118 before and after.</li>
+</ol></td>
+<td><code>reason=รับเงินผิดรอบบิล ต้องเป็นรอบสิงหาคม</code></td>
+<td>Outbox length is 0 after the void. The <code>notifications</code> row count for bill 118 is unchanged and the existing <code>PAID</code> row keeps <code>status='sent'</code> — the void neither sends nor rewrites a message. The office explains the reversal in person; the system stays silent by design.</td>
+<td>FR-35 · D-25, D-30</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-018</b></td>
+<td>Void dialog puts the cash back before the click</td>
+<td>UI</td><td><span class="badge p1">P1</span></td>
+<td>Receipt view of a live payment 96 open.</td>
+<td><ol>
+<li>Press ยกเลิกการชำระเงิน.</li>
+<li>Read every line of the dialog verbatim.</li>
+<li>Check button labels and the disabled state.</li>
+</ol></td>
+<td>1,790 บาท · REC-202609-000852 · ห้อง 205 · รอบ กันยายน 2026</td>
+<td>Title <span lang="th">ยกเลิกการชำระเงิน</span>. First line, bold, an instruction not a description: <span lang="th">คืนเงินสด 1,790 บาท ให้ผู้เช่าก่อนยืนยันการยกเลิก</span>. Sub-line: <span lang="th">ใบเสร็จเลขที่ REC-202609-000852 จะถูกประทับว่า ยกเลิก และบิลห้อง 205 รอบ กันยายน 2026 จะกลับเป็นสถานะ รอชำระ</span>. Field <span lang="th">เหตุผลการยกเลิก *</span> required, minimum 10 characters. Buttons <span lang="th">ปิด</span> / <span lang="th">ยกเลิกการชำระเงิน</span>, the primary being <code>.btn.danger</code> and disabled until the reason validates. Helper on the page: <span lang="th">ใช้เมื่อรับเงินผิดห้องหรือผิดรอบเท่านั้น</span>.</td>
+<td>FR-46 · D-39, D-25</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<!-- ================================================================ -->
+<h3>3. Receipt numbering — sequence and uniqueness</h3>
+
+<p>One continuous counter that never resets, allocated inside the payment transaction. The two assertions the project commits to are that <b>no two receipts share a number</b> and that <b>a later payment never receives a lower one</b>. Gaplessness is explicitly not claimed and must not be tested (D-05 #10).</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr>
+<th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th>
+</tr></thead>
+<tbody>
+
+<tr>
+<td><b>TC-PAY-019</b></td>
+<td>Receipt number is formatted <code>REC-YYYYMM-NNNNNN</code> from the counter value</td>
+<td>unit</td><td><span class="badge p0">P0</span></td>
+<td>None — pure formatting, no database.</td>
+<td><ol>
+<li>Call the formatter with each sequence value and payment month.</li>
+<li>Assert on the exact string.</li>
+</ol></td>
+<td><code>(852, '2026-09')</code>, <code>(853, '2026-10')</code>, <code>(1, '2026-09')</code>, <code>(1000000, '2026-09')</code></td>
+<td><code>REC-202609-000852</code>; <code>REC-202610-000853</code>; <code>REC-202609-000001</code>; <code>REC-202609-1000000</code> (a seven-digit sequence is not truncated — <code>padStart(6,'0')</code> pads, never trims). The <code>YYYYMM</code> comes from the payment month and is a <b>label, not a scope</b>. This is the one money-adjacent operation performed in JavaScript, and it is string work, not arithmetic.</td>
+<td>FR-24 · D-27, D-16</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-020</b></td>
+<td>The counter never resets at a month boundary</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Two Unpaid bills for different rooms; <code>counters.seq</code> for <code>receipt</code> at 852.</td>
+<td><ol>
+<li>Take a payment; note the number.</li>
+<li>Advance the clock (or take the next payment in the following month).</li>
+<li>Take a second payment; note the number.</li>
+</ol></td>
+<td>Payment 1 in month <code>M</code>; payment 2 in month <code>M+1</code></td>
+<td>Payment 1 → <code>REC-&lt;M&gt;-000853</code>; payment 2 → <code>REC-&lt;M+1&gt;-000854</code>. The sequence continues across the month change: it does <b>not</b> restart at <code>000001</code>. Monthly reset is the one numbering scheme that could never produce 852 in a 67-room building, which is why the PRD's own example rules it out.</td>
+<td>FR-24 · D-27</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-021</b></td>
+<td>Concurrent payments never share a number, and one payment never gets two receipts</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Two Unpaid bills (118 and 119) for different rooms; two admin sessions.</td>
+<td><ol>
+<li>POST both payments concurrently.</li>
+<li>Read both receipt numbers.</li>
+<li>Attempt a second <code>receipts</code> insert for payment 96 directly.</li>
+</ol></td>
+<td><code>bill_id=118</code> and <code>bill_id=119</code>, fired together</td>
+<td>Two distinct numbers, e.g. <code>…000853</code> and <code>…000854</code>, allocated by <code>INSERT INTO counters … ON DUPLICATE KEY UPDATE seq = LAST_INSERT_ID(seq+1)</code> read back with <code>LAST_INSERT_ID()</code> — connection-local, so neither session can read the other's value. <code>SELECT COUNT(DISTINCT receipt_no) = COUNT(*)</code> over <code>receipts</code>. The direct second insert for payment 96 is rejected by <code>uq_receipts(payment_id)</code>; reaching that error from a handler is a defect, not a supported path.</td>
+<td>FR-24 · D-26, D-27</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-022</b></td>
+<td>Gaps in the sequence are legitimate and are never a failure</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Seed loaded (its counter starts at an offset so room 205 reaches 852).</td>
+<td><ol>
+<li>Read every <code>receipts.receipt_no</code> ordered by <code>id</code>.</li>
+<li>Force a payment transaction to roll back after the counter increment (inject a failure before <code>COMMIT</code>).</li>
+<li>Take the next real payment.</li>
+<li>Run the two committed assertions.</li>
+</ol></td>
+<td>Seed offset; one deliberately rolled-back transaction</td>
+<td>The sequence contains gaps — from the seed offset and from the rolled-back transaction, which consumed a number without writing a receipt. Both assertions still pass: <b>uniqueness</b> (<code>COUNT(DISTINCT receipt_no) = COUNT(*)</code>) and <b>monotonicity</b> (the sequence part is strictly increasing in <code>payments.id</code> order). No case, comment or report claims the numbers are consecutive.</td>
+<td>FR-24 · D-27, D-05 #10</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<!-- ================================================================ -->
+<h3>4. Receipt content, print view and the paper invoice</h3>
+
+<p>A non-tax <span lang="th">ใบเสร็จรับเงิน</span> on one A5 route that serves both the screen and the printed page. No VAT, no tax invoice, no PDF library (D-27, D-28). <span lang="th">ใบแจ้งค่าใช้จ่าย</span> is the same sheet minus the four receipt-only blocks and is the hand-over path for the 13 seeded tenants with no LINE binding.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr>
+<th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th>
+</tr></thead>
+<tbody>
+
+<tr>
+<td><b>TC-PAY-023</b></td>
+<td>The receipt carries D-27's fourteen blocks, in order</td>
+<td>UI</td><td><span class="badge p0">P0</span></td>
+<td>Payment 96 live; Settings holds apartment name, address, phone and a tax id.</td>
+<td><ol>
+<li>Open <code>/receipts/96</code>.</li>
+<li>Read the blocks top to bottom against the D-27 list.</li>
+<li>Clear <code>settings.tax_id</code> and reload.</li>
+</ol></td>
+<td>Settings: ศุภาลัย เรสซิเดนซ์ · 99/1 ถนนพหลโยธิน … · โทร 02-123-4567 · <code>tax_id</code> set, then NULL</td>
+<td>In order: letterhead (apartment name, address, โทร, and <span lang="th">เลขประจำตัวผู้เสียภาษี</span>) — <b>the software name never appears</b>; title <span lang="th">ใบเสร็จรับเงิน</span>; <span lang="th">เลขที่</span> <code>REC-202609-000852</code>; <span lang="th">วันที่ชำระ</span> 3 กันยายน 2026 (full Thai month, Gregorian year); <span lang="th">ห้อง</span> 205; <span lang="th">ชื่อผู้เช่า</span> from <code>bills.tenant_name_snapshot</code>, not a live join; <span lang="th">รอบบิล</span> กันยายน 2026; three line items; <span lang="th">ยอดรวม</span> 1,790.00 บาท plus the words; <span lang="th">ชำระโดย เงินสด</span>; <span lang="th">ผู้รับเงิน</span> นิติบุคคล; <span lang="th">ลงชื่อผู้รับเงิน</span> rule. With <code>tax_id</code> NULL the tax-id line is <b>absent</b>, every other block unchanged. No <span lang="th">ใบกำกับภาษี</span>, no VAT line, no VAT toggle anywhere.</td>
+<td>FR-24 · D-27, D-01, D-03, D-05 #6</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-024</b></td>
+<td>Line items always number three and their arithmetic sums to the total</td>
+<td>UI</td><td><span class="badge p0">P0</span></td>
+<td>Bill 118 with items 352 / 353 / 354. Second fixture: a room billed at 0 water units.</td>
+<td><ol>
+<li>Read the four-column table on <code>/receipts/96</code>.</li>
+<li>Add the amount column and compare with <code>ยอดรวม</code> and with <code>bills.total</code>.</li>
+<li>Open the receipt of the zero-usage room.</li>
+</ol></td>
+<td>10 หน่วย × 18.00 · 70 หน่วย × 8.00 · 30 ตร.ม. × 35.00</td>
+<td>Headers <span lang="th">รายการ · จำนวน · ราคา/หน่วย · จำนวนเงิน</span>. Rows: <span lang="th">ค่าน้ำ</span> 10 หน่วย × 18.00 = <b>180.00</b>; <span lang="th">ค่าไฟ</span> 70 หน่วย × 8.00 = <b>560.00</b>; <span lang="th">ค่าส่วนกลาง</span> 30 ตร.ม. × 35.00 = <b>1,050.00</b>. 180.00 + 560.00 + 1,050.00 = <b>1,790.00</b> = <code>ยอดรวม</code> = <code>bills.total</code>. The zero-usage receipt still prints <b>three</b> rows, one at 0 หน่วย × 18.00 = 0.00 — a receipt printing two lines is the same defect as a total that disagrees with its lines. Amounts are right-aligned with tabular figures.</td>
+<td>FR-14, FR-15, FR-16, FR-24 · D-16, D-41, D-18</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-025</b></td>
+<td>Thai baht in words — both forms</td>
+<td>unit</td><td><span class="badge p0">P0</span></td>
+<td>None — <code>lib/thaiBaht.js</code>, a named deliverable with a required unit test.</td>
+<td><ol>
+<li>Call the helper with each value.</li>
+<li>Assert byte-for-byte.</li>
+</ol></td>
+<td><code>0</code>, <code>1790.00</code>, <code>1790.50</code>, <code>1000000.00</code></td>
+<td><code>0</code> → <span lang="th">ศูนย์บาทถ้วน</span>. <code>1790.00</code> → <span lang="th">หนึ่งพันเจ็ดร้อยเก้าสิบบาทถ้วน</span> — the string the receipt prints as <span lang="th">(หนึ่งพันเจ็ดร้อยเก้าสิบบาทถ้วน)</span>. <code>1790.50</code> → the satang form <span lang="th">…บาทห้าสิบสตางค์</span>, reachable because a rate may be 7.50. <code>1000000.00</code> → <span lang="th">หนึ่งล้านบาทถ้วน</span>. An integer total never renders a สตางค์ clause; a total with satang never renders บาทถ้วน.</td>
+<td>FR-24 · D-27, D-16</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-026</b></td>
+<td>Print count drives the สำเนา mark, and a failed count still prints</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Receipt 96 with <code>print_count = 0</code>.</td>
+<td><ol>
+<li>Open <code>/receipts/96</code> and read the sheet and the button label.</li>
+<li>Press พิมพ์ใบเสร็จ and capture the JSON response.</li>
+<li>Reload and read the sheet again.</li>
+<li>Force <code>POST /api/receipts/96/print</code> to fail and press the button again.</li>
+</ol></td>
+<td><code>POST /api/receipts/96/print</code>, no body, <code>X-CSRF-Token</code> required</td>
+<td>At <code>print_count = 0</code> the sheet is the original and the button reads <span lang="th">พิมพ์ใบเสร็จ</span>. The POST returns <code>{"data":{"receipt_id":96,"receipt_no":"REC-202609-000852","print_count":1,"copy":true}}</code>, the button relabels to <span lang="th">พิมพ์สำเนา</span> without a reload, and <code>window.print()</code> is called only after the response. Every later render carries the grey <span lang="th">สำเนา</span> mark and the counter <span lang="th">พิมพ์แล้ว 2 ครั้ง</span>. On failure: <code>.notice.warn</code> <span lang="th">บันทึกจำนวนครั้งที่พิมพ์ไม่สำเร็จ · พิมพ์ต่อได้ แต่ใบเสร็จจะไม่มีคำว่า สำเนา</span> and printing proceeds. Printing from the browser's own menu bypasses the counter and yields an unmarked sheet — an accepted limitation, asserted as such, never as a bug.</td>
+<td>FR-24 · D-27, D-05 #11</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-027</b></td>
+<td>A voided receipt prints stamped ยกเลิก and keeps every field</td>
+<td>UI</td><td><span class="badge p1">P1</span></td>
+<td>Payment 96 voided (TC-PAY-012).</td>
+<td><ol>
+<li>Open <code>/receipts/96</code>.</li>
+<li>Compare the sheet field by field with the original.</li>
+<li>Check the available actions.</li>
+</ol></td>
+<td>Voided payment 96 · <code>REC-202609-000852</code></td>
+<td>Red <span lang="th">ยกเลิก</span> stamp across the header, on screen and on paper. The number <code>REC-202609-000852</code> is still printed — voiding rather than deleting is exactly what buys this. Letterhead, <span lang="th">ผู้รับเงิน</span>, all three line items, the total and the signature line are all present: a stamped sheet is never missing a field the original carries. The ยกเลิกการชำระเงิน button is gone; only <span lang="th">พิมพ์สำเนา</span> remains. The related bill shows <span class="badge unpaid">รอชำระ</span> or <span class="badge overdue">เกินกำหนด</span> plus <span lang="th">ระงับการแจ้งเตือนอัตโนมัติ</span>.</td>
+<td>FR-35, FR-24 · D-25, D-27</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-028</b></td>
+<td>The receipt fits exactly one A5 portrait page</td>
+<td>UI</td><td><span class="badge p1">P1</span></td>
+<td>Receipt 96 open in Chrome; print preview available.</td>
+<td><ol>
+<li>Open the browser print dialog from พิมพ์ใบเสร็จ.</li>
+<li>Set the paper to A5 and inspect the preview.</li>
+<li>Repeat with the longest tenant name in the seed.</li>
+</ol></td>
+<td><code>@page { size: A5 portrait; margin: 10mm }</code></td>
+<td>The preview shows <b>one</b> page — never two — carrying the letterhead, all three line items, the total, the words and the number. Application chrome (sidebar, topbar, buttons) is hidden by the print stylesheet. The same route serves the screen view. No PDF library, no server-side rendering, no thermal-printer layout and no printer-driver assumption is involved. The longest seeded name does not push content onto a second page.</td>
+<td>FR-24 · D-28, D-45</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-029</b></td>
+<td>ใบแจ้งค่าใช้จ่าย is the receipt minus four blocks, and Draft bills have none</td>
+<td>UI</td><td><span class="badge p1">P1</span></td>
+<td>Bill 118 approved (<code>Unpaid</code>); a second bill still <code>Draft</code>.</td>
+<td><ol>
+<li>Open <code>/bills/118/invoice</code>.</li>
+<li>Diff it against <code>/receipts/96</code>.</li>
+<li>Open <code>/bills/&lt;draft id&gt;/invoice</code>.</li>
+</ol></td>
+<td>Bill 118 · due date frozen at approval</td>
+<td>Title is <span lang="th">ใบแจ้งค่าใช้จ่าย</span>. Present: letterhead, <span lang="th">ห้อง</span>, <span lang="th">ชื่อผู้เช่า</span>, <span lang="th">รอบบิล</span>, <span lang="th">กำหนดชำระ</span> and the same three line items with identical units, unit prices and amounts (10 × 18.00 = 180.00, 70 × 8.00 = 560.00, 30 × 35.00 = 1,050.00, total 1,790.00) so the tenant can check the same arithmetic on either sheet. Absent, all four: receipt number, payment date, <span lang="th">ผู้รับเงิน</span>, signature line. A Draft bill's invoice route is refused. Reached from Bill Detail's พิมพ์ใบแจ้งหนี้ and from the approval result screen.</td>
+<td>FR-38 · D-28, D-30</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-030</b></td>
+<td>Receipt routes are Admin-only and an unknown id is a Thai 404</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Receipt 96 exists.</td>
+<td><ol>
+<li>As <code>staff</code>, GET <code>/receipts/96</code>.</li>
+<li>As <code>staff</code>, POST <code>/api/receipts/96/print</code>.</li>
+<li>As <code>admin</code>, GET <code>/receipts/999999</code>.</li>
+</ol></td>
+<td>Staff session; unknown receipt id <code>999999</code></td>
+<td>(1) and (2) <b>403</b> <code>FORBIDDEN_ROLE</code>; the page surface renders the Thai 403 page and neither body contains any amount. (3) <b>404</b>, the shared 404 page: <span lang="th">ไม่พบใบเสร็จที่ต้องการ · กลับไปหน้ารับชำระเงิน</span> — there is no in-page empty state, because a receipt route always has a receipt. Routes are keyed by the receipt row id, never by the number, so <code>/receipts/96</code> renders <code>REC-202609-000852</code>.</td>
+<td>FR-02, FR-24 · D-36, D-40</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<!-- ================================================================ -->
+<h3>5. Payment history — ประวัติการรับชำระ</h3>
+
+<p>The Payment page's second tab, filtered by <b>payment date</b> where the Dashboard tile counts by <b>billing period</b> — both are correct and the <span lang="th">รอบบิล</span> column exists so the difference is visible.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr>
+<th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th>
+</tr></thead>
+<tbody>
+
+<tr>
+<td><b>TC-PAY-031</b></td>
+<td>History lists a month's payments and its summary excludes voided rows</td>
+<td>UI</td><td><span class="badge p1">P1</span></td>
+<td>Seed loaded; at least one live payment and one voided payment in the selected month; admin session.</td>
+<td><ol>
+<li>Open <code>/payments/history?period=2026-09</code>.</li>
+<li>Read the columns, the chips and the summary line.</li>
+<li>Step the picker to a month with no payment.</li>
+<li>Repeat step 1 as <code>staff</code>.</li>
+</ol></td>
+<td>Live payment 1,790.00; voided payment 1,790.00; empty month</td>
+<td>Columns exactly <span lang="th">วันที่ชำระ · ห้อง · ผู้เช่า · รอบบิล · ยอด · เลขที่ใบเสร็จ · ผู้รับเงิน · สถานะ</span>; chips <span lang="th">ทั้งหมด · ปกติ · ยกเลิกแล้ว</span> with live counts. Summary reads <span lang="th">รวมรับชำระเดือนนี้ (ไม่รวมรายการที่ยกเลิก)</span> and equals the sum of live rows only — with one live and one voided payment of 1,790.00 the summary is <b>1,790.00</b>, not 3,580.00. Rows are selected by payment date, so a bill of an earlier period settled this month appears here with its own <span lang="th">รอบบิล</span>. Empty month → <span lang="th">ไม่พบรายการรับชำระในเดือนนี้ · ดูเดือนก่อนหน้า</span>. Staff → <b>403</b> Thai page, no amounts in the body.</td>
+<td>FR-25, FR-02 · D-41, D-40, D-36</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-032</b></td>
+<td>A room's payment history survives a voided payment and an ended tenancy</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Room 312 from the seed: an Inactive tenant with a Paid final bill in the previous period and a new Active tenant from the 1st of the current month. Room 41 has one voided payment.</td>
+<td><ol>
+<li>Open room 312's history.</li>
+<li>Open room 41's history.</li>
+<li>Check every row's period, total, display status, payment date and receipt number.</li>
+</ol></td>
+<td>Room 312 (two tenancies) · room 41 (voided payment 96)</td>
+<td>Room 312 lists <b>both</b> tenancies' bills — the previous, now Inactive tenant's Paid bill and receipt are still shown, because history is scoped by room and payments stay attached to the tenant who made them. Room 41's voided payment <b>still appears</b>, its receipt number rendered with the <span class="badge bad">ยกเลิก</span> stamp and the bill itself back to <span lang="th">รอชำระ</span> / <span lang="th">เกินกำหนด</span>; the join is on the room's most recent payment, never on <code>active_bill_id</code>, so the evidence that money was taken and returned is not lost.</td>
+<td>FR-25 · D-08, D-25, D-42</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<!-- ================================================================ -->
+<h3>6. LINE bill delivery and the notification log</h3>
+
+<p>Money state and messaging state are independent: the approval commits first, sends happen after, and a LINE outage can never roll back a bill (D-30). One <code>notifications</code> row per <b>recipient</b>, never per API call, and every attempt rewrites that row.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr>
+<th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th>
+</tr></thead>
+<tbody>
+
+<tr>
+<td><b>TC-PAY-033</b></td>
+<td>Approval queues one row per bill inside the transaction and sends only after commit</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Bill 118 <code>Draft</code>; tenant 37 linked; <code>LINE_MOCK=1</code>; admin session.</td>
+<td><ol>
+<li>POST <code>/api/bills/approve</code> with <code>{"bill_ids":[118]}</code>.</li>
+<li>Read the response and the <code>notifications</code> row.</li>
+<li>POST <code>/api/notifications/drain</code> in a loop while <code>remaining &gt; 0</code>.</li>
+<li>Fire a second drain concurrently with the first.</li>
+</ol></td>
+<td><code>{"bill_ids":[118]}</code>; drain takes no body</td>
+<td>Approve returns <code>{"data":{"approved":1,"already_approved":0,"not_found":0,"queued":1,"skipped_no_line":0,"bills":[{"id":118,"room_code":"205","status":"Unpaid","due_date":"2026-09-05","notification":"queued"}]}}</code>. Exactly one <code>notifications</code> row, <code>type='BILL'</code>, <code>bill_id=118</code>, <code>tenant_id=37</code>, <code>status='queued'</code>, <code>attempt_count=0</code>, <code>dedupe_key='BILL:118:0:37:&lt;send_date&gt;'</code>. No push happened inside the transaction. Drain returns <code>{"data":{"sent":1,"failed":0,"skipped_no_line":0,"remaining":0,"lock":"acquired"}}</code>, at most 20 pushes per call, header <code>X-Line-Retry-Key</code> = the row's <code>retry_key</code>. The concurrent drain returns <code>"lock":"busy"</code> with zero counts and sends nothing.</td>
+<td>FR-19, FR-32 · D-19, D-30, D-34</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-034</b></td>
+<td>The BILL message renders byte-for-byte, and a missing placeholder throws</td>
+<td>unit</td><td><span class="badge p0">P0</span></td>
+<td>None — <code>lib/templates.js</code>. This is the test that may never go red.</td>
+<td><ol>
+<li><code>renderTemplate('BILL', §28 fixture)</code>.</li>
+<li>Compare with the specification's worked example, byte for byte.</li>
+<li>Call again with <code>room_code</code> removed.</li>
+<li>Grep the codebase for any inline message string.</li>
+</ol></td>
+<td>period_th กันยายน 2026 · room_code 205 · 10/18/180 · 70/8/560 · 30/35/1,050 · total 1,790 · due 5 กันยายน 2026 · office_hours จันทร์-ศุกร์ 09:00-17:00 น.</td>
+<td>Output equals, exactly:<br>
+<code>🔔 ค่าใช้จ่ายประจำเดือน กันยายน 2026</code> / <code>ห้อง 205</code> / blank / <code>💧 ค่าน้ำ 10 หน่วย × 18 บาท = 180 บาท</code> / <code>⚡ ค่าไฟ 70 หน่วย × 8 บาท = 560 บาท</code> / <code>🏢 ค่าส่วนกลาง 30 ตร.ม. × 35 บาท = 1,050 บาท</code> / blank / <code>💰 ยอดรวม 1,790 บาท</code> / <code>📅 กรุณาชำระภายในวันที่ 5 กันยายน 2026</code> / blank / <code>ชำระเงินสดที่สำนักงานนิติบุคคล เวลา จันทร์-ศุกร์ 09:00-17:00 น.</code><br>
+Money in LINE is <code>1,790 บาท</code> — number, space, บาท, no trailing <code>.00</code>, never the ฿ glyph. Missing <code>room_code</code> <b>throws</b>; it never emits <code>ห้อง undefined</code>. No message text exists at any call site; every string lives in one module and uses braced placeholders only. A gap-covering bill appends <code>หมายเหตุ: ยอดนี้ครอบคลุมการใช้ตั้งแต่รอบ {previous_period_th}</code>.</td>
+<td>FR-19 · D-31, D-03, D-14</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-035</b></td>
+<td>An unlinked tenant is recorded as skipped, never attempted</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>One of the seed's 13 tenants with <code>line_user_id IS NULL</code>, holding a Draft bill; <code>LINE_MOCK=1</code>, outbox emptied.</td>
+<td><ol>
+<li>Approve that bill.</li>
+<li>Inspect the <code>notifications</code> row and the outbox.</li>
+<li>Open Monthly Billing and Bill Detail.</li>
+<li>Follow the offered fallback.</li>
+</ol></td>
+<td>Tenant with no binding; bill total from that room's own readings</td>
+<td>The row is written <b>straight to</b> <code>status='skipped_no_line'</code> at enqueue time, with <code>recipient_user_id = NULL</code> — it is never left <code>queued</code> for a drain to rediscover the same fact. The outbox is empty: no API call was made and no quota was spent. Both screens badge it <span class="badge neutral">ยังไม่ได้ส่ง — ไม่มี LINE</span> (neutral, not an error). Bill Detail offers พิมพ์ใบแจ้งหนี้ → the A5 <span lang="th">ใบแจ้งค่าใช้จ่าย</span>. <b>Approval is not blocked</b> and the bill's status is <code>Unpaid</code> regardless.</td>
+<td>FR-19, FR-32, FR-38 · D-30, D-28, D-44</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-036</b></td>
+<td>Bulk approval against the seed: 54 sent, 13 skipped, 54 bindings intact</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Fresh seed: 67 Occupied rooms, 67 Draft bills, exactly 54 tenants with a <code>Useed…</code> binding and 13 without; <code>LINE_MOCK=1</code>; LINE test mode ON.</td>
+<td><ol>
+<li>Select all bills on Monthly Billing and press อนุมัติและส่งบิล.</li>
+<li>Confirm the bulk dialog.</li>
+<li>Run the drain loop to completion.</li>
+<li>Count rows by status and re-count linked tenants.</li>
+</ol></td>
+<td>67 bill ids in one <code>POST /api/bills/approve</code> (cap 200)</td>
+<td>67 bills move <code>Draft → Unpaid</code> in one transaction that <b>commits in ≤ 5 s</b>; delivery finishes within ≤ 3 minutes, measured separately. <code>notifications</code>: 54 <code>sent</code>, 13 <code>skipped_no_line</code>, 0 <code>failed</code>. Result screen reads <span lang="th">อนุมัติ 67 ใบ · ส่ง LINE สำเร็จ 54 · ยังไม่ได้ส่ง (ไม่มี LINE) 13 · ส่งไม่สำเร็จ 0</span>, listing and linking the 13 unsent rooms. <b>The linked-tenant count is still 54</b> — no <code>Useed…</code> binding was cleared. Dialog copy: <span lang="th">อนุมัติและส่งบิล 67 ห้อง ผ่าน LINE — ยกเลิกไม่ได้</span>.</td>
+<td>FR-18, FR-19, FR-32, FR-46 · D-19, D-30, D-44, D-45</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-037</b></td>
+<td>Send failures map to the right status, and only a real invalid userId unbinds</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Three queued BILL rows; a fake client whose <code>pushMessage</code> can be made to reject with a chosen status.</td>
+<td><ol>
+<li>Drain with the client returning <code>500</code>.</li>
+<li>Drain with <code>400</code> naming an invalid <code>userId</code>, against a real (non-seed) binding.</li>
+<li>Repeat step 2 against a <code>Useed0000…37</code> binding.</li>
+<li>Drain with <code>200</code>.</li>
+</ol></td>
+<td>HTTP <code>500</code>, <code>400 invalid userId</code>, <code>200</code>; bindings <code>U4af4980…</code> and <code>Useed000000000000000000000000037</code></td>
+<td>(1) <code>status='failed'</code>, <code>http_status=500</code>, <code>last_error</code> truncated to 255 chars, <code>attempt_count</code> incremented, retried by tomorrow's job with the <b>same</b> <code>retry_key</code>. (2) <code>status='failed'</code>, <code>attempt_count</code> set straight to 3, and the tenant's three <code>line_*</code> columns are cleared; the row shows <span class="badge bad">ส่งไม่สำเร็จ</span> and the tenant reverts to unlinked. (3) identical failure handling but the binding is <b>not</b> cleared — ids beginning <code>Useed</code> are exempt, so a stray 400 can never wipe the seeded state the demo depends on. (4) <code>status='sent'</code>. <code>401</code>/<code>403</code> also set <code>attempt_count</code> to 3 and are never retried. A tenant who <em>blocked</em> the OA yields <code>200</code> and is recorded as <code>sent</code>: the word "blocked" appears in no badge, report or assertion.</td>
+<td>FR-32 · D-30, D-44, D-05 #9</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-038</b></td>
+<td>Automatic retries stop at three; the Admin's manual resend never does</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>One BILL row for bill 118 with <code>status='failed'</code>, <code>attempt_count=3</code>; fake client still failing, then succeeding.</td>
+<td><ol>
+<li>Run the daily job and inspect the drain selection.</li>
+<li>Press ส่งแจ้งเตือนอีกครั้ง on Bill Detail (<code>POST /bills/118/notify</code>) three times.</li>
+<li>Compare <code>retry_key</code> before and after an automatic retry and after a manual one.</li>
+<li>Age the row to 8 days old and run the job.</li>
+</ol></td>
+<td><code>attempt_count</code> 0 → 3; <code>send_date = CURDATE() - INTERVAL 8 DAY</code></td>
+<td>The drain selects <code>status='queued' OR (status='failed' AND attempt_count &lt; 3)</code>, so the exhausted row is skipped by every automatic run. All three manual presses are accepted — the button is <b>never capped</b> — and each is a POST-Redirect-GET. An automatic retry <b>reuses</b> <code>retry_key</code> (LINE discards a repeat of a push that actually landed); the manual button <b>regenerates</b> it, or LINE would silently deduplicate the copy the Admin deliberately asked for. The 8-day-old row falls outside the seven-day drain window and is not retried automatically.</td>
+<td>FR-32 · D-30, D-33</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-039</b></td>
+<td>One message type per bill per tenant per day, whatever calls the code</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Bill 118 approved once today, its BILL row <code>sent</code>.</td>
+<td><ol>
+<li>Approve bill 118 again.</li>
+<li>Run the daily job.</li>
+<li>Enqueue a BILL row for bill 118 and tenant 37 directly.</li>
+<li>Count rows and outbox entries.</li>
+</ol></td>
+<td><code>dedupe_key = 'BILL:118:0:37:&lt;today&gt;'</code></td>
+<td>Approve returns <code>approved: 0</code>, <code>already_approved: 1</code> and queues nothing — a non-Draft id in a batch is counted, never an error. The direct enqueue is an <code>INSERT … ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)</code> reporting <code>affectedRows !== 1</code>, so the caller sends nothing. Still exactly <b>one</b> row and <b>one</b> outbox entry. The guarantee is <code>UNIQUE(dedupe_key)</code> on the stored generated column <code>CONCAT_WS(':', type, IFNULL(bill_id,0), IFNULL(announcement_id,0), tenant_id, send_date)</code> — a plain <code>UNIQUE(type, bill_id, announcement_id, tenant_id, send_date)</code> cannot do this, because InnoDB treats NULLs as distinct and one id column is always NULL.</td>
+<td>FR-19, FR-32 · D-30, D-19</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-040</b></td>
+<td>Test mode redirects the target but not the record, and the monthly counter stays honest</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Fresh install or fresh seed; Settings not touched.</td>
+<td><ol>
+<li>Read <code>settings.line_test_mode</code> before changing anything.</li>
+<li>Drain one BILL row for tenant 37 with test mode ON.</li>
+<li>Inspect the outbox target and the row's <code>recipient_user_id</code>.</li>
+<li>Read the Settings counter with 195, 451 and 500 sent rows this month.</li>
+</ol></td>
+<td><code>line_test_mode = 1</code> by default; <code>line_test_user_id = U&lt;team account&gt;</code>; Settings card <span lang="th">โหมดทดสอบ LINE</span> with checkbox <span lang="th">ส่งข้อความทั้งหมดไปยังบัญชีทดสอบเท่านั้น</span></td>
+<td><code>line_test_mode</code> is <b>ON in every environment</b> out of the box, and says so on screen: the Settings card <span lang="th">โหมดทดสอบ LINE</span> carries <span class="badge warn">เปิดอยู่</span> and Bill Detail carries <span class="badge warn">โหมดทดสอบ LINE: เปิด</span> above the message preview, with the sub-line <span lang="th">ข้อความจริงจะถูกส่งเมื่อกด อนุมัติและส่งบิล · ขณะนี้โหมดทดสอบเปิดอยู่ ข้อความจะไปที่บัญชีทดสอบของทีม</span>. The push goes to <code>settings.line_test_user_id</code>, while the row's <code>recipient_user_id</code> still records tenant 37's own id — delivery counts stay honest during a rehearsal. Settings shows <span class="badge neutral">ส่งข้อความเดือนนี้ 195/500</span>, counting <code>notifications</code> rows with <code>status='sent'</code> since the first of the month only: <code>failed</code> and <code>skipped_no_line</code> rows never inflate it. At 451 the line renders in warn colour; at 500 nothing is throttled or blocked — exhausting the allowance silently stops delivery and is a documented limitation.</td>
+<td>FR-40 · D-34, D-05 #12</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-041</b></td>
+<td>The PAID confirmation is queued in the payment transaction and drained by the receipt page</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Bill 118 <code>Unpaid</code>, tenant 37 linked, <code>LINE_MOCK=1</code>.</td>
+<td><ol>
+<li>Confirm the cash payment.</li>
+<li>Before opening the receipt, inspect <code>notifications</code>.</li>
+<li>Load <code>/receipts/96</code> and watch the one <code>POST /api/notifications/drain</code> it fires.</li>
+<li>Read the rendered message.</li>
+</ol></td>
+<td>total 1,790.00 · paid date 3 กันยายน 2026 · <code>REC-202609-000852</code></td>
+<td>A <code>type='PAID'</code> row exists with <code>status='queued'</code> immediately after the commit, written <b>inside</b> the payment transaction and <b>after</b> the receipt number exists. The receipt page fires exactly one drain on load — there is no per-message send endpoint — and the row flips to <code>sent</code>. Message body, exactly:<br>
+<code>✅ ยืนยันการชำระเงิน</code> / <code>ห้อง 205</code> / <code>ได้รับชำระค่าใช้จ่ายจำนวน 1,790 บาท เรียบร้อยแล้ว</code> / <code>วันที่ 3 กันยายน 2026</code> / <code>เลขที่ใบเสร็จ REC-202609-000852</code> / blank / <code>ขอบคุณครับ/ค่ะ</code><br>
+Note the two money formats in one flow: <code>1,790.00</code> on the receipt, <code>1,790 บาท</code> in the message.</td>
+<td>FR-22, FR-24, FR-32 · D-24, D-27, D-31, D-03</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-042</b></td>
+<td>A re-approved bill sends BILL_CORRECTED under its own dedupe key</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Bill 118 <code>Unpaid</code> with its BILL row already <code>sent</code> today; it is the room's newest bill.</td>
+<td><ol>
+<li>POST <code>/bills/118/revert</code> with a reason of at least 10 characters.</li>
+<li>Correct reading 812 and re-approve on the same day.</li>
+<li>Inspect <code>notifications</code> and the rendered text.</li>
+<li>Repeat after a corrected bill whose payment had been voided.</li>
+</ol></td>
+<td><code>reason=จดเลขมิเตอร์น้ำผิด ต้องเป็น 1,262</code></td>
+<td>A second row is created with <code>type='BILL_CORRECTED'</code> and dedupe key <code>BILL_CORRECTED:118:0:37:&lt;today&gt;</code> — its own key, so the same-day BILL row does not suppress it. The text is the BILL body prefixed with <code>🔄 แก้ไขบิล (ยกเลิกยอดเดิม)</code>. Where the correction followed a voided payment it also carries <code>ยอดที่ชำระไว้เดิมได้คืนเป็นเงินสดแล้ว กรุณาชำระตามยอดใหม่</code>. Revert on a bill that is not the room's newest is refused server-side with <b>422</b> <code>REVERT_NOT_NEWEST</code>.</td>
+<td>FR-34, FR-32 · D-22, D-31, D-30</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<!-- ================================================================ -->
+<h3>7. Scheduled reminders — PRE_DUE, OVERDUE and the daily job</h3>
+
+<p>One external scheduler at 09:00 Asia/Bangkok calling one authenticated endpoint. Per bill, at most four automatic messages in its entire life: <code>PRE_DUE</code> at <code>due − 2</code> and <code>OVERDUE</code> on days 1, 8 and 15. Nothing after day 15, nothing to a Paid bill, nothing outside 09:00 (D-33).</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr>
+<th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th>
+</tr></thead>
+<tbody>
+
+<tr>
+<td><b>TC-PAY-043</b></td>
+<td>PRE_DUE fires on exactly one day and on no other</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Bill 118 <code>Unpaid</code>, tenant 37 linked, no payment; <code>LINE_MOCK=1</code>.</td>
+<td><ol>
+<li>Set <code>due_date = CURDATE() + INTERVAL 3 DAY</code>; run the job.</li>
+<li>Set <code>due_date = CURDATE() + INTERVAL 2 DAY</code>; run on a new run date.</li>
+<li>Set <code>due_date = CURDATE() + INTERVAL 1 DAY</code>; run again.</li>
+<li>Set <code>due_date = CURDATE()</code>; run again.</li>
+</ol></td>
+<td><code>DATEDIFF(due_date, CURDATE())</code> = 3, 2, 1, 0</td>
+<td>Only step 2 queues a row: <code>type='PRE_DUE'</code>, one per eligible bill. Steps 1, 3 and 4 queue nothing — <b>nothing is sent on the due date itself</b>. Rendered text, exactly:<br><code>⏰ แจ้งเตือนก่อนครบกำหนด</code> / <code>ห้อง 205 มียอดค้างชำระ 1,790 บาท</code> / <code>กรุณาชำระภายในวันที่ 5 กันยายน 2026 (อีก 2 วัน)</code> / blank / <code>ชำระเงินสดที่สำนักงานนิติบุคคล</code><br>The literal <code>(อีก 2 วัน)</code> is safe precisely because the send day is fixed at <code>due − 2</code>; it is not a placeholder and must not become one.</td>
+<td>FR-20 · D-32, D-33, D-31</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-044</b></td>
+<td>OVERDUE fires on days 1, 8 and 15 — and never again</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Bill 118 <code>Unpaid</code>, tenant 37 linked.</td>
+<td><ol>
+<li>For each of <code>days_overdue</code> = 1, 2, 7, 8, 9, 14, 15, 16, 30, set <code>due_date = CURDATE() - INTERVAL n DAY</code> and run the job on a distinct run date.</li>
+<li>Count <code>OVERDUE</code> rows after each run.</li>
+<li>Read the text of the day-1 message.</li>
+</ol></td>
+<td><code>DATEDIFF(CURDATE(), due_date) IN (1, 8, 15)</code></td>
+<td>Rows created on days <b>1, 8 and 15 only</b> — three in total. Days 2, 7, 9, 14, 16 and 30 queue nothing; nothing is ever sent after day 15. Day-1 text, exactly:<br><code>⚠️ เลยกำหนดชำระแล้ว</code> / <code>ห้อง 205 ยอดค้างชำระ 1,790 บาท</code> / <code>ครบกำหนดวันที่ 5 กันยายน 2026 (เลยมาแล้ว 1 วัน)</code> / blank / <code>กรุณาติดต่อสำนักงานนิติบุคคล</code><br><code>{days_overdue}</code> is a real placeholder computed as <code>DATEDIFF(CURDATE(), due_date)</code>. No late fee, interest or penalty is added to the total by any of these runs.</td>
+<td>FR-21 · D-33, D-31, D-05 #3</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-045</b></td>
+<td>A Paid bill is chased no further, and no bill ever exceeds four automatic messages</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Bill 118 approved on day 0, due date frozen; tenant linked.</td>
+<td><ol>
+<li>Walk the whole life of the bill: approve (BILL), day <code>due−2</code>, day <code>due</code>, days <code>due+1</code>, <code>+8</code>, <code>+15</code>, <code>+16</code>, <code>+30</code>.</li>
+<li>Repeat the walk with the payment taken on <code>due−2</code> after the 09:00 run.</li>
+<li>Count all rows per bill.</li>
+</ol></td>
+<td>Unpaid walk; then payment committed on <code>due − 2</code> at 14:00</td>
+<td>Unpaid walk: exactly four rows — <code>BILL</code> (queued at approval, not by the job), <code>PRE_DUE</code>, and three <code>OVERDUE</code>. Paid walk: <code>BILL</code>, <code>PRE_DUE</code> (the bill was still Unpaid at 09:00 — the tenant receives both the reminder and the confirmation later that day, which is <b>correct behaviour, not a defect</b>), then <code>PAID</code>; the three <code>OVERDUE</code> days queue nothing because the eligibility predicate reads <code>b.status = 'Unpaid'</code>. <b>The job never writes a bill status.</b></td>
+<td>FR-20, FR-21, FR-23 · D-33, D-21</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-046</b></td>
+<td>A retrying scheduler cannot run the day twice</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Valid <code>X-Job-Token</code>; several eligible bills.</td>
+<td><ol>
+<li>POST <code>/internal/jobs/daily</code>.</li>
+<li>POST it again immediately.</li>
+<li>Compare <code>SELECT COUNT(*) FROM notifications WHERE send_date = CURDATE()</code> before and after the second call.</li>
+</ol></td>
+<td>Header <code>X-Job-Token: &lt;shared secret&gt;</code>; no body</td>
+<td>First: <code>{"data":{"job":"daily","run_date":"…","already_ran":false,"pre_due":12,"overdue":5,"retried":1,"sent":17,"failed":1,"skipped_no_line":3}}</code>. Second: <b>200</b> with <code>"already_ran": true</code> and every count 0 — a duplicate key on <code>uq_job_runs(job_name, run_date)</code>, answered as success because a retrying scheduler must not see an error. The notification count is unchanged. One <code>job_runs</code> row per calendar day, with <code>finished_at</code> and <code>summary_json</code> written.</td>
+<td>FR-37 · D-32</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-047</b></td>
+<td>The Settings button runs the same code, skips the daily guard, and still sends nothing twice</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>The 09:00 scheduled run has already executed today; admin session.</td>
+<td><ol>
+<li>Press รันงานแจ้งเตือนตอนนี้ on <code>/settings</code>.</li>
+<li>Read the flash message.</li>
+<li>Compare notification rows before and after.</li>
+<li>Check <code>job_runs</code>.</li>
+</ol></td>
+<td><code>POST /settings/run-daily-job</code>, CSRF-protected, Admin only</td>
+<td>The button <b>runs</b> — it does not report <code>already_ran</code> — because it uses <code>job_name='daily_manual'</code> and never consults the <code>job_runs</code> guard, so a demo held at 14:00 still works. Flash: <span lang="th">ส่งแจ้งเตือนก่อนครบกำหนด {a} ราย · เลยกำหนด {b} ราย · ส่งซ้ำที่ล้มเหลว {c} ราย</span>. No message is duplicated: the <code>dedupe_key</code> absorbs every repeat, so the row count for today is unchanged and no tenant receives a second copy. A <code>daily_manual</code> row appears in <code>job_runs</code> alongside the <code>daily</code> one. Staff pressing the route gets <b>403</b>.</td>
+<td>FR-37, FR-02 · D-32, D-36</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-048</b></td>
+<td>The job endpoint is credential-gated and outside the login rate limiter</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Job token configured in the environment.</td>
+<td><ol>
+<li>POST <code>/internal/jobs/daily</code> with no header.</li>
+<li>POST with a wrong token.</li>
+<li>POST with a valid admin session cookie but no token.</li>
+<li>POST 15 times with a wrong token from one IP.</li>
+</ol></td>
+<td>No header · <code>X-Job-Token: wrong</code> · session cookie only</td>
+<td>(1)(2)(3) all <b>401</b> with an <b>empty body</b> and nothing executed — a session is not a credential here, and no <code>job_runs</code> row is written. (4) all fifteen return 401; the 10-per-15-minutes login limiter <b>never</b> applies to this route, nor to <code>/line/webhook</code> or <code>/healthz</code>. The endpoint is exempt from session auth and from CSRF by design.</td>
+<td>FR-37, FR-47 · D-32, D-37</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<!-- ================================================================ -->
+<h3>8. LINE webhook, signature verification and account linking</h3>
+
+<p>The webhook ACKs 200 before doing any work, so a cold start never causes LINE to auto-disable the endpoint — which would silently kill the only path by which a <code>userId</code> ever reaches the system (D-29, D-43). Linking is a printed one-time code; no LIFF, no manual pasting of user ids.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr>
+<th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th>
+</tr></thead>
+<tbody>
+
+<tr>
+<td><b>TC-PAY-049</b></td>
+<td>Signature verification, and the 200 that is flushed before any work</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td><code>LINE_CHANNEL_SECRET</code> set; app running.</td>
+<td><ol>
+<li>Sign a fixture body with <code>base64(HMAC-SHA256(rawBody, channelSecret))</code> and POST it.</li>
+<li>Flip one byte of the signature and POST the same body.</li>
+<li>Reformat the JSON (whitespace only) but keep the old signature and POST.</li>
+<li>Instrument the handler to sleep 2 s after the ACK and measure time-to-200.</li>
+</ol></td>
+<td>Header <code>X-Line-Signature</code>; a <code>follow</code> event body; a tampered value such as <code>bm90LWEtc2lnbmF0dXJl</code></td>
+<td>(1) <b>200</b> with an <b>empty body</b> — the one documented exception to the envelope rule. (2) and (3) <b>401</b>, empty body, <b>nothing processed and nothing written</b>, one log line; reformatting the JSON changes the signature, which is why the route is mounted with <code>express.raw</code> before the JSON body parser. (4) the 200 is flushed <b>before</b> the sleep: events are processed after the response, so a Render cold start still ACKs inside LINE's timeout. The route is exempt from session auth, CSRF and the rate limiter. A processing error after the ACK is logged and never retried.</td>
+<td>FR-31 · D-29, D-37, D-43</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-050</b></td>
+<td>A tenant links an account with a printed code</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Tenant 37 unlinked; admin session; the tenant's <code>userId</code> already present in <code>line_followers</code> from a <code>follow</code> event.</td>
+<td><ol>
+<li>POST <code>/tenants/37/link-code</code> from the Tenants row action.</li>
+<li>Open <code>/tenants/37/link-code/slip</code>.</li>
+<li>Send the code as a signed <code>message</code> webhook event from that <code>userId</code>.</li>
+<li>Inspect the tenant row, the code row, the audit log and the reply.</li>
+</ol></td>
+<td>Code drawn from <code>ABCDEFGHJKLMNPQRSTUVWXYZ23456789</code>, e.g. <code>K7QM4P</code></td>
+<td>The code is 6 characters from that alphabet — no <code>O</code>, <code>0</code>, <code>I</code> or <code>1</code> — valid 7 days, single use, <code>UNIQUE(code)</code>. The A5 slip carries room code, tenant name, the code at 24 pt monospace, the OA QR image and <span lang="th">สแกน QR เพิ่มเพื่อน แล้วส่งรหัส K7QM4P ในแชท</span>. After the event: <code>tenants.line_user_id</code>, <code>line_display_name</code> and <code>line_linked_at</code> set; <code>link_codes.used_at</code> stamped; one <code>audit_log</code> row <code>TENANT_LINE_LINK</code>. Reply, via the Reply API and the event's reply token:<br><code>✅ ผูกบัญชีสำเร็จ</code> / <code>คุณจะได้รับบิลและประกาศของห้อง 205 ผ่าน LINE นี้</code><br>No <code>notifications</code> row is written and the monthly counter does not move — reply messages are free. The Tenants row now shows the LINE display name, the linked date and a ยกเลิกการผูก action.</td>
+<td>FR-31, FR-39 · D-29, D-31, D-38</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-051</b></td>
+<td>A wrong, expired or already-used code binds nothing</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Code <code>K7QM4P</code> already used by TC-PAY-050; a second code aged past <code>expires_at</code>; tenant 38 unlinked.</td>
+<td><ol>
+<li>Send <code>K7QM4P</code> again from a different <code>userId</code>.</li>
+<li>Send the expired code.</li>
+<li>Send a well-formed but unknown code such as <code>ZZZZ99</code>.</li>
+<li>Fire two signed events carrying the same live code simultaneously.</li>
+</ol></td>
+<td><code>K7QM4P</code> (used) · an expired code · <code>ZZZZ99</code> (unknown) · one live code raced twice</td>
+<td>(1)(2)(3) each reply <code>❌ ไม่พบรหัสนี้ หรือรหัสหมดอายุแล้ว กรุณาติดต่อสำนักงานนิติบุคคล</code>; no tenant row is modified, no audit row is written, and the submitted code is <b>never echoed back</b> in a log or a message. (4) exactly one winner: <code>UPDATE link_codes SET used_at = NOW() WHERE code = ? AND used_at IS NULL AND expires_at &gt; NOW()</code> affects one row for one request and zero for the other, so the loser gets LINK_FAIL and only one binding is written.</td>
+<td>FR-31 · D-29</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-052</b></td>
+<td>Inbound code text is normalised before anything looks at it</td>
+<td>unit</td><td><span class="badge p1">P1</span></td>
+<td>None — the normaliser only.</td>
+<td><ol>
+<li>Normalise each input.</li>
+<li>Assert all forms are equal.</li>
+<li>Check the shape test.</li>
+</ol></td>
+<td><code>"k7qm 4p"</code>, <code>" K7QM-4P "</code>, <code>"K7QM4P"</code>, <code>"K7QM4"</code>, <code>"สวัสดีครับ"</code></td>
+<td>The first three all normalise to <code>K7QM4P</code> (<code>trim().toUpperCase().replace(/[\s-]/g,'')</code>). A text is treated as a code attempt only when the normalised value matches <code>/^[A-Z2-9]{6}$/</code>: <code>K7QM4</code> (5 chars) and <code>สวัสดีครับ</code> do not match and are routed to the auto-reply instead. Without this shape test the system cannot distinguish a mistyped code from small talk.</td>
+<td>FR-31 · D-29</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-053</b></td>
+<td>The Official Account is not a chatbot</td>
+<td>API</td><td><span class="badge p2">P2</span></td>
+<td>Signed webhook fixtures available.</td>
+<td><ol>
+<li>Send a plain text message that is not a code.</li>
+<li>Send a sticker event.</li>
+<li>Send an image event.</li>
+<li>Send a <code>postback</code> and a <code>join</code> event.</li>
+</ol></td>
+<td><code>"ค่าไฟเดือนนี้เท่าไหร่"</code> · sticker · image · postback · join</td>
+<td>(1) and (2)(3) receive the one fixed auto-reply naming the office and <code>{office_hours}</code>; nothing is written to any table. (4) is ignored entirely and logged at debug, with no reply. No inbound message ever changes a bill, a payment or a binding. The console greeting message is configured in the OA Manager, not in code, and is the one outbound Thai string that does not live in the templates module.</td>
+<td>FR-31 · D-29, D-31</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-054</b></td>
+<td>follow and unfollow touch the follower table, never the binding</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Tenant 37 linked.</td>
+<td><ol>
+<li>Send a <code>follow</code> event for a new <code>userId</code>.</li>
+<li>Send the same <code>follow</code> again.</li>
+<li>Send an <code>unfollow</code> for tenant 37's bound <code>userId</code>.</li>
+<li>Inspect <code>tenants</code>, badges and reports.</li>
+</ol></td>
+<td><code>follow</code> ×2 · <code>unfollow</code> on a bound id</td>
+<td>(1) one <code>line_followers</code> row with the display name from <code>getProfile</code>. (2) an UPSERT — still one row, <code>unfollowed_at</code> cleared, display name refreshed. (3) <code>line_followers.unfollowed_at</code> set, and <b><code>tenants.line_user_id</code> is untouched</b> — unfollowing is not ending a tenancy. Nothing about the unfollow surfaces in any badge, count or report. A tenant who <em>blocks</em> the OA is not reported at all: pushes still return 200 and are recorded as <code>sent</code>.</td>
+<td>FR-31, FR-32 · D-29, D-30, D-05 #9</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-055</b></td>
+<td>Re-issuing a code leaves a tenant with exactly one live code; unlink and relink work</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Tenant 37 with one outstanding, unused code.</td>
+<td><ol>
+<li>Press สร้างรหัสผูก LINE again.</li>
+<li>Try the first code from LINE.</li>
+<li>Try the second code.</li>
+<li>Press ยกเลิกการผูก, then issue and redeem a code from a different <code>userId</code>.</li>
+</ol></td>
+<td>Code 1 then code 2 for tenant 37; a second <code>userId</code></td>
+<td>Re-issuing <b>expires every outstanding code</b> for that tenant, so code 1 now replies LINK_FAIL and code 2 replies LINK_OK — a tenant never holds two live codes. ยกเลิกการผูก clears the three <code>line_*</code> columns, audits <code>TENANT_LINE_UNLINK</code>, and the row falls back to <span class="badge neutral">ยังไม่ได้ผูก LINE</span> with a สร้างรหัสผูก LINE button. Relinking from a new account simply overwrites <code>line_user_id</code>; the old id is not kept. Uniqueness is on the <b>tenant</b>, so one LINE account may hold two Active tenancies — a message to it is two <code>notifications</code> rows, one per bill, and every template names the room.</td>
+<td>FR-31, FR-05 · D-29, D-08</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<!-- ================================================================ -->
+<h3>9. Announcements — ประกาศ</h3>
+
+<p>Create-and-send is one action; there is no draft state, no schedule, no per-room audience and no recall, because LINE offers none and the UI must not imply otherwise (D-35).</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr>
+<th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th>
+</tr></thead>
+<tbody>
+
+<tr>
+<td><b>TC-PAY-056</b></td>
+<td>Send an announcement to ทุกห้องที่มีผู้เช่า</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Fresh seed: 67 Occupied rooms, 54 linked tenants, 13 unlinked. <code>LINE_MOCK=1</code>; admin session.</td>
+<td><ol>
+<li>Open <code>/announcements/new</code>, fill หัวข้อ and เนื้อหา, leave audience at ทุกห้องที่มีผู้เช่า.</li>
+<li>Read the live preview and the recipient line.</li>
+<li>Press ส่งประกาศ and confirm the dialog.</li>
+<li>Inspect the outbox, the rows and the result page.</li>
+</ol></td>
+<td>หัวข้อ <code>แจ้งปิดน้ำเพื่อซ่อมบำรุง</code> (23 chars) · เนื้อหา <code>วันที่ 20 กันยายน 2026 เวลา 10:00–12:00 น. …</code> (≤ 400) · <code>audience=all</code></td>
+<td><b>303</b> → <code>/announcements/7</code>. <b>67</b> <code>notifications</code> rows are written, one per recipient tenant: 54 <code>queued</code> → <code>sent</code> and 13 <code>skipped_no_line</code>. The outbox holds <b>one</b> <code>multicast</code> call carrying 54 distinct <code>userId</code>s — chunk size at most 500, so one chunk at this building's size; broadcast is never used. Rendered text:<br><code>📢 แจ้งปิดน้ำเพื่อซ่อมบำรุง</code> / blank / <code>{body}</code> / blank / <code>— นิติบุคคล ศุภาลัย เรสซิเดนซ์</code> (one space after นิติบุคคล; no product branding anywhere). Dialog before sending: <span lang="th">ส่งประกาศถึง 67 ห้อง ผ่าน LINE — เรียกคืนไม่ได้</span>, primary button ส่งประกาศ. Result summary: <span lang="th">ส่งประกาศถึง 67 ห้อง · ส่งสำเร็จ 54 · ไม่มี LINE 13 · ส่งไม่สำเร็จ 0</span>. A failed chunk is retried by the daily job as individual pushes, one per row, never as a chunk.</td>
+<td>FR-27, FR-32, FR-46 · D-35, D-34, D-30, D-31, D-39</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-057</b></td>
+<td>The live recipient count is honest, and เลือกชั้น narrows it</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Seed loaded; some rooms on floors 2 and 3 vacant, some tenants unlinked.</td>
+<td><ol>
+<li>GET <code>/api/announcements/preview-count?audience=all</code>.</li>
+<li>GET <code>…?audience=floors&amp;floors=2,3</code>.</li>
+<li>Read the notice above the form and re-open the confirm dialog after linking one more tenant.</li>
+<li>Select a floor whose rooms are all vacant.</li>
+</ol></td>
+<td><code>audience=all</code> · <code>audience=floors&amp;floors=2,3</code></td>
+<td>(1) <code>{"data":{"rooms":67,"linked":54}}</code>. (2) <code>{"data":{"rooms":26,"linked":21}}</code> — filtered by <code>rooms.floor IN (2,3)</code> over rooms with an Active tenant; vacant rooms are not counted. The notice reads <span lang="th">จะส่งถึง 26 ห้อง (ผู้เช่าที่ผูก LINE แล้ว 21 ราย)</span>; the second number is what stops the office believing 67 people were told when only 54 were. The dialog re-fetches the count when it opens, so the number confirmed is the number pushed. (4) zero recipients turns the notice warn — <span lang="th">ไม่มีห้องที่ตรงกับกลุ่มผู้รับนี้ — กรุณาเลือกใหม่</span> — and ส่งประกาศ is disabled before the dialog can open.</td>
+<td>FR-27 · D-35, D-47</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-058</b></td>
+<td>Announcement validation, at the boundary</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Admin session.</td>
+<td><ol>
+<li>POST with an empty <code>title</code>; then 61 characters.</li>
+<li>POST with an empty <code>body</code>; then 401 characters.</li>
+<li>POST <code>audience=floors</code> with no <code>floors</code>.</li>
+<li>POST <code>audience=everyone</code>.</li>
+<li>POST valid 60-character and 400-character values.</li>
+</ol></td>
+<td>title 0 / 60 / 61 chars · body 0 / 400 / 401 chars · <code>floors</code> absent · unknown audience</td>
+<td>Each failure is <b>422</b> <code>VALIDATION_FAILED</code> with <code>fields</code> keyed by input name and these Thai sentences: <span lang="th">กรุณากรอกหัวข้อประกาศ</span> · <span lang="th">หัวข้อยาวเกิน 60 ตัวอักษร</span> · <span lang="th">กรุณากรอกเนื้อหาประกาศ</span> · <span lang="th">เนื้อหายาวเกิน 400 ตัวอักษร</span> · <span lang="th">กรุณาเลือกอย่างน้อย 1 ชั้น</span>. An unknown <code>audience</code> is rejected, never silently ignored. The 60- and 400-character values are <b>accepted</b> (the limits are inclusive), keeping the whole message far under LINE's 5,000-character ceiling. Every rejection re-renders the form with every typed character preserved and no redirect; no announcement row and no notification row is created.</td>
+<td>FR-27, FR-48 · D-35, D-40</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-059</b></td>
+<td>A sent announcement is immutable — no edit, no resend, no recall</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Announcement 7 sent.</td>
+<td><ol>
+<li>GET <code>/announcements/7</code> and look for edit, resend or recall controls.</li>
+<li>POST an edit to that announcement.</li>
+<li>POST a resend.</li>
+<li>POST a recall.</li>
+</ol></td>
+<td>Announcement id <code>7</code></td>
+<td>The result page is read-only: it shows sent time, audience, recipient count and per-recipient delivery result, and offers <b>no</b> edit, resend or recall control — the UI must not imply a recall exists. All three POSTs return <b>409</b> <code>ANNOUNCEMENT_IMMUTABLE</code>, <span lang="th">ประกาศที่ส่งแล้วแก้ไขไม่ได้</span>. The list carries the hint <span lang="th">ประกาศที่ส่งแล้วแก้ไข ส่งซ้ำ หรือเรียกคืนไม่ได้</span>. An empty list renders <span lang="th">ยังไม่เคยส่งประกาศ</span>.</td>
+<td>FR-27 · D-35, D-40</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-060</b></td>
+<td>Announcements are Admin only</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Staff session.</td>
+<td><ol>
+<li>GET <code>/announcements</code>, <code>/announcements/new</code>, <code>/announcements/7</code>.</li>
+<li>GET <code>/api/announcements/preview-count?audience=all</code>.</li>
+<li>POST <code>/announcements</code>.</li>
+<li>Inspect the Staff navigation.</li>
+</ol></td>
+<td>Staff session cookie</td>
+<td>Every route <b>403</b>. Page routes render the Thai 403 page with the code <code>FORBIDDEN_ROLE</code> and a button back to จดมิเตอร์; the JSON route returns <code>{"error":{"code":"FORBIDDEN_ROLE","message":"ไม่มีสิทธิ์เข้าถึงหน้านี้ · บัญชีของคุณเป็นเจ้าหน้าที่ กรุณาติดต่อนิติบุคคล"}}</code>. No announcement or notification row is created. The Staff bottom-tab navigation contains no ประกาศ entry at all — navigation is generated from the same matrix as the middleware.</td>
+<td>FR-02, FR-27 · D-36, D-40</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<!-- ================================================================ -->
+<h3>10. Reports — รายงาน</h3>
+
+<p>Exactly four reports, Admin only, each on screen and each exportable to CSV through one helper. No PDF export, no report builder, no ad-hoc column chooser (D-42).</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr>
+<th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th>
+</tr></thead>
+<tbody>
+
+<tr>
+<td><b>TC-PAY-061</b></td>
+<td>Report 1 — monthly billing and collection reconciles on every row</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Seed loaded with 12 periods of history; admin session.</td>
+<td><ol>
+<li>GET <code>/reports/monthly</code> (default: the last 12 periods).</li>
+<li>For every row, check <code>billed − collected = outstanding</code>.</li>
+<li>For every row, check <code>water + electric + common = billed</code>.</li>
+<li>Confirm Draft bills are excluded from the money columns but counted in <code>n_draft</code>.</li>
+</ol></td>
+<td>Twelve periods; the current period holding room 205's Draft bill</td>
+<td>One row per period, newest first, with the columns <span lang="th">งวด · 💧 ค่าน้ำ · ⚡ ค่าไฟ · 🏢 ค่าส่วนกลาง · เรียกเก็บ · รับชำระ · ค้างชำระ · จำนวนบิล</span>. Both assertions hold on <b>every</b> row. "Billed" means the stored status is <code>Unpaid</code> or <code>Paid</code>, so the Draft bill contributes 0.00 to all money columns while appearing in the status counts. The outstanding column reads the stored <code>Unpaid</code> status and therefore includes bills not yet due — this is a billing summary, not the arrears list. The splits reconcile because generation always writes exactly three <code>bill_items</code>, so the sub-query cannot fan out or produce a NULL split.</td>
+<td>FR-29, FR-43 · D-42, D-41, D-18</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-062</b></td>
+<td>Report 2 — the arrears list, aged into four buckets that partition it</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Bills seeded at <code>days_overdue</code> of 3, 7, 8, 30, 31, 60, 61 and 90, plus one Unpaid bill not yet due and one bill whose payment was voided.</td>
+<td><ol>
+<li>GET <code>/reports/arrears</code>.</li>
+<li>Sum the four bucket counts and compare with the row count.</li>
+<li>Sum the four bucket amounts and compare with the report total.</li>
+<li>Look for the not-yet-due bill and the voided-payment bill.</li>
+</ol></td>
+<td>Buckets <code>1-7</code>, <code>8-30</code>, <code>31-60</code>, <code>61+</code> วัน</td>
+<td>Rows are Unpaid bills with <code>due_date &lt; CURDATE()</code> — exactly the bills displaying as <span class="badge overdue">เกินกำหนด</span> — sorted by days overdue descending, then by room code. The boundary bills land in exactly one bucket each: 7 → <code>1-7</code>, 8 → <code>8-30</code>, 30 → <code>8-30</code>, 31 → <code>31-60</code>, 60 → <code>31-60</code>, 61 → <code>61+</code>. <b>Bucket counts sum to the row count and bucket amounts sum to the report total.</b> The not-yet-due bill is not a row but appears in the summary line above the table, <span lang="th">ยังไม่ครบกำหนด {n} ใบ · {amount} บาท</span>, so nothing becomes invisible. The voided-payment bill <b>is</b> a row — it is genuinely unpaid — carrying <span lang="th">ระงับการแจ้งเตือนอัตโนมัติ</span>. Scope banner: <span lang="th">ทุกงวด ไม่ใช่เฉพาะรอบนี้ …</span>. With nothing overdue: <span lang="th">ไม่มีห้องค้างชำระ 🎉</span>.</td>
+<td>FR-29 · D-42, D-21, D-25</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-063</b></td>
+<td>Report 3 — a room's twelve-month history, across tenancies</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Room 41 with bill 118 Paid via TC-PAY-001; room 312 with two tenancies; a room with one voided payment.</td>
+<td><ol>
+<li>GET <code>/reports/room-history?room_id=41</code>.</li>
+<li>Read the current-period row cell by cell.</li>
+<li>GET the report for room 312.</li>
+<li>GET the report for the room with a voided payment.</li>
+<li>GET with <code>room_id</code> omitted.</li>
+</ol></td>
+<td>Room 41 · room 312 · a voided payment · missing <code>room_id</code></td>
+<td>Room 41's current-period row: water units <b>10</b>, water amount <b>180.00</b>, electric units <b>70</b>, electric amount <b>560.00</b>, common <b>1,050.00</b>, total <b>1,790.00</b>, display status <span class="badge paid">ชำระแล้ว</span>, payment date <code>2026-09-03</code>, receipt <code>REC-202609-000852</code> — arithmetic 10 × 18.00 + 70 × 8.00 + 30 × 35.00 = 1,790.00. Twelve periods, newest first. Room 312 shows <b>both</b> tenancies' bills, because the report is scoped by <code>room_id</code>. The voided payment's row still shows its receipt number with the <span class="badge bad">ยกเลิก</span> stamp while the bill itself displays <span lang="th">รอชำระ</span> / <span lang="th">เกินกำหนด</span>; the join is on the room's most recent payment, never on <code>active_bill_id</code>, or the evidence would vanish. This is the only report whose status column uses the <code>display_status</code> expression. Missing <code>room_id</code> → <b>422</b> <span lang="th">กรุณาเลือกห้อง</span>; a never-billed room → <span lang="th">ห้องนี้ยังไม่มีบิลในระบบ</span>; no room chosen → <span lang="th">เลือกห้องเพื่อดูประวัติ 12 เดือน</span>.</td>
+<td>FR-25, FR-29 · D-42, D-25, D-08, D-21</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-064</b></td>
+<td>Report 4 — top ten water and electricity rooms with their own previous month</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Approved bills for the selected period; at least one room newly billed this period with no previous bill; two rooms tied on units.</td>
+<td><ol>
+<li>GET <code>/reports/top-usage?period=2026-09&amp;utility=water</code>.</li>
+<li>Count rows and check the ordering.</li>
+<li>Read the delta column for the tied rooms and for the new room.</li>
+<li>Repeat with <code>utility=electric</code> and with an unknown utility.</li>
+</ol></td>
+<td><code>period=2026-09</code> · <code>utility=water|electric</code> · <code>utility=gas</code></td>
+<td><b>At most 10 rows</b>, ordered by units descending; ties broken by room code ascending. Only approved bills (stored status <code>Unpaid</code> or <code>Paid</code>) are counted, so a Draft bill never appears. Each row carries the same room's previous-period units and the delta — for room 205 at 10 units against a previous 8, the delta reads <b>+2</b>. A room with no bill in the preceding period renders <code>—</code>, never a fabricated <code>0</code>. The electricity tab is the same query with <code>item_type='electric'</code>. An unknown <code>utility</code> is rejected with <b>422</b> <code>VALIDATION_FAILED</code>, never silently ignored.</td>
+<td>FR-29, FR-30 · D-42, D-41</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-065</b></td>
+<td>CSV export — one helper, UTF-8 with a BOM, one filename pattern</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>All four reports return rows; admin session.</td>
+<td><ol>
+<li>GET each of the four routes with <code>?format=csv</code>.</li>
+<li>Inspect the response headers and the first bytes.</li>
+<li>Open one file in Excel.</li>
+<li>Compare the CSV rows with the on-screen rows.</li>
+</ol></td>
+<td><code>/reports/monthly</code>, <code>/reports/arrears</code>, <code>/reports/room-history</code>, <code>/reports/top-usage</code> · each <code>?format=csv</code></td>
+<td>Each responds <code>Content-Type: text/csv; charset=utf-8</code> and <code>Content-Disposition: attachment; filename="report-{name}-{period}.csv"</code> — <code>report-monthly-2026-09.csv</code>, <code>report-arrears-2026-09.csv</code>, <code>report-room-history-2026-09.csv</code>, <code>report-top-usage-2026-09.csv</code>. The body begins with the UTF-8 BOM (<code>EF BB BF</code>) so Excel renders Thai correctly rather than as mojibake. Rows match the screen exactly — the helper receives already-shaped rows and does no querying of its own. There is no PDF export anywhere and <code>?format=</code> is accepted on these four routes only.</td>
+<td>FR-43, FR-29 · D-42</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-066</b></td>
+<td>Every report route, including CSV, is Admin only</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Staff session.</td>
+<td><ol>
+<li>GET <code>/reports</code> and each of the four report routes.</li>
+<li>GET each with <code>?format=csv</code>.</li>
+<li>Grep every response body for an amount or a rate.</li>
+<li>Check the Staff navigation.</li>
+</ol></td>
+<td>Staff session cookie; nine requests</td>
+<td>All nine return <b>403</b> with the Thai 403 page and the code <code>FORBIDDEN_ROLE</code> shown as <span lang="th">รหัสข้อผิดพลาด: FORBIDDEN_ROLE</span>; no CSV bytes are produced. No response body contains <code>1790</code>, <code>1,790</code>, <code>18.00</code>, <code>8.00</code>, <code>35.00</code> or any other amount — money is absent from the queries that serve Staff, not hidden by CSS. Staff navigation renders no รายงาน entry. One test exists per Staff-forbidden route.</td>
+<td>FR-02, FR-29 · D-36, D-40</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-067</b></td>
+<td>Report filters reject bad ranges and reports never confirm anything</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Admin session.</td>
+<td><ol>
+<li>GET <code>/reports/monthly?from=2026-09&amp;to=2026-03</code>.</li>
+<li>GET a range spanning 18 periods.</li>
+<li>GET <code>/reports/top-usage?period=2026-9</code> and <code>?period=2026-13</code>.</li>
+<li>GET a period with no data.</li>
+<li>Trigger an export and look for a confirmation dialog.</li>
+</ol></td>
+<td>Reversed range · 18 periods · <code>2026-9</code> · <code>2026-13</code> · empty period</td>
+<td>(1) <b>422</b>, <code>.field.invalid</code> on the offending select, <span lang="th">เดือนเริ่มต้นต้องไม่หลังเดือนสิ้นสุด</span>, and the previous result stays on screen. (2) <b>422</b> <span lang="th">เลือกช่วงได้สูงสุด 12 งวด</span>, the filter not applied. (3) both <b>422</b> <code>PERIOD_INVALID</code> <span lang="th">รูปแบบรอบบิลไม่ถูกต้อง</span> against <code>^\d{4}-(0[1-9]|1[0-2])$</code>; an absent <code>period</code> falls back to the current calendar month in Asia/Bangkok, never an error. (4) <span lang="th">ยังไม่มีข้อมูลในช่วงเวลานี้</span> with the filters still usable. (5) <b>No confirmation dialog exists on any report or export</b> — the six dialogs are all writes. A query failure shows <code>.notice.bad</code> <span lang="th">โหลดรายงานไม่สำเร็จ กรุณาลองอีกครั้ง</span> with the filters preserved.</td>
+<td>FR-29, FR-46, FR-48 · D-42, D-11, D-39, D-40</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<!-- ================================================================ -->
+<h3>11. History views — meter readings and twelve-month usage</h3>
+
+<p>PRD §18 functions 26 and 30. A month that was never read is a <b>gap</b>, never a zero — a false zero would understate consumption on the one screen the office opens when a tenant disputes a reading (D-14).</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr>
+<th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th>
+</tr></thead>
+<tbody>
+
+<tr>
+<td><b>TC-PAY-068</b></td>
+<td>A room's reading history shows baselines, gaps and units — and no amount to Staff</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Room 41 with 12 periods of readings; a room whose first period ran off its baselines; a room with one skipped month.</td>
+<td><ol>
+<li>As <code>admin</code>, open room 41's detail and read the 12-month reading history.</li>
+<li>Open the room whose first reading came from its baselines.</li>
+<li>Open the room with a skipped month.</li>
+<li>Repeat step 1 as <code>staff</code> and grep the body.</li>
+</ol></td>
+<td>Room 41 · a baseline first period · one missed month</td>
+<td>Each period shows previous, current and units for both utilities: for the current period, water 1,250 → 1,260 = <b>10</b> and electricity 5,280 → 5,350 = <b>70</b>. The first period displays its source as the literal <code>baseline</code>, taken from the room's <span lang="th">เลขมิเตอร์น้ำเริ่มต้น</span> / <span lang="th">เลขมิเตอร์ไฟเริ่มต้น</span> — no synthetic reading row is ever created. A skipped month renders as a <b>gap row</b>, never as a 0-unit row, and the following period's <code>previous_period</code> names the older period it actually spans. Staff sees the same history with previous, current, units and flags, and <b>no rate and no amount anywhere in the response</b>.</td>
+<td>FR-26, FR-02 · D-14, D-06, D-36, D-42</td>
+</tr>
+
+<tr>
+<td><b>TC-PAY-069</b></td>
+<td>Twelve-month usage and revenue charts plot a gap, never a false zero</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Seed with 12 periods, one of which has no bills at all; one month approved but nothing collected; admin session.</td>
+<td><ol>
+<li>GET <code>/api/dashboard/charts?period=2026-09</code>.</li>
+<li>Check the length of every series against <code>labels</code>.</li>
+<li>Inspect the empty month and the collected-nothing month.</li>
+<li>Confirm Draft bills are excluded.</li>
+<li>Repeat as <code>staff</code>.</li>
+</ol></td>
+<td>Twelve labels <code>2025-10 … 2026-09</code></td>
+<td><code>labels</code>, <code>water_units</code>, <code>electric_units</code> and <code>revenue_collected</code> each carry exactly <b>12</b> entries, so the client zips them onto the axis with no length check. The month with no data is <code>null</code> — Chart.js plots a gap in the line; the month that exists but collected nothing is <code>"0.00"</code>. The two distinctions are not interchangeable. Unit series count only approved bills (<code>status IN ('Unpaid','Paid')</code>); <code>revenue_collected</code> counts <code>Paid</code> only, by billing period. <code>status_counts</code> counts bills of the selected period, Draft excluded, with the second slice labelled <span lang="th">รอชำระ + เกินกำหนด</span> because that split is a display rule. Staff → <b>403</b>.</td>
+<td>FR-30, FR-02 · D-41, D-14, D-21, D-36</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<!-- ================================================================ -->
+<h3>12. Coverage and recorded assumptions</h3>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Requirement</th><th>Covered by</th></tr></thead>
+<tbody>
+<tr><td>FR-02 · Role gate, no money in a Staff body</td><td>008, 030, 031, 047, 060, 066, 068, 069</td></tr>
+<tr><td>FR-14 / FR-15 / FR-16 · Water, electricity, common-area amounts on the issued document</td><td>024, 029, 063</td></tr>
+<tr><td>FR-18 · Approve</td><td>036, 039</td></tr>
+<tr><td>FR-19 · Send the bill through LINE OA</td><td>033, 034, 035, 036, 039</td></tr>
+<tr><td>FR-20 · Due-date reminder</td><td>043, 045</td></tr>
+<tr><td>FR-21 · Overdue reminder</td><td>016, 044, 045</td></tr>
+<tr><td>FR-22 · Take cash</td><td>001–011, 041</td></tr>
+<tr><td>FR-23 · Paid / Unpaid transitions</td><td>001, 003, 007, 012, 045</td></tr>
+<tr><td>FR-24 · Issue the receipt</td><td>001, 019–030, 041</td></tr>
+<tr><td>FR-25 · Payment history</td><td>031, 032, 063</td></tr>
+<tr><td>FR-26 · Reading history</td><td>068</td></tr>
+<tr><td>FR-27 · Announcements</td><td>056–060</td></tr>
+<tr><td>FR-29 · The four reports</td><td>061–067</td></tr>
+<tr><td>FR-30 · Twelve-month usage history</td><td>064, 069</td></tr>
+<tr><td>FR-31 · LINE account linking</td><td>049–055</td></tr>
+<tr><td>FR-32 · Notification log and delivery state</td><td>033, 035–042, 054, 056</td></tr>
+<tr><td>FR-34 · Revert to Draft (as the trigger for BILL_CORRECTED)</td><td>042</td></tr>
+<tr><td>FR-35 · Void a payment</td><td>012–018</td></tr>
+<tr><td>FR-37 · Scheduled job and manual trigger</td><td>046, 047, 048</td></tr>
+<tr><td>FR-38 · Printable ใบแจ้งค่าใช้จ่าย</td><td>029, 035</td></tr>
+<tr><td>FR-39 · Audit trail</td><td>001, 012, 050</td></tr>
+<tr><td>FR-40 · LINE test mode and quota display</td><td>040</td></tr>
+<tr><td>FR-43 · CSV export</td><td>065</td></tr>
+<tr><td>FR-46 · Confirmation dialogs</td><td>011, 013, 018, 036, 056, 067</td></tr>
+<tr><td>FR-47 · Health endpoint (rate-limit exemption only)</td><td>048</td></tr>
+<tr><td>FR-48 · Standard failure treatment</td><td>058, 067</td></tr>
+<tr><td>Decisions exercised</td><td>D-01, D-02, D-03, D-05, D-06, D-08, D-11, D-14, D-16, D-18, D-19, D-21, D-22, D-24, D-25, D-26, D-27, D-28, D-29, D-30, D-31, D-32, D-33, D-34, D-35, D-36, D-37, D-38, D-39, D-40, D-41, D-42, D-44, D-45, D-47</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout decision">
+  <div class="title">Assumptions recorded by this test set</div>
+  <ol>
+    <li><b>Fixture ids follow the engineering specification, not the UI mockups.</b> §3.1.10 fixes room 41 / tenant 37 / bill 118 / payment 96 / receipt 96 and states that sibling documents reuse them; the Payment &amp; Receipt mockups draw a different illustrative tenant name and the ids <code>/receipts/1042</code> and bill 1842. Every case above uses the specification's ids, because they are the ones a test can address. The tenant <em>name</em> is never asserted as a literal — it is read from <code>bills.tenant_name_snapshot</code>.</li>
+    <li><b>Dates in test data are documentation values; assertions are on arithmetic and on relative offsets.</b> Where a case needs a specific day it sets <code>due_date</code> relative to <code>CURDATE()</code> rather than to 5 ก.ย. 2026, because <code>seed.sql</code> computes every date from the run date (D-44).</li>
+    <li><b>No case asserts receipt-number gaplessness</b> (D-05 #10), <b>no case asserts that a blocked tenant is detectable</b> (D-05 #9), and <b>no case asserts a partial payment, a refund, a credit note or a late fee</b> (D-05 #2, #3, #4) — those behaviours do not exist and a test for them would be a scope violation.</li>
+    <li><b>Concurrency cases are run against a real MySQL 8 scratch schema</b>, not against mocks. The guarantees under test — <code>uq_payments(active_bill_id)</code>, the conditional <code>UPDATE</code>, the <code>counters</code> allocation, <code>uq_notifications(dedupe_key)</code>, <code>GET_LOCK('notif_drain', 0)</code> — are database constructs, and a mock cannot fail them.</li>
+    <li><b>LINE is exercised through the fake client with <code>LINE_MOCK=1</code>, and assertions are made on <code>notifications</code> rows rather than on the outbox</b>, except where the outbox is the only way to observe an API choice (multicast versus push, the test-mode target, the retry key). The rows are what the Admin screens, the monthly counter and the reports read, so asserting on them tests the thing that ships.</li>
+    <li><b>Approve-result and drain counts in TC-PAY-036 assume the seed's exact 54 / 13 split.</b> If seeding produces a different split the case is re-derived from <code>SELECT COUNT(*) FROM tenants WHERE status='Active' AND line_user_id IS NOT NULL</code>, never edited to match an observed number.</li>
+    <li><b>Timing targets are measured with a stopwatch against the full seed</b> and are asserted in TC-PAY-036 only (commit ≤ 5 s, delivery ≤ 3 min) and implicitly in TC-PAY-001 (confirm to printable receipt ≤ 5 s). No load, uptime or concurrency target is claimed.</li>
+  </ol>
+</div>
+
+</section>

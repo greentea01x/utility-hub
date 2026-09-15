@@ -1,0 +1,1849 @@
+<section id="strategy">
+<h2>Test Strategy</h2>
+
+<p>This section is the QA contract for Juristic Platform. It says what is tested, at which tier, with which tool, against which data, and what has to be true before a build is shown to anyone. Everything below is derived from ADR-001 (binding for stack and conventions), the PM decision log D-01…D-47 (binding for policy) and the engineering specification's FR-01…FR-48. Where this document adds a name, a hook or a file, it is listed in <a href="#qa-assumptions">Assumptions recorded by this section</a> and nowhere else.</p>
+
+<p>Three sentences fix the shape of everything that follows. <strong>Money is computed in SQL on <code>DECIMAL</code> and never in JavaScript</strong> (D-16, ADR A-4), so an amount can only be asserted against a database or a rendered page — never against a JavaScript expression. <strong>Overdue is derived from <code>CURDATE()</code> and is never stored</strong> (D-21), so a due-date test moves the data, not the clock. <strong>Every seed date is computed from the run date</strong> (D-44), so a test asserts the arithmetic — 10, 70, 180.00, 560.00, 1,050.00, 1,790.00 — and never the calendar.</p>
+
+<h3 id="qa-objectives">1.1 Objectives</h3>
+
+<div class="grid">
+  <div class="card">
+    <h4>O-1 · The number on the receipt is right</h4>
+    <p>Every amount a tenant sees on LINE, on the printed <span lang="th">ใบเสร็จรับเงิน</span> or on Bill Detail equals the sum of its own printed lines, and every line equals <code>ROUND(quantity × unit_price, 2)</code> against the rate snapshotted on the bill. A total that disagrees with its lines is the defect this project exists to prevent (D-16, D-41).</p>
+  </div>
+  <div class="card">
+    <h4>O-2 · A double-click cannot lose money</h4>
+    <p>Two cashiers, a double-submitted form and a retrying scheduler all converge on one payment, one receipt number and one LINE message. The guarantees live in eleven unique keys and three generated columns (ADR §6.8 layer 4), so the tests that matter drive HTTP concurrently and assert what the database allowed, not what the button did.</p>
+  </div>
+  <div class="card">
+    <h4>O-3 · Staff never receive an amount</h4>
+    <p>D-36 is stronger than navigation: money is absent from the queries that serve <code>staff</code>, not hidden in a template. Every Staff-forbidden route is asserted twice — HTTP 403 with the Thai page or <code>FORBIDDEN_ROLE</code>, and no digit-grouped amount anywhere in the response body.</p>
+  </div>
+  <div class="card">
+    <h4>O-4 · The graded demo path always runs</h4>
+    <p>The PRD §28 walk — read → generate → approve → LINE → cash → receipt → LINE → Dashboard — is exercised end to end on every push at two tiers: headless in <code>npm run rehearse</code> and through a real browser in E2E-01. A red E2E-01 blocks the merge.</p>
+  </div>
+  <div class="card">
+    <h4>O-5 · Nothing from PRD §24 reappears</h4>
+    <p>No test, fixture, seed row or page object mentions rent, a lease, a gateway, a card, online banking, a slip, a QR code, an IoT meter or AI. A test that would need one of them is a scope defect, not a missing feature (D-05).</p>
+  </div>
+  <div class="card">
+    <h4>O-6 · Failures are legible in Thai</h4>
+    <p>Every rejection path a user can reach is asserted on both halves: the stable <code>UPPER_SNAKE</code> error code that tests read, and the Thai sentence the office reads (ADR §6.3, D-40). Asserting only the status code passes while the screen shows English.</p>
+  </div>
+</div>
+
+<h4>Out of scope for QA, deliberately</h4>
+<ul>
+  <li><strong>Load and concurrency benchmarking.</strong> D-45 makes no uptime, concurrency or load commitment. The five committed numbers are stopwatch measurements against the seed, taken by hand, recorded in the test log.</li>
+  <li><strong>A browser matrix.</strong> D-45 names current Chrome and Edge at ≥ 1280 px for Admin and Chrome for Android at 360 × 640 for Staff. Playwright runs Chromium only; Edge and a real Android handset are checked by hand once per milestone.</li>
+  <li><strong>Print output.</strong> Browser print CSS is the one thing in this stack that cannot be automated (ADR A-13.5). The A5 <span lang="th">ใบเสร็จรับเงิน</span> is printed on the real office printer by week 9 — a dated manual test, not an assertion.</li>
+  <li><strong>The real LINE platform.</strong> Automated tiers never call it. One real link and one real push are performed by hand per milestone against the deployed instance, because the free plan's 500-message allowance is the project's scarcest resource (D-34, R-02).</li>
+</ul>
+
+<h3 id="qa-pyramid">1.2 The test pyramid</h3>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart TB
+  U["Tier 1 · Unit · node:test · no database · about 40 tests · 1 second"]
+  I["Tier 2 · API integration · node:test plus fetch · scratch schema · about 25 tests"]
+  R["Tier 3 · Rehearsal · npm run rehearse · the demo path, no browser"]
+  E["Tier 4 · Browser E2E · Playwright · 7 scenarios · the screens an examiner sees"]
+  Q["Guarantee · the money is right and cannot be double-taken"]
+  D["Guarantee · demo day survives a double-click and a LINE outage"]
+  U --> I --> R --> E
+  U -. "arithmetic and formatting" .-> Q
+  I -. "constraints, races and roles" .-> Q
+  R -. "the path runs headless" .-> D
+  E -. "the screens agree with the database" .-> D
+</pre>
+<div class="caption">Four tiers, three of them free of any test dependency. Tiers 1–3 are ADR §6.9 verbatim; tier 4 is the one addition this test plan makes, and it is the first thing cut if the semester runs short.</div>
+</div>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Tier</th><th>What belongs here</th><th>Tool — exactly as ADR §1 names it</th><th>Runner</th><th>Runs</th></tr></thead>
+<tbody>
+<tr>
+  <td><strong>1 · Unit</strong><br><span class="badge info">no database</span></td>
+  <td>Pure functions only: previous-reading resolution over row fixtures, unit computation including the meter-replacement branch, rate resolution by period, the <code>MAX(due day, approval + 3)</code> rule and its clamp, <code>billStatus()</code>, <code>thaiBaht()</code>, <code>lib/money.js</code> formatting, receipt-number formatting, the CSRF <code>timingSafeEqual</code> compare, template rendering with braced placeholders.</td>
+  <td><code>node:test</code> + <code>node:assert/strict</code>. Node 24 ships both. <span class="badge bad">no Jest</span> <span class="badge bad">no Vitest</span></td>
+  <td><code>npm run test:unit</code></td>
+  <td>On save</td>
+</tr>
+<tr>
+  <td><strong>2 · API integration</strong><br><span class="badge warn">scratch schema</span></td>
+  <td>The races that lose money and the rules that only exist in the database: double confirm, void then re-pay, generation twice, approve twice, the daily job twice, concurrent receipt allocation, the <code>dedupe_key</code>, revert with a later bill, and one test per Staff-forbidden route asserting 403 <em>and</em> that no amount appears in the body.</td>
+  <td><code>node:test</code> + built-in <code>fetch</code> + a 15-line cookie helper (<code>test/helpers/client.js</code>). <span class="badge bad">no supertest</span></td>
+  <td><code>npm run test:int</code></td>
+  <td>Before every push, in CI</td>
+</tr>
+<tr>
+  <td><strong>3 · Rehearsal</strong><br><span class="badge ok">the demo path</span></td>
+  <td>One script that walks the PRD §28 path headless against <code>seed.sql</code> with LINE test mode ON, asserts the arithmetic and never the calendar, and prints the six §28 numbers.</td>
+  <td><code>test/rehearsal.js</code>, plain Node, no framework.</td>
+  <td><code>npm run rehearse</code></td>
+  <td>Before every push and on the morning of the defence</td>
+</tr>
+<tr>
+  <td><strong>4 · Browser E2E</strong><br><span class="badge p2">added by this plan</span></td>
+  <td>Seven scenarios that can only be proved through a rendered page: the confirmation dialogs of D-39, the phone reading round at 360 px, the Thai 403 page, the sticky counter, the derived <code>Overdue</code> badge, the drain loop on the approval result screen, and the receipt as an examiner sees it.</td>
+  <td><code>@playwright/test</code> (TypeScript), Chromium only, <code>devDependencies</code>. See the amendment below.</td>
+  <td><code>npm run test:e2e</code></td>
+  <td>In CI on <code>main</code> and every pull request</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout decision">
+<div class="title">ADR-001 A-9 amendment — Playwright is added as tier 4, dev-only</div>
+<p>ADR §1 lists Playwright under <em>explicitly rejected dependencies</em>, and A-9's reason is sound: "a browser download and a week of setup in a semester that needs the twelfth screen". QA's position is narrower than what A-9 rejected, and this is the amendment being requested:</p>
+<ul>
+  <li><strong>What is added:</strong> one <code>devDependency</code>, one <code>playwright.config.ts</code>, one <code>test/e2e/</code> folder and one CI job. Nothing reaches the runtime, <code>package.json</code>'s ten runtime dependencies are untouched, and the deployed process is byte-identical.</li>
+  <li><strong>TypeScript does not reintroduce a build step.</strong> A-1 removes the build step for the <em>application</em>; Playwright compiles its own specs, so <code>test/e2e/*.spec.ts</code> needs a nine-line <code>tsconfig.json</code> scoped to that folder and no toolchain the app can see. <code>npm start</code>, <code>npm run dev</code> and the Render build command are unchanged.</li>
+  <li><strong>Why it earns its place:</strong> four of the seven scenarios assert something no headless tier can reach — a D-39 dialog that must state the exact effect before an irreversible action, the reading round on a 360 px viewport (D-45 target 1), the Thai 403 page (D-40), and the derived <span lang="th">เกินกำหนด</span> badge. The rehearsal script proves the <em>path</em> runs; only a browser proves the <em>screens</em> agree with the database.</li>
+  <li><strong>Cost containment:</strong> Chromium only, <code>workers: 1</code>, <code>retries: 0</code>, seven specs. Setup is <code>npx playwright install --with-deps chromium</code> in one CI job — measured at roughly two hours of work, not a week, because the seed already rebuilds the whole demo in one command (D-44).</li>
+  <li><strong>Cut order:</strong> if the semester runs short, tier 4 is cut <em>before</em> item (1) of A-14, because it ships no screen. Tier 3 is the safety net that survives the cut, and it is the tier A-14 already protects.</li>
+</ul>
+<p>If the architecture judge declines this amendment, every scenario below stays valid as a written manual test and the Playwright code in §2 is deleted; nothing else in this document changes.</p>
+</div>
+
+<h4>What is deliberately not a tier</h4>
+<ul>
+  <li><strong>No coverage gate.</strong> ADR §6.9 is explicit and QA agrees: the enforced artefact is the <em>list</em> of tests, not a percentage. A missing test from the tier-2 list is a gap; a coverage number is a number. The traceability matrix in §1.9 replaces it.</li>
+  <li><strong>No snapshot testing.</strong> Every Thai string in this product is a decision-log value. A snapshot would make an accidental copy change pass review as "just update the snapshot"; asserting the verbatim D-02/D-31/D-39 string makes the change visible in the diff.</li>
+  <li><strong>No component tests.</strong> There are no components — the views are EJS rendered by the same process that owns the data, so tier 2 already renders them.</li>
+</ul>
+
+<h3 id="qa-environments">1.3 Environments</h3>
+
+<p>ADR §2.2 fixes two <em>deployment</em> environments — local and production — and refuses a staging environment on the grounds that a third environment is a third place for the webhook URL to be wrong. That stands. What QA adds is not an environment but two extra <em>databases</em> on the local machine and in CI, so a test run can truncate tables without destroying the demo a student is mid-way through rehearsing.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Name</th><th>Runs where</th><th>Database</th><th>LINE</th><th>Data</th><th>Reset by</th></tr></thead>
+<tbody>
+<tr><td><strong>local-dev</strong></td><td>Student laptop, <code>npm run dev</code></td><td><code>juristic</code></td><td><code>line_test_mode = 1</code>, webhook disabled</td><td><code>seed.sql</code></td><td><code>npm run db:reset</code>, by hand</td></tr>
+<tr><td><strong>local-test</strong></td><td><code>npm run test:int</code></td><td><code>juristic_test</code></td><td><code>LINE_MOCK=1</code> — the fake client of spec §5.8.2</td><td><code>schema.sql</code> + per-test fixtures; the helper truncates between tests</td><td>The test helper, every run</td></tr>
+<tr><td><strong>local-e2e</strong></td><td><code>npm run test:e2e</code></td><td><code>juristic_e2e</code></td><td><code>LINE_MOCK=1</code> + <code>LINE_OUTBOX_FILE</code></td><td><code>seed.sql</code> once per run, then a per-scenario <code>.sql</code> fixture</td><td>Playwright <code>globalSetup</code></td></tr>
+<tr><td><strong>ci</strong></td><td>GitHub Actions</td><td><code>juristic_test</code> in a <code>mysql:8.4</code> service container, one per job</td><td><code>LINE_MOCK=1</code>, never a real token</td><td>Rebuilt from empty in every job</td><td>The job itself</td></tr>
+<tr><td><strong>production</strong></td><td>Render + Aiven</td><td><code>juristic</code></td><td>Real channel, <code>line_test_mode = 1</code> except during the rehearsed demo</td><td><code>seed.sql</code>, reseeded only from the Render shell</td><td>Nobody automatically — a manual, deliberate act</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout bad">
+<div class="title">Three rules that are not negotiable</div>
+<ul>
+  <li><code>.env.test</code> and <code>.env.e2e</code> point at <code>juristic_test</code> and <code>juristic_e2e</code>. The integration helper truncates every table it touches, so a <code>DATABASE_URL</code> pointing at <code>juristic</code> destroys a rehearsal. Both files are git-ignored and both are written fresh by CI.</li>
+  <li><strong>No automated tier ever holds a real <code>LINE_CHANNEL_ACCESS_TOKEN</code>.</strong> CI sets <code>LINE_MOCK=1</code> and a placeholder secret. The real token exists only in Render's environment and the team password note (D-43, R-12).</li>
+  <li><strong>Nothing automated runs against production.</strong> The deployed instance is exercised by the §6.3.2 smoke test and by <code>npm run rehearse</code> pointed at its database, both by hand, both by a named person.</li>
+</ul>
+</div>
+
+<h3 id="qa-data">1.4 Test data and the demo seed fixture</h3>
+
+<p><code>db/seed.sql</code> is the only test data this project has, and it is a deliverable rather than a convenience: D-44 makes it the thing that recreates the graded demo from an empty database in one command. Tests inherit two consequences. First, they may rely on the seed facts below and on nothing else. Second, <strong>every seed date is computed from <code>CURDATE()</code></strong> — so a test that asserts <code>5 ก.ย. 2026</code> is a test that goes red on 6 September, and asserting the calendar is itself a defect.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Seed fact a test may rely on</th><th>Value</th><th>Used by</th><th>Source</th></tr></thead>
+<tbody>
+<tr><td>Rooms</td><td>80 across 5 floors, <code>101–116</code> … <code>501–516</code>, every one <code>30.00</code> ตร.ม.</td><td>E2E-01, E2E-06, FR-28</td><td>D-44</td></tr>
+<tr><td>Occupancy</td><td>67 <code>Occupied</code>, 13 <code>Vacant</code></td><td>Dashboard tiles, the reading counter</td><td>D-44</td></tr>
+<tr><td>Tenants</td><td>67 Active, of which <strong>exactly 54</strong> carry a LINE binding and 13 deliberately do not</td><td>E2E-05, E2E-06, the bulk-approve assertion</td><td>D-44, D-35</td></tr>
+<tr><td>Seeded LINE ids</td><td><code>Useed0000…{tenant_id}</code> — never a valid push target; auto-unbind skips the <code>Useed</code> prefix</td><td>Every LINE test</td><td>D-44, D-30</td></tr>
+<tr><td>Rates</td><td><code>18.00</code> / <code>8.00</code> / <code>35.00</code>, <code>effective_from</code> = first day of the earliest history period</td><td>Every arithmetic assertion</td><td>D-17, D-44</td></tr>
+<tr><td>Due day</td><td><code>5</code></td><td>E2E-01, E2E-02</td><td>D-20</td></tr>
+<tr><td>Current period</td><td><code>DATE_FORMAT(CURDATE(), '%Y-%m')</code>; 66 billable rooms carry an approved <code>Unpaid</code> bill, room 205's is left <code>Draft</code></td><td>E2E-01, E2E-07, FR-28</td><td>D-44</td></tr>
+<tr><td>Receipt counter</td><td>Offset so room 205's payment issues <code>REC-&lt;current YYYYMM&gt;-000852</code></td><td>E2E-01</td><td>D-26, D-44</td></tr>
+<tr><td>Completed tenancy</td><td>Room 312: an Inactive tenant with a Paid final bill in the previous period, plus a new Active tenant from the 1st of the current month</td><td>D-06 / D-08 / D-14 coverage</td><td>D-44</td></tr>
+<tr><td>Users</td><td><code>admin</code> / <span lang="th">นิติบุคคล</span> and <code>staff</code> / <span lang="th">เจ้าหน้าที่</span>; the admin password comes from <code>SEED_ADMIN_PASSWORD</code></td><td>Every tier</td><td>D-37, D-46</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout warn">
+<div class="title">Three figures no test may treat as expected values</div>
+<p>D-44 is binding here and it is the easiest rule in the document to break by accident. PRD §16's <strong>18,500</strong> (water) and <strong>62,500</strong> (electricity) are illustrative and arithmetically impossible against the seed — 18,500 is not divisible by 18 and 62,500 is not divisible by 8 — and PRD §19's <strong>35 ตร.ม.</strong> room row is illustrative in the same way. Only the room counts <strong>80 / 67 / 13</strong> and the common-area total <strong>70,350.00</strong> (67 × 30 × 35) are reproduced. A test asserting 18,500 is a defect in the test.</p>
+</div>
+
+<h4>1.4.1 The demo fixture — <code>test/fixtures/reset-205.sql</code></h4>
+
+<p>E2E-01 starts one step earlier than the seed does: the seed hands the demo a room 205 that is already read and already has a Draft bill, because the live demo only approves it. A test that must prove the <em>reading</em> step needs room 205 unread. This fixture re-arms it, in one file used by both tier 2 and tier 4, and it is the only fixture that touches the demo room.</p>
+
+<pre><code>-- test/fixtures/reset-205.sql
+-- Re-arms the PRD §28 demo on room 205: no reading, no bill, counter at 851.
+-- Every date is derived from CURDATE(); nothing here hard-codes a calendar (D-44).
+-- Applied ONLY to juristic_test / juristic_e2e. Never to a demo database.
+
+SET @room   := (SELECT id FROM rooms WHERE room_code = '205');
+SET @period := DATE_FORMAT(CURDATE(), '%Y-%m');
+SET @prev   := DATE_FORMAT(CURDATE() - INTERVAL 1 MONTH, '%Y-%m');
+SET @bill   := (SELECT id FROM bills WHERE room_id = @room AND period = @period);
+
+-- Unwind the current period for this room, child rows first.
+DELETE FROM notifications WHERE bill_id = @bill;
+DELETE FROM receipts      WHERE payment_id IN (SELECT id FROM payments WHERE bill_id = @bill);
+DELETE FROM payments      WHERE bill_id = @bill;
+DELETE FROM bill_items    WHERE bill_id = @bill;
+DELETE FROM audit_log     WHERE bill_id = @bill;
+DELETE FROM bills         WHERE id      = @bill;
+DELETE FROM meter_readings WHERE room_id = @room AND period = @period;
+
+-- Pin last month's closing readings so the §28 arithmetic reproduces whatever
+-- the seed's history generator produced. previous_reading is INT UNSIGNED, so the
+-- subtraction is CAST to SIGNED and floored at 0 to satisfy CHECK (units &gt;= 0).
+UPDATE meter_readings
+   SET current_reading = 1250,
+       units = GREATEST(CAST(1250 AS SIGNED) - CAST(previous_reading AS SIGNED), 0)
+ WHERE room_id = @room AND period = @prev AND utility_type = 'water';
+
+UPDATE meter_readings
+   SET current_reading = 5280,
+       units = GREATEST(CAST(5280 AS SIGNED) - CAST(previous_reading AS SIGNED), 0)
+ WHERE room_id = @room AND period = @prev AND utility_type = 'electric';
+
+-- The counter is not gapless (D-26, D-27); it is reset so the next allocation is 852.
+UPDATE counters SET seq = 851 WHERE name = 'receipt';
+</code></pre>
+
+<div class="callout note">
+<div class="title">Two deliberate properties of this fixture</div>
+<ol>
+  <li><strong>It mutates last month's closing reading and leaves last month's bill alone.</strong> That is correct, not sloppy: <code>bill_items</code> are snapshots taken at generation (D-09, D-17), so a Paid historical bill does not and must not recompute. The fixture is asserting the same invariant the product relies on.</li>
+  <li><strong>It resets the receipt counter to 851, not to 0.</strong> The 852 in <code>REC-&lt;YYYYMM&gt;-000852</code> comes from the seed offset, and the sequence is unique and monotonic but explicitly <em>not gapless</em> (D-26, D-27). No test may assert gaplessness; the two assertions permitted are that no two receipts share a number and that a later payment never receives a lower one.</li>
+</ol>
+</div>
+
+<h4>1.4.2 Fixtures the other scenarios need</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>File</th><th>What it sets up</th><th>Used by</th></tr></thead>
+<tbody>
+<tr><td><code>reset-205.sql</code></td><td>Room 205 unread, no bill, counter at 851</td><td>E2E-01, E2E-07, the tier-2 generation test</td></tr>
+<tr><td><code>due-dates.sql</code></td><td>Shifts <code>due_date</code> on six named rooms to <code>CURDATE()</code> + 2, − 1, − 8, − 15, − 3 and one Paid bill at − 1; voids one payment</td><td>E2E-02</td></tr>
+<tr><td><code>next-period-bill.sql</code></td><td>Adds an approved bill for room 206 in the following period, so revert on the current one must be refused</td><td>E2E-03</td></tr>
+<tr><td><code>unlink-206.sql</code></td><td>Clears the three LINE columns on room 206's Active tenant</td><td>E2E-05</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Each is under twenty lines, each derives every date from <code>CURDATE()</code>, and each is idempotent — running it twice leaves the same state, so a rerun after a failed test needs no cleanup step.</p>
+
+<h3 id="qa-line">1.5 Mocking LINE</h3>
+
+<p>The Messaging API is mocked at exactly one seam, and the seam is the one the engineering spec already defines: the module-level client in <code>services/notify.js</code> with its <code>setLineClient()</code> setter, plus <code>LINE_MOCK=1</code> which installs <code>test/helpers/fakeLine.js</code> at boot (spec §5.8.2). <strong>There is no HTTP mock server and no cassette library</strong> — that is an ADR-level choice, and this plan keeps it.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Tier</th><th>Mechanism</th><th>What is asserted</th><th>Why that surface</th></tr></thead>
+<tbody>
+<tr>
+  <td>Unit</td>
+  <td><code>setLineClient(fakeClient())</code> in the test body; a failing client is a two-line object whose <code>pushMessage</code> rejects with a given status.</td>
+  <td>The <code>outbox</code> array: the rendered Thai text byte-for-byte against the D-31 worked example, and that a missing placeholder throws rather than emitting <code>undefined</code>.</td>
+  <td>Template rendering is a pure function. Nothing else in the tier touches LINE.</td>
+</tr>
+<tr>
+  <td>API integration</td>
+  <td>The real server booted with <code>LINE_MOCK=1</code>.</td>
+  <td><strong>The <code>notifications</code> rows</strong>, never the outbox: <code>type</code>, <code>status</code>, <code>attempt_count</code>, <code>http_status</code>, <code>recipient_user_id</code>, and that <code>uq_notifications(dedupe_key)</code> refuses a same-day repeat.</td>
+  <td>The rows are what the Admin screens, the monthly quota counter and the reports read. Asserting them tests the thing that ships (spec §5.8.2).</td>
+</tr>
+<tr>
+  <td>Browser E2E</td>
+  <td><code>LINE_MOCK=1</code> plus <code>LINE_OUTBOX_FILE</code>: the fake client appends one JSON line per outbound call to a file the Playwright process reads.</td>
+  <td>Both halves — the <em>text</em> from the outbox file (the tenant's experience) and the <em>row</em> from MySQL (the office's experience), asserted together.</td>
+  <td>Playwright drives the browser, not the server process, so it cannot reach the in-process outbox array. A file is the smallest bridge across that boundary.</td>
+</tr>
+<tr>
+  <td>Inbound webhook</td>
+  <td>A signed request posted by <code>test/helpers/lineWebhook.js</code>, signing the exact bytes it sends.</td>
+  <td>200 on a valid signature and 401 on a tampered one; the <code>line_followers</code> upsert; the binding, the expired code and the <code>TENANT_LINE_LINK</code> audit row.</td>
+  <td>The LINE console holds exactly one webhook URL and it belongs to the deployment (D-43), so inbound events can only be exercised by signed fixtures.</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<h4>1.5.1 The four-line change to <code>test/helpers/fakeLine.js</code></h4>
+
+<pre><code>// test/helpers/fakeLine.js — spec §5.8.2, plus the outbox file the browser tier reads.
+import { appendFileSync } from 'node:fs';
+
+export const fakeClient = () =&gt; {
+  const outbox = [];
+  const record = (e) =&gt; {
+    outbox.push(e);
+    if (process.env.LINE_OUTBOX_FILE) appendFileSync(process.env.LINE_OUTBOX_FILE, JSON.stringify(e) + '\n');
+    return { status: 200 };
+  };
+  return {
+    outbox,
+    pushMessage:  async (to, msg, key) =&gt; record({ api: 'push',      to, msg, key }),
+    multicast:    async (to, msg, key) =&gt; record({ api: 'multicast', to, msg, key }),
+    replyMessage: async (token, msg)  =&gt; record({ api: 'reply',      token, msg }),
+  };
+};
+</code></pre>
+
+<p>A JSONL file rather than an HTTP mock server, for three reasons: it costs four lines instead of a second process and a port; it cannot drift from the client the integration tier already uses, because it <em>is</em> that client; and it never changes what the server does, so a passing E2E is evidence about the shipped code path and not about a test double. The rejected alternative — a fake LINE server on <code>127.0.0.1</code> with <code>LINE_API_BASE</code> pointed at it — would additionally exercise the SDK's own HTTP layer, which is not code this team wrote and not code that can break the demo.</p>
+
+<div class="callout note">
+<div class="title">Test mode changes who receives, not what is recorded</div>
+<p><code>line_test_mode</code> defaults ON in every environment (D-34) and redirects every outbound message to one whitelisted <code>userId</code> <em>while still recording the intended recipient on the row</em>. So in every automated tier the outbox entry's <code>to</code> is the test account and the <code>notifications.recipient_user_id</code> is the tenant. A test that asserts the recipient must read the database row; a test that asserts the message text may read the outbox. Getting this backwards produces a test that passes with test mode off and fails with it on — the exact opposite of what is wanted.</p>
+</div>
+
+<h4>1.5.2 Signed webhook events — <code>test/helpers/lineWebhook.js</code></h4>
+
+<pre><code>// test/helpers/lineWebhook.js
+// The signature is base64(HMAC-SHA256(rawBody, channelSecret)) over the EXACT bytes sent.
+// Reformatting the JSON changes the signature, so the body is stringified once and reused.
+import { createHmac } from 'node:crypto';
+
+export const sign = (rawBody, secret = process.env.LINE_CHANNEL_SECRET) =&gt;
+  createHmac('sha256', secret).update(rawBody).digest('base64');
+
+const DESTINATION = 'Uoa' + '0'.repeat(30);
+
+export const followEvent = (userId) =&gt; ({
+  type: 'follow', mode: 'active', timestamp: Date.now(),
+  source: { type: 'user', userId },
+  webhookEventId: '01JTESTFOLLOW', deliveryContext: { isRedelivery: false },
+  replyToken: '0'.repeat(32),
+});
+
+export const messageEvent = (userId, text) =&gt; ({
+  type: 'message', mode: 'active', timestamp: Date.now(),
+  source: { type: 'user', userId },
+  webhookEventId: '01JTESTMSG', deliveryContext: { isRedelivery: false },
+  replyToken: '1'.repeat(32),
+  message: { id: '1', type: 'text', quoteToken: 'q1', text },
+});
+
+/** POSTs one signed event. Pass tamper: true to assert the 401 path. */
+export async function postEvent(baseUrl, event, { tamper = false } = {}) {
+  const body = JSON.stringify({ destination: DESTINATION, events: [event] });
+  return fetch(baseUrl + '/line/webhook', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Line-Signature': tamper ? 'bm90LWEtc2lnbmF0dXJl' : sign(body),
+    },
+    body,
+  });
+}
+</code></pre>
+
+<p>The shell equivalent is spec §5.8.3 and stays in the runbook for hand-testing against the deployed instance. Two properties matter and are asserted: the endpoint answers <strong>200 before doing any work</strong> (D-29, D-43 — LINE disables an endpoint that repeatedly fails to answer, and a disabled webhook silently kills the only route by which a <code>userId</code> ever reaches the system), and a tampered signature is <strong>401 with nothing written</strong>. A fabricated <code>replyToken</code> is harmless under <code>LINE_MOCK=1</code>; against the real dev channel it would fail with 400 while the binding — the part under test — still happens.</p>
+
+<h3 id="qa-clock">1.6 Clock control for due and overdue tests</h3>
+
+<div class="callout bad">
+<div class="title">The clock cannot be frozen, and trying is the wrong answer</div>
+<p><code>Overdue</code> is produced by <code>CASE WHEN b.status = 'Unpaid' AND b.due_date &lt; CURDATE() THEN 'Overdue' ELSE b.status END</code> — evaluated by <strong>MySQL</strong>, on the database server, at query time (D-21). A JavaScript fake timer cannot move <code>CURDATE()</code>. Worse, it would desynchronise <code>todayBangkok()</code> from <code>CURDATE()</code> and put the system into a state it can never actually reach, so the test would be asserting fiction.</p>
+</div>
+
+<p><strong>The technique is to move the data, not the clock.</strong> One <code>UPDATE</code> per bill, expressed relative to <code>CURDATE()</code>, and both the SQL expression and the JS helper agree because both still read a real, consistent today.</p>
+
+<pre><code>-- Any bill can be aged or brought forward with one statement.
+UPDATE bills SET due_date = CURDATE() + INTERVAL 2 DAY WHERE id = ?;  -- PRE_DUE fires today
+UPDATE bills SET due_date = CURDATE() - INTERVAL 1 DAY WHERE id = ?;  -- displays Overdue; days_overdue = 1
+UPDATE bills SET due_date = CURDATE() - INTERVAL 8 DAY WHERE id = ?;  -- days_overdue = 8
+</code></pre>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Approach</th><th>Verdict</th><th>Reason</th></tr></thead>
+<tbody>
+<tr><td>Shift <code>due_date</code> relative to <code>CURDATE()</code></td><td><span class="badge ok">chosen</span></td><td>One statement, no dependency, moves the only variable that actually decides the outcome, and leaves JS and SQL agreeing on what today is.</td></tr>
+<tr><td><code>@sinonjs/fake-timers</code> or an injected clock</td><td><span class="badge bad">rejected</span></td><td>A dev dependency that cannot reach <code>CURDATE()</code>. It would make <code>billStatus()</code> disagree with the SQL expression — the precise defect D-21's single-helper rule exists to prevent.</td></tr>
+<tr><td>Playwright's <code>page.clock</code></td><td><span class="badge bad">rejected</span></td><td>Moves the <em>browser's</em> clock. Every status, due date and amount in this system is computed server-side and no date arithmetic happens in the browser at all (ADR §6.5).</td></tr>
+<tr><td><code>libfaketime</code> or a time-travelling container</td><td><span class="badge bad">rejected</span></td><td>Days of setup, a class of flake all of its own, and it would move the receipt month too — silently invalidating <code>REC-&lt;YYYYMM&gt;-000852</code>.</td></tr>
+<tr><td>A <code>TEST_TODAY</code> environment override read by the app</td><td><span class="badge bad">rejected</span></td><td>Production code branching on a test variable is a defect waiting for the one deploy where the variable is set. If it existed, its own failure mode would need a test.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>1.6.1 Two consequences that catch people out</h4>
+
+<ol class="steps">
+  <li><strong>The reminder ladder needs six bills, not six clock jumps.</strong> <code>notifications.dedupe_key</code> includes <code>send_date</code>, and <code>send_date</code> is today (D-30, ENG-3). Aging one bill to −1, running the job, then aging the same bill to −8 and running again produces the same dedupe key and UPSERTs the same row — no second message, correctly. So D-33's ladder is proved with <strong>one job run against six differently-aged bills</strong>, which is also how the production system actually behaves on any given morning.</li>
+  <li><strong>The daily job will not run twice in one day, by design.</strong> <code>uq_job_runs(job_name, run_date)</code> makes a second <code>daily</code> call a no-op returning <code>already_ran: true</code> (D-32). A test that needs a second run either deletes the row — <code>DELETE FROM job_runs WHERE job_name = 'daily' AND run_date = CURDATE();</code> — or uses the Settings path, which runs the identical code as <code>daily_manual</code> and deliberately skips the guard. Both are asserted: the no-op <em>is</em> the requirement (FR-37).</li>
+</ol>
+
+<div class="callout warn">
+<div class="title">Defect candidate raised by writing the due-date oracle · S3 · documentation</div>
+<p>D-20 and ADR §4 both state <code>due_date = MAX(day-of-month of the period month, approval_date + 3 days)</code>, "clamped to the month's last day". Read literally, an approval on 30 September for period <code>2026-09</code> gives <code>MAX(5 Sep, 3 Oct) = 3 Oct</code>, which the clamp would then pull back to 30 September — a due date <em>before</em> the three-day floor D-20 exists to guarantee, and one day after approval. The reading that preserves the intent is that the clamp applies to the <em>day-of-month term only</em> (it exists for a <code>due_day</code> that a short month lacks, which the 1–28 range already prevents), and never to the result of the <code>MAX</code>. QA implements the oracle that way, asserts it in <code>test/unit/dueDate.test.js</code>, and asks for one clarifying clause in D-20 and ADR §4. Until that clause exists, a late approval near month end is the one place the product and this test plan could legitimately disagree.</p>
+</div>
+
+<h3 id="qa-criteria">1.7 Entry and exit criteria</h3>
+
+<h4>Entry criteria — a build QA will accept for testing</h4>
+<ul class="checklist">
+  <li><code>npm run lint</code> is green and <code>npm ci</code> installs from the committed lock file.</li>
+  <li><code>npm run db:reset</code> completes and prints <code>80 rooms · 67 tenants · 54 LINE-linked · rates 18.00/8.00/35.00 · due day 5</code>. A seed that prints anything else is rejected before a single test is run.</li>
+  <li><code>npm run test:unit</code> is green — a red unit tier means the arithmetic is wrong and no higher tier's result is meaningful.</li>
+  <li><code>GET /healthz</code> returns <code>{"data":{"ok":true,"db":"up"}}</code> on the target instance.</li>
+  <li><code>settings.line_test_mode = 1</code>, verified by reading the Settings page, not by trusting the default.</li>
+  <li>The pull request names the decision ids it implements and says "requires db:reset" on the first line when the schema or seed changed.</li>
+</ul>
+
+<h4>Exit criteria — per milestone</h4>
+<ul class="checklist">
+  <li>Every FR in the milestone's scope has at least one test that names its id, and the traceability grep of §1.9 reports zero uncovered FRs for that milestone.</li>
+  <li>Zero open <strong>S1</strong>. Zero open <strong>S2</strong> on the demo path (Login → <span lang="th">จดมิเตอร์</span> → generate → <span lang="th">อนุมัติและส่งบิล</span> → LINE BILL → <span lang="th">ยืนยันรับเงินสด</span> → receipt → LINE PAID → Dashboard).</li>
+  <li>All four tiers green in CI on the merge commit, not only on a developer's laptop.</li>
+  <li><code>npm run rehearse</code> green against the milestone's own database, with its six §28 numbers pasted into the milestone note.</li>
+  <li>The five D-45 numbers measured with a stopwatch against the full seed and recorded, even when one of them misses: an unmet target is a known figure, not a silent one.</li>
+  <li>Every new Thai string checked verbatim against its decision-log entry. A reworded confirmation dialog is a D-39 defect, not a copy edit.</li>
+</ul>
+
+<h4>Exit criteria — the defence build, additionally</h4>
+<ul class="checklist">
+  <li>The A5 <span lang="th">ใบเสร็จรับเงิน</span> printed on the office printer within the last seven days, one page, Thai unbroken, margins intact (R-06).</li>
+  <li>The webhook re-verified green in the LINE console <em>after</em> the final deploy (D-43 — the one runbook line that has silently killed the linking flow).</li>
+  <li>The local fallback rehearsed for real: local app, local MySQL restored from the newest dump, webhook disabled, test mode ON (R-10).</li>
+  <li>A <code>mysqldump</code> committed the day before, and the demo account's password known to two people.</li>
+</ul>
+
+<h3 id="qa-severity">1.8 Defect severity</h3>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Severity</th><th>Definition</th><th>Examples from this system</th><th>Response</th></tr></thead>
+<tbody>
+<tr>
+  <td><span class="badge p0">S1 · Demo-stopping</span></td>
+  <td>A wrong number reaches a human, money or state can be lost or double-taken, a role boundary leaks, or the demo path cannot be completed at all.</td>
+  <td>A total that is not the sum of its printed lines · a second <code>ยืนยันรับเงินสด</code> creating a second payment or receipt · an amount in a Staff response body · a bill approved with fewer than three <code>bill_items</code> · a money change committed with no <code>audit_log</code> row · a date rendered in Buddhist Era · the webhook answering anything but 200 · <code>Overdue</code> written into <code>bills.status</code>.</td>
+  <td>Stop other work. Fixed before the next merge. A regression test is part of the fix, not a follow-up.</td>
+</tr>
+<tr>
+  <td><span class="badge p1">S2 · Major</span></td>
+  <td>A specified flow fails or is blocked, but a documented workaround exists and no number is wrong.</td>
+  <td><code>ตีกลับเป็นฉบับร่าง</code> refused when it should be allowed · a CSV without its UTF-8 BOM so Excel mangles Thai · the drain loop stopping with <code>remaining &gt; 0</code> · a report's bucket counts not summing to its row count · a confirmation dialog missing the count or the irreversibility sentence.</td>
+  <td>Fixed inside the same milestone. Blocks the milestone sign-off if it sits on the demo path.</td>
+</tr>
+<tr>
+  <td><span class="badge p2">S3 · Minor</span></td>
+  <td>Wrong or missing Thai copy, a missing empty state, an unhelpful error, an ambiguity in a binding document.</td>
+  <td>A list without its D-40 empty state · <code>ตกลง</code> on a primary button where D-39 requires the verb · a 422 whose Thai message differs from the schema's · the D-20 clamp ambiguity raised in §1.6.</td>
+  <td>Batched and fixed within the milestone. Copy defects are fixed by quoting the decision-log entry in the pull request.</td>
+</tr>
+<tr>
+  <td><span class="badge neutral">S4 · Cosmetic</span></td>
+  <td>Visual polish with no functional or comprehension impact.</td>
+  <td>Spacing off the 4px scale · a badge one shade wrong · a column narrower than it should be at 1280 px.</td>
+  <td>Fixed if a milestone has slack. Never blocks anything.</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout bad">
+<div class="title">Four escalation rules that override the table</div>
+<ol>
+  <li><strong>Any defect that changes a number a tenant sees is S1</strong>, however small the delta and however unlikely the path. 1,790.00 versus 1,789.99 is not a rounding preference.</li>
+  <li><strong>A missing or wrong <code>audit_log</code> row on a money or bill-state change is S1</strong> even when the amount is correct. D-38 makes the trail part of the transaction; an untraceable correct number is an untestable system.</li>
+  <li><strong>Any role leak is S1.</strong> A Staff response containing a rate, an amount or a total is S1 whether or not a template hides it, because D-36 is about the response body.</li>
+  <li><strong>Anything that could spend the LINE allowance is at least S2</strong> — a send inside a transaction, a broadcast, a per-tenant push for an announcement, or test mode defaulting off (D-34, R-02). There is no second pool of 500 messages.</li>
+</ol>
+</div>
+
+<h3 id="qa-trace">1.9 Traceability</h3>
+
+<p>Traceability is maintained by <strong>naming</strong>, not by a spreadsheet that rots. Every test title begins with the requirement ids it covers, so the mapping lives in the test file and can never drift from the test that implements it.</p>
+
+<pre><code>// Tier 1 and 2 — node:test
+test('FR-17 · D-18 · a second generation run creates nothing and recalculates Drafts', …);
+
+// Tier 4 — Playwright
+test('E2E-01 · FR-10 FR-11 FR-12 FR-13 FR-14 FR-15 FR-16 FR-17 FR-18 FR-19 FR-22 FR-23 FR-24 FR-28 · …', …);
+</code></pre>
+
+<p>Coverage is then a grep, run as <code>npm run trace</code>, and it needs no library:</p>
+
+<pre><code># package.json → "trace": "node --test --test-reporter=tap 2&gt;/dev/null | grep -oE 'FR-[0-9]{2}' | sort -u &gt; .tmp/covered.txt
+#                 &amp;&amp; seq -f 'FR-%02g' 1 48 | grep -vxFf .tmp/covered.txt || echo 'all 48 FRs covered'"
+</code></pre>
+
+<p>It prints the FR ids that no test title mentions. That is the whole tool: it cannot tell a good test from a bad one, but it reliably catches the requirement nobody wrote a test for, which is the failure mode a coverage percentage hides rather than reveals.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>E2E id</th><th>Functional requirements covered</th><th>Decisions exercised</th><th>Tier-2 partner test</th></tr></thead>
+<tbody>
+<tr><td><strong>E2E-01</strong></td><td>FR-01, FR-10 … FR-19, FR-22, FR-23, FR-24, FR-28, FR-32, FR-40</td><td>D-12, D-13, D-15, D-16, D-17, D-18, D-19, D-20, D-24, D-26, D-27, D-30, D-31, D-34, D-39, D-41, D-44</td><td><code>bills.generate.test.js</code>, <code>payments.confirm.test.js</code></td></tr>
+<tr><td><strong>E2E-02</strong></td><td>FR-20, FR-21, FR-23, FR-32, FR-35, FR-37</td><td>D-21, D-25, D-30, D-32, D-33</td><td><code>jobs.daily.test.js</code></td></tr>
+<tr><td><strong>E2E-03</strong></td><td>FR-12, FR-18, FR-19, FR-34, FR-39, FR-46</td><td>D-12, D-22, D-31, D-38, D-39</td><td><code>bills.revert.test.js</code></td></tr>
+<tr><td><strong>E2E-04</strong></td><td>FR-02, FR-48</td><td>D-36, D-40</td><td><code>roles.forbidden.test.js</code> — one case per forbidden route</td></tr>
+<tr><td><strong>E2E-05</strong></td><td>FR-19, FR-32, FR-38</td><td>D-28, D-30, D-44</td><td><code>notify.skipped.test.js</code></td></tr>
+<tr><td><strong>E2E-06</strong></td><td>FR-27, FR-32, FR-46</td><td>D-30, D-34, D-35, D-39</td><td><code>announcements.send.test.js</code></td></tr>
+<tr><td><strong>E2E-07</strong></td><td>FR-17, FR-18, FR-22, FR-42</td><td>D-18, D-23, D-26</td><td><code>bills.generate.test.js</code>, <code>payments.double.test.js</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>FRs no E2E scenario covers — FR-03 … FR-09, FR-25, FR-26, FR-29, FR-30, FR-31, FR-33, FR-36, FR-41, FR-43, FR-44, FR-45, FR-47 — are covered at tiers 1 and 2, where they belong. A CRUD form and a CSV BOM do not need a browser.</p>
+
+<h3 id="qa-hooks">1.10 Test hooks — four attributes, and no more</h3>
+
+<div class="callout decision">
+<div class="title">The rule, and why it is four rather than forty</div>
+<p>D-02 already establishes the principle: every element rendering a status carries <code>data-status="Draft|Unpaid|Paid|Overdue"</code> so <strong>tests assert on the English identifier while the human reads Thai</strong>. Three attributes extend the same principle to the three other things a test must identify without reading Thai copy the office is free to reword. Every one is rendered by a partial that ADR §5.2 already lists, so the cost is three lines across two files.</p>
+</div>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Attribute</th><th>On</th><th>Rendered by</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td><code>data-status="Draft|Unpaid|Paid|Overdue"</code></td><td>Every element showing a bill status</td><td><code>views/partials/status-badge.ejs</code></td><td><span class="badge ok">already binding (D-02)</span></td></tr>
+<tr><td><code>data-room="205"</code></td><td>Any row or card representing one room</td><td>List and card partials</td><td><span class="badge info">requested here</span></td></tr>
+<tr><td><code>data-bill="1842"</code></td><td>Any row or element representing one bill</td><td>List and detail views</td><td><span class="badge info">requested here</span></td></tr>
+<tr><td><code>data-amount="water|electric|common|total"</code></td><td>Every rendered money value</td><td><code>views/partials/money.ejs</code></td><td><span class="badge info">requested here</span></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Everything else is located the way a user locates it — by accessible role and name, using the Thai labels D-02, D-39 and the design document fix verbatim (<span lang="th">บันทึก</span>, <span lang="th">อนุมัติและส่งบิล</span>, <span lang="th">ยืนยันรับเงินสด</span>, <span lang="th">พิมพ์ใบเสร็จ</span>). Those strings are decision-log values: if one changes, a red test is the correct outcome, because the change needs a decision-log amendment. <strong>No <code>data-testid</code> is introduced anywhere</strong>; a page needing one is a page whose semantics are wrong, and fixing the semantics also fixes the screen reader (design §9).</p>
+
+<p>One further requirement falls out of the reading round: each utility block on a reading card is a <code>&lt;fieldset&gt;</code> with a <code>&lt;legend&gt;</code> of <span lang="th">น้ำ</span> or <span lang="th">ไฟ</span>, so that the two <span lang="th">ครั้งนี้</span> inputs on one card are distinguishable by accessible name. That is an accessibility fix the design document's §9 wants anyway; it is recorded here because a test depends on it.</p>
+
+<h3 id="qa-ci">1.11 Continuous integration</h3>
+
+<p>Three jobs replace the single <code>verify</code> job of spec §6.5.3, in the same spirit: gates, not decoration. <code>verify</code> is fast and needs no database, so a lint error or a broken formula fails in under a minute; <code>api</code> and <code>e2e</code> each get their own MySQL 8.4 service container, so neither can leave state for the other.</p>
+
+<pre><code># .github/workflows/ci.yml
+name: ci
+on: [push, pull_request]
+
+jobs:
+  # Gate 1 — lint and the pure tier. No database, under a minute.
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24', cache: 'npm' }
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test:unit
+
+  # Gate 2 — the schema applies to an empty database, and the races that lose money.
+  api:
+    runs-on: ubuntu-latest
+    needs: verify
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: juristic_test
+        ports: ['3306:3306']
+        options: &gt;-
+          --health-cmd="mysqladmin ping -proot"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    env:
+      DATABASE_URL: mysql://root:root@127.0.0.1:3306/juristic_test
+      SESSION_SECRET: ci-only-not-a-secret
+      SEED_ADMIN_PASSWORD: ci-only-not-a-secret
+      LINE_CHANNEL_SECRET: ci-only-not-a-secret
+      LINE_CHANNEL_ACCESS_TOKEN: ci-only-not-a-secret
+      JOB_TOKEN: ci-only-not-a-secret
+      LINE_MOCK: '1'
+      NODE_ENV: test
+      TZ: Asia/Bangkok
+      PORT: '3000'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24', cache: 'npm' }
+      - run: npm ci
+      # db:migrate and db:seed read --env-file=.env, and test:int reads --env-file=.env.test,
+      # so BOTH files are written before either script runs. Writing them afterwards is the
+      # ENOENT that spec §6.5.3 half-fixes (it writes .env.test but not .env).
+      - name: Write env files
+        run: |
+          env | grep -E '^(DATABASE_URL|SESSION_SECRET|SEED_ADMIN_PASSWORD|LINE_CHANNEL_SECRET|LINE_CHANNEL_ACCESS_TOKEN|JOB_TOKEN|LINE_MOCK|NODE_ENV|TZ|PORT)=' &gt; .env
+          cp .env .env.test
+      - run: npm run db:migrate      # gate: schema.sql applies to an empty database
+      - run: npm run db:seed         # gate: seed.sql rebuilds the graded demo
+      - run: npm run test:int
+
+  # Gate 3 — the seven browser scenarios. Chromium only, one worker, no retries.
+  e2e:
+    runs-on: ubuntu-latest
+    needs: api
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: juristic_e2e
+        ports: ['3306:3306']
+        options: &gt;-
+          --health-cmd="mysqladmin ping -proot"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    env:
+      DATABASE_URL: mysql://root:root@127.0.0.1:3306/juristic_e2e
+      SESSION_SECRET: ci-only-not-a-secret
+      SEED_ADMIN_PASSWORD: ci-only-not-a-secret
+      LINE_CHANNEL_SECRET: ci-only-not-a-secret
+      LINE_CHANNEL_ACCESS_TOKEN: ci-only-not-a-secret
+      JOB_TOKEN: ci-only-not-a-secret
+      LINE_MOCK: '1'
+      LINE_OUTBOX_FILE: .tmp/line-outbox.jsonl
+      E2E_BASE_URL: http://127.0.0.1:3100
+      NODE_ENV: test
+      TZ: Asia/Bangkok
+      PORT: '3100'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24', cache: 'npm' }
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Write env files
+        run: |
+          mkdir -p .tmp
+          env | grep -E '^(DATABASE_URL|SESSION_SECRET|SEED_ADMIN_PASSWORD|LINE_CHANNEL_SECRET|LINE_CHANNEL_ACCESS_TOKEN|JOB_TOKEN|LINE_MOCK|LINE_OUTBOX_FILE|NODE_ENV|TZ|PORT)=' &gt; .env
+          cp .env .env.e2e
+      - run: npm run db:reset
+      - run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: .tmp/playwright-report
+          retention-days: 7
+</code></pre>
+
+<div class="callout warn">
+<div class="title">Defect found while writing this pipeline · S2 · CI</div>
+<p>Spec §6.5.3 runs <code>npm run db:migrate</code> <em>before</em> the <code>printf</code> that creates <code>.env.test</code>, and its own note explains the <code>printf</code> as a fix for <code>npm test</code>'s missing env file. But <code>db:migrate</code> is <code>node --env-file=.env db/reset.js --schema-only</code> — it reads <code>.env</code>, not <code>.env.test</code>, and CI never writes <code>.env</code> at all. Node exits <code>ENOENT</code> on the <code>db:migrate</code> step, so the schema gate never runs. The workflow above writes both files as the first step after <code>npm ci</code>; the fix is one step moved and one file added.</p>
+</div>
+
+<p>Four things this pipeline deliberately does not have: a coverage gate (ADR §6.9), a matrix over Node versions (the project pins one), a deploy step (Render auto-deploys on green <code>main</code>), and any secret. Every value above is the literal string <code>ci-only-not-a-secret</code>, which is safe precisely because <code>LINE_MOCK=1</code> means no credential is ever used against a real endpoint.</p>
+
+<h3 id="qa-assumptions">1.12 Assumptions recorded by this section</h3>
+
+<ol>
+  <li><strong>Playwright is added to <code>devDependencies</code></strong> as an amendment to ADR A-9, scoped and cost-bounded as set out in §1.2. If declined, tier 4 becomes a manual checklist and nothing else changes.</li>
+  <li><strong>Three test hooks</strong> — <code>data-room</code>, <code>data-bill</code>, <code>data-amount</code> — are added alongside D-02's existing <code>data-status</code>, rendered by partials ADR §5.2 already lists. This asks for one row in the UI document's §8.4 table.</li>
+  <li><strong>Each utility block on a reading card is a <code>&lt;fieldset&gt;</code> with a <code>&lt;legend&gt;</code></strong> (<span lang="th">น้ำ</span> / <span lang="th">ไฟ</span>), so the two <span lang="th">ครั้งนี้</span> inputs on one card have distinct accessible names.</li>
+  <li><strong>Three pure helpers are exported from <code>services/billing.js</code></strong> — <code>resolvePreviousReading(rows, opts)</code>, <code>computeUnits(input)</code> and <code>resolveRate(rateRows, period)</code> — each taking rows as arguments and touching no database, which is what makes ADR §6.9's unit list literally implementable. Their SQL callers are unchanged and stay in the service.</li>
+  <li><strong>New identifiers introduced here:</strong> the database <code>juristic_e2e</code>; the files <code>.env.e2e</code>, <code>playwright.config.ts</code>, <code>test/e2e/**</code>, <code>test/fixtures/*.sql</code>, <code>test/helpers/lineWebhook.js</code>; the npm scripts <code>test:e2e</code> and <code>trace</code>; the environment variable <code>LINE_OUTBOX_FILE</code>; the severity ids <strong>S1–S4</strong>; the scenario ids <strong>E2E-01 … E2E-07</strong>.</li>
+  <li><strong>The staff account's password.</strong> D-44 names <code>SEED_ADMIN_PASSWORD</code> for the admin and is silent on staff. The E2E helper reads <code>E2E_STAFF_PASSWORD</code> and falls back to <code>SEED_ADMIN_PASSWORD</code>, so it works whether <code>seed.sql</code> hashes one value for both users or two.</li>
+  <li><strong>The D-20 clamp is read as applying to the day-of-month term only</strong> (§1.6). Raised as an S3 documentation defect against D-20 and ADR §4.</li>
+  <li><strong>Amounts are asserted against the database or a rendered page, never recomputed in JavaScript by production code.</strong> Test code may compute an expected value — that is what an oracle is — but a unit test cannot verify <code>ROUND(quantity × unit_price, 2)</code> because the product performs it in SQL (A-4). The three money formulas are therefore proved in the DB-backed tier, and the pure tier proves the quantities that feed them.</li>
+  <li><strong>The Playwright tier runs single-worker and non-parallel</strong> against one MySQL instance. Parallelising would need one database per worker, which buys nothing at seven scenarios.</li>
+  <li><strong>Fictional data only.</strong> Every name, phone number and LINE id in every fixture is fictional and seeded, per D-44. No real tenant data exists anywhere in this project.</li>
+</ol>
+
+</section>
+
+<section id="e2e">
+<h2>End-to-End Scenarios</h2>
+
+<p>Seven scenarios. The first is the graded demo and is the one that may never go red; the other six each close a failure that the demo path alone would leave unproved — a date passing, a mistake being corrected, a role being denied, a tenant with no LINE, a broadcast, and a button pressed twice. Each is written so a person can execute it by hand from the table alone, which is what makes it survive the amendment in §1.2 being declined.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Id</th><th>Scenario</th><th>Roles / surfaces</th><th>Fixture</th><th>Proves</th><th>Priority</th></tr></thead>
+<tbody>
+<tr>
+  <td><strong>E2E-01</strong></td>
+  <td>The complete PRD §28 demo — meter to receipt to Dashboard</td>
+  <td>Staff @ 360 px · Admin @ 1280 px</td>
+  <td><code>reset-205.sql</code></td>
+  <td>The whole money chain, both LINE messages, the receipt number, the reconciling tiles</td>
+  <td><span class="badge p0">P0</span></td>
+</tr>
+<tr>
+  <td><strong>E2E-02</strong></td>
+  <td>Overdue display and the reminder ladder, with the clock advanced by data</td>
+  <td>Admin @ 1280 px · machine endpoint</td>
+  <td><code>due-dates.sql</code></td>
+  <td><code>Overdue</code> is derived and never written; at most four automatic messages per bill; a voided payment silences reminders</td>
+  <td><span class="badge p0">P0</span></td>
+</tr>
+<tr>
+  <td><strong>E2E-03</strong></td>
+  <td>Correction after approval — revert, edit, re-approve</td>
+  <td>Admin @ 1280 px · Staff @ 360 px</td>
+  <td><code>next-period-bill.sql</code></td>
+  <td>The freeze, the reason gate, the newest-bill-only rule, and <code>BILL_CORRECTED</code></td>
+  <td><span class="badge p1">P1</span></td>
+</tr>
+<tr>
+  <td><strong>E2E-04</strong></td>
+  <td>Permission denial — Staff attempts to approve</td>
+  <td>Staff @ 360 px</td>
+  <td>none</td>
+  <td>No link, a Thai 403 page on a typed URL, 403 on the API, and no amount anywhere in a Staff response</td>
+  <td><span class="badge p0">P0</span></td>
+</tr>
+<tr>
+  <td><strong>E2E-05</strong></td>
+  <td>Approving a bill for a tenant with no LINE binding</td>
+  <td>Admin @ 1280 px</td>
+  <td><code>unlink-206.sql</code></td>
+  <td>Approval is never blocked by delivery; the gap is visible, not silent; paper is the fallback</td>
+  <td><span class="badge p1">P1</span></td>
+</tr>
+<tr>
+  <td><strong>E2E-06</strong></td>
+  <td>Announcement to selected floors</td>
+  <td>Admin @ 1280 px</td>
+  <td>none</td>
+  <td>Live recipient count, multicast not per-tenant push, one row per recipient, immutability</td>
+  <td><span class="badge p1">P1</span></td>
+</tr>
+<tr>
+  <td><strong>E2E-07</strong></td>
+  <td>Idempotent regeneration and double-submit</td>
+  <td>Admin @ 1280 px</td>
+  <td><code>reset-205.sql</code></td>
+  <td>Generate twice, approve twice, pay twice — one bill, one message batch, one payment, one receipt</td>
+  <td><span class="badge p0">P0</span></td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<h3 id="e2e-01">E2E-01 · The complete PRD §28 demo</h3>
+
+<div class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant S as "Staff phone 360px"
+  participant A as "Admin desktop 1280px"
+  participant App as "Juristic Platform"
+  participant DB as MySQL
+  participant OB as "LINE outbox file"
+  S->&gt;App: "sign in, land on จดมิเตอร์"
+  S->&gt;App: "room 205 water 1260, electric 5350, บันทึก"
+  App->&gt;DB: "upsert two readings, units 10 and 70"
+  S->&gt;App: "ส่งให้นิติตรวจสอบ"
+  App->&gt;DB: "create Draft bill, exactly three items, total 1790.00"
+  A->&gt;App: "open รายละเอียดบิล, review the six columns"
+  A->&gt;App: "อนุมัติและส่งบิล, confirm the dialog"
+  App->&gt;DB: "Draft to Unpaid, freeze due date, audit, queue BILL"
+  App->&gt;OB: "push the BILL message after commit"
+  A->&gt;App: "รับชำระเงิน, ยืนยันรับเงินสด"
+  App->&gt;DB: "Unpaid to Paid, payment, receipt 000852, queue PAID"
+  App->&gt;OB: "push the PAID message"
+  A->&gt;App: "ภาพรวม and รายงาน reflect the payment"
+</pre>
+<div class="caption">Thirteen steps, two browser contexts, two LINE messages, one receipt number. Money commits before any message leaves, so a LINE outage can never roll back a bill (D-30).</div>
+</div>
+
+<dl class="kv">
+  <dt>Preconditions</dt><dd>Seed applied. <code>reset-205.sql</code> applied: room 205 has no reading and no bill for the current period, last month closes at 1,250 / 5,280, the receipt counter is at 851. <code>line_test_mode = 1</code>. The outbox file is empty. Rates resolve to 18.00 / 8.00 / 35.00 for the period; <span lang="th">วันครบกำหนด</span> is 5.</dd>
+  <dt>Data</dt><dd>Room <code>205</code>, floor 2, <code>30.00</code> ตร.ม., one Active tenant with a <code>Useed…</code> LINE binding.</dd>
+  <dt>Period</dt><dd><code>DATE_FORMAT(CURDATE(), '%Y-%m')</code> — computed, never typed.</dd>
+  <dt>Worked example<br><span class="badge info">the graded run</span></dt>
+  <dd>
+    Every assertion below is written against a derived period, but the scenario has exactly one set of
+    values it is <em>expected</em> to produce on the defence date, and they are the PRD §28 numbers.
+    Run on <strong>3 September 2026</strong> against period <code>2026-09</code>, the steps resolve to:
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>What</th><th>Expected on the graded run</th><th>How the test gets it</th></tr></thead>
+        <tbody>
+          <tr><td>Water</td><td>1,250 → 1,260 = 10 units × 18 THB = <strong>180.00</strong></td><td>hard-coded — §28 arithmetic</td></tr>
+          <tr><td>Electricity</td><td>5,280 → 5,350 = 70 units × 8 THB = <strong>560.00</strong></td><td>hard-coded — §28 arithmetic</td></tr>
+          <tr><td>Common area</td><td>30 ตร.ม. × 35 THB = <strong>1,050.00</strong></td><td>hard-coded — §28 arithmetic</td></tr>
+          <tr><td>Total</td><td><strong>1,790.00</strong> THB</td><td>asserted as the string <code>'1790.00'</code></td></tr>
+          <tr><td>Due date</td><td><strong>5 Sep 2026</strong> as PRD §28 states it — which holds only for an approval on or before 2 Sep 2026; see the note below</td><td><code>expectedDueDate(PERIOD, 5)</code></td></tr>
+          <tr><td>Payment date</td><td><strong>3 Sep 2026</strong>, cash at the counter</td><td><code>todayBangkok()</code></td></tr>
+          <tr><td>Receipt</td><td><strong>REC-202609-000852</strong></td><td><code>receiptNo(852)</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      Read this table as the oracle's <em>output</em>, not as its input: <code>receiptNo(852)</code> returns the
+      literal <code>REC-202609-000852</code> for any run in September 2026 and <code>REC-202610-000852</code> in
+      October, and that is the D-44 rule working rather than failing. A test asserting the literal string
+      <code>REC-202609-000852</code> is the defect §1.4 warns about — the literal belongs in this table and in
+      the demo script, never in an assertion.
+    </p>
+  </dd>
+</dl>
+
+<div class="callout warn">
+<div class="title">The one place the PRD's own §28 dates disagree with D-20 · S3 · documentation</div>
+<p>PRD §28 pairs a due date of <strong>5 Sep 2026</strong> with a payment on <strong>3 Sep 2026</strong>, which is consistent and is what the demo shows. But it does not say when the bill was <em>approved</em>, and D-20's three-day floor makes that load-bearing: an approval on 1 or 2 September yields <code>MAX(5 Sep, 4–5 Sep)</code> = <strong>5 Sep</strong> and matches the PRD, while an approval on 3 September yields <code>MAX(5 Sep, 6 Sep)</code> = <strong>6 Sep</strong> and does not. <code>reset-205.sql</code> therefore leaves the demo bill unapproved and E2E-01 approves it during the run, so on any day after the 2nd the frozen due date is <code>today + 3</code> and not the 5th. The test asserts the oracle, never the literal 5 Sep — which is why <code>expectedDueDate()</code> exists. For the graded demo to show 5 Sep exactly, the walkthrough must be performed on or before 2 September 2026, and that is a rehearsal instruction, not a test change.</p>
+</div>
+
+<ol class="steps">
+  <li><strong>Staff signs in on a 360 × 640 viewport.</strong> Assert the landing route is <code>/readings</code>, not <code>/dashboard</code> (FR-01), and that the bottom tabs read <span lang="th">📝 จดมิเตอร์ · 🚪 ห้องพัก · 📊 ภาพรวม</span> in that order.</li>
+  <li><strong>The default filter is <span lang="th">ยังไม่จด</span> and room 205 is in the list</strong>, grouped under <span lang="th">ชั้น 2</span>. Its card shows <span lang="th">น้ำ · ครั้งก่อน</span> = 1,250 and <span lang="th">ไฟ · ครั้งก่อน</span> = 5,280, both read-only. Note the counter value <em>n</em>.</li>
+  <li><strong>Enter 1,260 and 5,350.</strong> Before saving, the live read-out shows <span lang="th">10 หน่วย</span> and <span lang="th">70 หน่วย</span> — units only, never an amount (D-36).</li>
+  <li><strong>Press <span lang="th">บันทึก</span>.</strong> Assert the toast <span lang="th">บันทึกห้อง 205 แล้ว</span>, the card collapsing to a <span lang="th">จดแล้ว</span> summary, and the sticky counter reading <em>n</em>+1 of 67. Assert in the database: two <code>meter_readings</code> rows, <code>units</code> 10 and 70, <code>previous_period</code> = last month, <code>recorded_by</code> = the staff user.</li>
+  <li><strong>Open the review view and press <span lang="th">ส่งให้นิติตรวจสอบ</span>.</strong> Assert the result sentence begins <span lang="th">สร้างบิลใหม่ 1 ใบ</span> and that no confirmation dialog appears — generation creates Drafts only and is deliberately not one of D-39's six confirmed actions.</li>
+  <li><strong>Assert the generated bill in the database.</strong> Status <code>Draft</code>; <strong>exactly three</strong> <code>bill_items</code>; water <code>10.00 × 18.00 = 180.00</code>, electric <code>70.00 × 8.00 = 560.00</code>, common <code>30.00 × 35.00 = 1050.00</code>; <code>total = '1790.00'</code> and equal to the sum of the three amounts; every value a string.</li>
+  <li><strong>Admin signs in on a 1280 px viewport</strong> and opens <span lang="th">บิลประจำเดือน</span> for the period. Room 205's row carries <code>data-status="Draft"</code> and the badge <span lang="th">ฉบับร่าง</span>, and its LINE column renders <code>—</code>.</li>
+  <li><strong>Open Bill Detail.</strong> Assert the six review columns of PRD §10 — <span lang="th">รายการ · เลขครั้งก่อน · เลขครั้งนี้ · จำนวน · อัตรา · จำนวนเงิน</span> — and all three item rows. Assert the Draft due-date label <span lang="th">กำหนดชำระ … (ยืนยันเมื่ออนุมัติ)</span> and the Draft banner. Assert <code>[data-amount="total"]</code> reads <code>1,790.00</code>.</li>
+  <li><strong>Press <span lang="th">อนุมัติและส่งบิล</span>.</strong> Assert the dialog body verbatim: <span lang="th">อนุมัติและส่งบิลห้อง 205 ผ่าน LINE — ยกเลิกไม่ได้</span>, with buttons <span lang="th">ยกเลิก</span> and <span lang="th">อนุมัติและส่ง</span> — never <span lang="th">ตกลง</span>. Assert the message preview is the rendered D-31 BILL template.</li>
+  <li><strong>Confirm.</strong> Assert the badge flips to <code>data-status="Unpaid"</code> / <span lang="th">รอชำระ</span>, the delivery badge settles on <span lang="th">ส่งแล้ว</span>, and the frozen due date equals the independently computed <code>MAX(day 5 of the period month, today + 3)</code>. Assert one <code>BILL_APPROVE</code> audit row.</li>
+  <li><strong>The tenant receives the bill.</strong> Assert one outbox entry, <code>api: 'push'</code>, whose text carries <span lang="th">💧 ค่าน้ำ 10 หน่วย × 18 บาท = 180 บาท</span>, <span lang="th">⚡ ค่าไฟ 70 หน่วย × 8 บาท = 560 บาท</span>, <span lang="th">🏢 ค่าส่วนกลาง 30 ตร.ม. × 35 บาท = 1,050 บาท</span>, <span lang="th">💰 ยอดรวม 1,790 บาท</span> and the due date in full Thai month form. Assert one <code>notifications</code> row: <code>type='BILL'</code>, <code>status='sent'</code>, <code>attempt_count=1</code>, <code>recipient_user_id</code> = the tenant's <code>Useed…</code> id even though test mode redirected the send.</li>
+  <li><strong>Open <span lang="th">รับชำระเงิน</span>, search <code>205</code>, select the bill.</strong> Assert <span lang="th">ยอดที่ต้องชำระ</span> renders <code>1,790.00 บาท</code> as text and that <strong>no editable amount input exists on the page</strong> (D-24). The <span lang="th">รับเงิน / เงินทอน</span> aid may be present; typing 2,000 must show <span lang="th">เงินทอน</span> 210.00 and send nothing.</li>
+  <li><strong>Press <span lang="th">ยืนยันรับเงินสด</span>.</strong> Assert the dialog names the amount, the room <em>and the billing period</em> — <span lang="th">ยืนยันรับเงินสด 1,790 บาท · ห้อง 205 · รอบ …</span> — because paying the wrong month is exactly the mistake D-25 exists to undo. Confirm.</li>
+  <li><strong>The receipt.</strong> Assert the redirect lands on <code>/receipts/:id</code>; the number matches <code>REC-&lt;current YYYYMM&gt;-000852</code>, computed from the run date; the sheet carries all fourteen D-27 blocks in order; the three line items print; <span lang="th">ยอดรวม</span> is <code>1,790.00 บาท</code> with <span lang="th">หนึ่งพันเจ็ดร้อยเก้าสิบบาทถ้วน</span>; <span lang="th">ชำระโดย</span> is <span lang="th">เงินสด</span>; <span lang="th">ผู้รับเงิน</span> is the Admin's <span lang="th">ชื่อที่แสดง</span>. Assert no <span lang="th">สำเนา</span> mark before the first print.</li>
+  <li><strong>The tenant receives the confirmation.</strong> Assert a second outbox entry containing <span lang="th">✅ ยืนยันการชำระเงิน</span>, <span lang="th">1,790 บาท</span> and the receipt number, and a second <code>notifications</code> row <code>type='PAID'</code>, <code>status='sent'</code>.</li>
+  <li><strong>Dashboard and reports.</strong> Assert <span lang="th">ยอดค่าส่วนกลาง</span> = <code>70,350.00</code> (67 × 30 × 35, up from 69,300.00 before the approval); <span lang="th">รับชำระแล้ว</span> = <code>1,790.00</code>; and the tiles reconcile — <span lang="th">ยอดเรียกเก็บทั้งหมด</span> − <span lang="th">รับชำระแล้ว</span> = <span lang="th">ค้างชำระ</span>. In <span lang="th">ประวัติรายห้อง 12 เดือน</span> for room 205, the current row reads 10 / 70 / 180.00 / 560.00 / 1,790.00 / <span lang="th">ชำระแล้ว</span> with the receipt number.</li>
+</ol>
+
+<h4>Assertions that make E2E-01 more than a click-through</h4>
+<ul class="checklist">
+  <li>The total equals the sum of the three printed lines, asserted from the database and from the receipt page separately.</li>
+  <li>Every money value is compared as a string — <code>'1790.00'</code>, never <code>1790</code> — because <code>mysql2</code> returns <code>DECIMAL</code> as a string and a numeric comparison passes while the receipt prints <code>1789.9999999999998</code>.</li>
+  <li>Quantities carry two decimals: <code>'10.00'</code>, <code>'70.00'</code>, <code>'30.00'</code>. <code>bill_items.quantity</code> is <code>DECIMAL(10,2)</code>; asserting <code>'10'</code> fails on the first run.</li>
+  <li>The receipt number's month segment is derived from the run date. Asserting the literal <code>202609</code> is a D-44 violation and will go red in October.</li>
+  <li>The frozen due date is compared against an oracle implemented independently of the product (§1.6).</li>
+  <li>Nothing asserts a calendar date except through that oracle and through <code>Intl</code> with the load-bearing <code>-u-ca-gregory</code> keyword — a Buddhist-Era render must fail this test, not pass it (R-11).</li>
+</ul>
+
+<h3 id="e2e-02">E2E-02 · Overdue and the reminder ladder</h3>
+
+<dl class="kv">
+  <dt>Preconditions</dt><dd>Seed applied, then <code>due-dates.sql</code>, which ages six of the seed's approved bills relative to <code>CURDATE()</code> and voids one payment. No clock is touched anywhere.</dd>
+  <dt>Fixture shape</dt><dd>206 → due <code>+2</code> (expects <code>PRE_DUE</code>) · 207 → due <code>−1</code> (<code>OVERDUE</code>) · 208 → due <code>−8</code> (<code>OVERDUE</code>) · 209 → due <code>−15</code> (<code>OVERDUE</code>) · 210 → due <code>−3</code> (nothing) · 211 → due <code>−1</code> but <code>Paid</code> (nothing) · 212 → due <code>−1</code>, paid then voided (nothing, and badged <span lang="th">ระงับการแจ้งเตือนอัตโนมัติ</span>).</dd>
+</dl>
+
+<ol class="steps">
+  <li>Admin opens <span lang="th">บิลประจำเดือน</span>. Room 207's row renders <code>data-status="Overdue"</code> with the badge <span lang="th">เกินกำหนด</span>; room 210's does too. Assert in the database that both rows still store <code>status='Unpaid'</code> — <strong>nothing wrote <code>Overdue</code></strong> (D-21, FR-23).</li>
+  <li>Filter by <span lang="th">เกินกำหนด</span>. Assert the count matches a query using the same derived expression, and that room 211 (<code>Paid</code>) is absent.</li>
+  <li>Call <code>POST /internal/jobs/daily</code> once with a valid <code>X-Job-Token</code>. Assert <code>pre_due: 1</code>, <code>overdue: 3</code>, and one <code>job_runs</code> row for today.</li>
+  <li>Assert the <code>notifications</code> rows: exactly one <code>PRE_DUE</code> (room 206) and exactly three <code>OVERDUE</code> (207, 208, 209). Rooms 210, 211 and 212 have none — the <code>−3</code> day is not in <code>{1, 8, 15}</code>, a Paid bill is excluded, and a bill whose latest payment was voided is excluded (D-33, D-25).</li>
+  <li>Assert the message bodies from the outbox: <span lang="th">⏰ แจ้งเตือนก่อนครบกำหนด</span> for 206 with <span lang="th">(อีก 2 วัน)</span>, and <span lang="th">⚠️ เลยกำหนดชำระแล้ว</span> for 207/208/209 with <span lang="th">เลยมาแล้ว 1 / 8 / 15 วัน</span>.</li>
+  <li>Call the endpoint a second time with the same token. Assert <code>already_ran: true</code>, every count zero, HTTP <strong>200</strong> — a retrying scheduler must never see an error (FR-37).</li>
+  <li>Press <span lang="th">รันงานแจ้งเตือนตอนนี้</span> in Settings. Assert it runs (it skips the <code>job_runs</code> guard by design), reports its three counts, and that the <code>notifications</code> table is <strong>unchanged</strong> — <code>uq_notifications(dedupe_key)</code> refuses a same-day repeat, and that is the layer the manual button relies on.</li>
+  <li>Pay room 207's bill. Assert the badge follows to <span lang="th">ชำระแล้ว</span> and that no further <code>OVERDUE</code> row is ever created for it.</li>
+  <li>Confirm the ladder's ceiling: age room 213's bill to <code>−22</code> and re-run. Assert nothing is sent — at most four automatic messages per bill for its entire life (D-33).</li>
+</ol>
+
+<h3 id="e2e-03">E2E-03 · Correction after approval</h3>
+
+<dl class="kv">
+  <dt>Preconditions</dt><dd>Seed applied. Room 206 carries an approved <code>Unpaid</code> bill for the current period. <code>next-period-bill.sql</code> has added an approved bill for room 206 in the <em>following</em> period.</dd>
+  <dt>Story</dt><dd>The office notices the water reading was typed as 1,206 instead of 1,260 after the bill was already sent.</dd>
+</dl>
+
+<ol class="steps">
+  <li>Admin opens room 206's <strong>current-period</strong> Bill Detail. Assert the locked banner lists what is frozen — readings, rates, room area, tenant name, amounts and due date (D-22) — and that <span lang="th">ตีกลับเป็นฉบับร่าง</span> is <strong>disabled</strong> with the title <span lang="th">มีบิลรอบถัดไปแล้ว ไม่สามารถแก้ไขย้อนหลังได้ — กรุณาแก้ในรอบล่าสุด</span>.</li>
+  <li>POST the revert anyway, directly. Assert <strong>422</strong> with <code>error.code = "REVERT_NOT_NEWEST"</code> — the rule is enforced server-side by a query, not by a disabled button (FR-34).</li>
+  <li>Delete the later bill and reload. Assert the button is now enabled.</li>
+  <li>Open the revert dialog and type a nine-character reason. Assert the primary button stays disabled and the message reads <span lang="th">กรุณาระบุเหตุผลอย่างน้อย 10 ตัวอักษร</span>. POST the nine-character reason directly and assert <strong>422 <code>REASON_TOO_SHORT</code></strong>.</li>
+  <li>Submit a valid Thai reason. Assert <code>data-status="Draft"</code> / <span lang="th">ฉบับร่าง</span>, and a <code>BILL_REVERT</code> audit row carrying before/after JSON <em>and</em> the reason.</li>
+  <li>Staff opens <span lang="th">จดมิเตอร์</span> for room 206. Assert the fields are editable again — the freeze is derived from the bill's status and there is no reading state machine (D-12, ADR §3.4).</li>
+  <li>Correct the water reading and save. Assert the response carries <code>bill_recalculated: true</code> and that the Draft bill's water item and total changed in place, with no second bill created.</li>
+  <li>Admin re-approves. Assert the new LINE message is <code>type='BILL_CORRECTED'</code> and its text begins <span lang="th">🔄 แก้ไขบิล (ยกเลิกยอดเดิม)</span> followed by the whole BILL body — the tenant is never asked to work out which of two numbers is current.</li>
+  <li>Assert the Bill Detail timeline shows, newest first, <span lang="th">อนุมัติและส่งบิล</span> → <span lang="th">แก้ไขเลขมิเตอร์</span> → <span lang="th">ตีกลับเป็นฉบับร่าง</span> → the original approval, and that the timeline card is labelled <span lang="th">เห็นเฉพาะนิติบุคคล</span>.</li>
+</ol>
+
+<div class="callout note">
+<div class="title">The paid-bill branch is a counter transaction, and E2E-03 asserts only its gate</div>
+<p>Correcting a <em>Paid</em> bill is cash across the counter first, then void, then revert, then re-approve, then pay fresh (D-22, D-25). The browser tier asserts only the gate — that <span lang="th">ตีกลับเป็นฉบับร่าง</span> on a Paid bill is disabled with <span lang="th">ยกเลิกการชำระเงินก่อนจึงจะตีกลับเป็นฉบับร่างได้</span> — because the rest is a five-step money path whose invariants (receipt keeps its number, new receipt gets a higher one, no credit is ever held) belong in tier 2 where they can be asserted against the database directly.</p>
+</div>
+
+<h3 id="e2e-04">E2E-04 · Permission denial — Staff attempts to approve</h3>
+
+<dl class="kv">
+  <dt>Preconditions</dt><dd>Seed applied. A Draft bill exists for room 205 in the current period. Signed in as <code>staff</code>.</dd>
+  <dt>Why a browser</dt><dd>Two of the four assertions — that the link does not exist, and that the Thai 403 page renders with a working way back — cannot be made from an HTTP status code.</dd>
+</dl>
+
+<ol class="steps">
+  <li>Assert the bottom tabs contain exactly <span lang="th">จดมิเตอร์ · ห้องพัก · ภาพรวม</span> and that no navigation anywhere offers <span lang="th">บิลประจำเดือน</span>, <span lang="th">รับชำระเงิน</span>, <span lang="th">ผู้เช่า</span>, <span lang="th">ประกาศ</span>, <span lang="th">รายงาน</span>, <span lang="th">ตั้งค่า</span> or <span lang="th">ผู้ใช้งานระบบ</span> — the navigation is generated from the same matrix the middleware enforces (D-36, ADR A-6).</li>
+  <li>Type <code>/bills</code> into the address bar. Assert the Thai 403 page: <span lang="th">ไม่มีสิทธิ์เข้าถึงหน้านี้ · บัญชีของคุณเป็นเจ้าหน้าที่ กรุณาติดต่อนิติบุคคล</span>, with a button back to <span lang="th">จดมิเตอร์</span> — never a silent redirect, so the matrix stays testable row by row (D-40).</li>
+  <li>Type <code>/bills/&lt;the draft bill id&gt;</code>. Assert the same 403 page, and that the page source contains <strong>no</strong> digit-grouped amount: a regex over the whole body for <code>/\d{1,3}(,\d{3})*\.\d{2}/</code> must not match.</li>
+  <li>POST <code>/api/bills/approve</code> with the staff session and a valid CSRF token. Assert <strong>403</strong>, <code>error.code = "FORBIDDEN_ROLE"</code>, the Thai message, and that the bill is <strong>still <code>Draft</code></strong> in the database.</li>
+  <li>Repeat step 4 for every Staff-forbidden route in the §3.4 matrix — <code>/api/notifications/drain</code>, <code>/payments</code>, <code>/receipts/:id</code>, <code>/tenants</code>, <code>/announcements</code>, <code>/reports/*</code>, <code>/settings</code>, <code>/users</code>, <code>/api/dashboard/charts</code> — asserting 403 and the no-amount regex on each. This is the loop that would be tedious by hand and is one <code>for</code> in a test.</li>
+  <li>Assert the surfaces Staff <em>may</em> reach carry no money either: <code>GET /rooms</code>, <code>GET /rooms/:id</code>, <code>GET /dashboard</code> and <code>POST /api/readings</code> all fail the same no-amount regex, because D-36 removes the columns from the query rather than hiding them in the template.</li>
+  <li>Assert <code>POST /api/bills/generate</code> <strong>succeeds</strong> for Staff and that its response carries counts and room codes only. Denial must be exact: over-denying is as much a defect as under-denying (FR-17, D-18).</li>
+</ol>
+
+<h3 id="e2e-05">E2E-05 · A tenant with no LINE binding</h3>
+
+<dl class="kv">
+  <dt>Preconditions</dt><dd>Seed applied, then <code>unlink-206.sql</code>, which clears the three LINE columns on room 206's Active tenant. Room 206 has a Draft bill.</dd>
+  <dt>Why it matters</dt><dd>13 of the seed's 67 tenants deliberately have no binding (D-44). The requirement is that the gap is <em>visible</em>, never silent, and never blocks the office.</dd>
+</dl>
+
+<ol class="steps">
+  <li>Open room 206's Bill Detail and press <span lang="th">อนุมัติและส่งบิล</span>. Assert the dialog carries the extra line <span lang="th">ผู้เช่ารายนี้ยังไม่ได้ผูก LINE — ระบบจะไม่ส่งข้อความ กรุณาพิมพ์ใบแจ้งหนี้ให้ผู้เช่า</span> and that the primary button is still <strong>enabled</strong> — approval is never blocked by delivery (D-30).</li>
+  <li>Confirm. Assert the bill is <code>Unpaid</code>, the delivery badge reads <span lang="th">ยังไม่ได้ส่ง — ไม่มี LINE</span>, and the <code>notifications</code> row exists with <code>status='skipped_no_line'</code> and a null <code>recipient_user_id</code>. A skipped send is a recorded row, not a missing one.</li>
+  <li>Assert the outbox has <strong>no</strong> entry for this bill.</li>
+  <li>Press <span lang="th">พิมพ์ใบแจ้งหนี้</span>. Assert the A5 <span lang="th">ใบแจ้งค่าใช้จ่าย</span> renders with the letterhead, room, tenant name, billing period, due date and the same three line items — and with <strong>no</strong> receipt number, no payment date, no <span lang="th">ผู้รับเงิน</span> and no signature line (FR-38, D-28).</li>
+  <li>Bulk-approve the rest of the period from <span lang="th">บิลประจำเดือน</span>. Assert the result sentence's four counts sum to the number approved, that <span lang="th">ยังไม่ได้ส่ง (ไม่มี LINE)</span> equals the unlinked count, and that the failed and unsent rooms are listed and linked.</li>
+  <li>Assert the seed invariant afterwards: the count of tenants with a LINE binding is <strong>still 54</strong>. A <code>Useed…</code> id is never a valid push target and the auto-unbind skips that prefix, so a full bulk approve cannot wipe the bindings the demo depends on (D-30, D-44).</li>
+  <li>Assert Settings' quota line <span lang="th">ส่งข้อความเดือนนี้: {N}/500</span> counts only <code>status='sent'</code> rows — the skipped and failed rows must not inflate it (D-34).</li>
+</ol>
+
+<h3 id="e2e-06">E2E-06 · Announcement to selected floors</h3>
+
+<dl class="kv">
+  <dt>Preconditions</dt><dd>Seed applied. Signed in as Admin. Outbox empty.</dd>
+  <dt>Content</dt><dd>The PRD §15 example: <span lang="th">ปิดน้ำเพื่อซ่อมบำรุง</span> / <span lang="th">วันที่ 20 กันยายน เวลา 10:00–12:00 น. จะมีการปิดน้ำเพื่อดำเนินการซ่อมบำรุง</span>.</dd>
+</dl>
+
+<ol class="steps">
+  <li>Open <span lang="th">ประกาศ</span>. Assert the audience selector offers exactly two options — <span lang="th">ทุกห้องที่มีผู้เช่า</span> and <span lang="th">เลือกชั้น</span> — and no per-room selection, no unpaid-only audience and no scheduling (D-35).</li>
+  <li>Choose <span lang="th">เลือกชั้น</span> and tick floors 2 and 3. Assert the live line <span lang="th">จะส่งถึง {rooms} ห้อง (ผู้เช่าที่ผูก LINE แล้ว {linked} ราย)</span>, and assert both numbers against a query computed by the same criteria — never against a hard-coded count, because the seed's 13 vacant rooms are not evenly distributed.</li>
+  <li>Assert the character limits: 61 characters in <span lang="th">หัวข้อ</span> gives <span lang="th">หัวข้อยาวเกิน 60 ตัวอักษร</span>; 401 in <span lang="th">เนื้อหา</span> gives <span lang="th">เนื้อหายาวเกิน 400 ตัวอักษร</span>; an empty floor selection gives <span lang="th">กรุณาเลือกอย่างน้อย 1 ชั้น</span>.</li>
+  <li>Assert the live preview renders exactly the D-31 ANNOUNCEMENT template, signed <span lang="th">— นิติบุคคล {apartment_name}</span> with the name coming from Settings and not from a literal.</li>
+  <li>Press <span lang="th">ส่งประกาศ</span>. Assert the dialog reads <span lang="th">ส่งประกาศถึง {N} ห้อง ผ่าน LINE — เรียกคืนไม่ได้</span> with the primary button <span lang="th">ส่งประกาศ</span>. Confirm.</li>
+  <li>Assert one <code>notifications</code> row <strong>per recipient tenant</strong>, linked to <code>announcement_id</code>, with the linked tenants <code>sent</code> and the unlinked ones <code>skipped_no_line</code>.</li>
+  <li>Assert the outbox contains <strong><code>api: 'multicast'</code></strong> in chunks of at most 500 <code>userId</code>s — <strong>not</strong> one <code>push</code> per tenant, which is the mistake that would burn the monthly allowance many times over (D-34, R-02) — and <strong>never</strong> <code>broadcast</code>, which would reach ex-tenants who still follow the account.</li>
+  <li>Assert immutability: the sent announcement offers no edit, no resend and no recall, and a direct POST attempting any of the three returns <strong>409 <code>ANNOUNCEMENT_IMMUTABLE</code></strong>. LINE offers no recall and the UI must not imply otherwise.</li>
+</ol>
+
+<h3 id="e2e-07">E2E-07 · Idempotent regeneration and double-submit</h3>
+
+<dl class="kv">
+  <dt>Preconditions</dt><dd>Seed applied, then <code>reset-205.sql</code>. Room 205 read for the period, so a Draft bill exists. 66 other bills are approved and <code>Unpaid</code>; the history is Paid.</dd>
+  <dt>Why a browser</dt><dd>The database guarantees are proved in tier 2. What only a browser proves is that the <em>screens</em> report the no-op honestly instead of showing a success message for work that did not happen.</dd>
+</dl>
+
+<ol class="steps">
+  <li>Press <span lang="th">สร้าง/อัปเดตบิลฉบับร่าง</span>. Assert the result <span lang="th">สร้างบิลใหม่ 0 ใบ · อัปเดต 1 ใบ · ข้าม (อนุมัติแล้ว) 66 ใบ · ยังไม่ได้จด {d} ห้อง</span>, and assert the same counts from the database: one bill for room 205, the 66 approved bills byte-identical, <code>uq_bills(room_id, period)</code> untouched.</li>
+  <li>Press it again immediately. Assert identical counts and that no bill's <code>total</code> or <code>updated</code> state changed.</li>
+  <li>Assert the persistent warn banner <span lang="th">ยังไม่ได้จดมิเตอร์ {N} ห้อง: …</span> lists every billable room with no bill, that each code links to that room's reading form, and that approval is <strong>not blocked</strong> by it (FR-42, D-23).</li>
+  <li>Select room 205 and approve. Then send <code>POST /api/bills/approve</code> with the same id a second time. Assert <code>approved: 0</code>, <code>already_approved: 1</code>, HTTP 200 — a mixed or repeated batch is a no-op, never an error (§3.3.9).</li>
+  <li>Assert exactly <strong>one</strong> <code>notifications</code> row for that bill and one outbox entry. A second approve must not produce a second batch of messages.</li>
+  <li>Open <span lang="th">รับชำระเงิน</span> and double-click <span lang="th">ยืนยันรับเงินสด</span>. Assert the button disables with a spinner on the first click — a courtesy — and then assert the guarantee: fire two concurrent <code>POST /payments</code> for the same bill and confirm one returns 303 and the other <strong>409 <code>BILL_ALREADY_PAID</code></strong> with the Thai sentence <span lang="th">บิลนี้ถูกชำระไปแล้ว</span>.</li>
+  <li>Assert exactly one <code>payments</code> row, exactly one <code>receipts</code> row and exactly one <code>PAID</code> notification. The guarantee is <code>uq_payments(active_bill_id)</code> and the conditional <code>UPDATE … WHERE status='Unpaid'</code>, not the disabled button (D-26).</li>
+  <li>Reload the Payment screen for room 205. Assert the bill now appears under <span lang="th">ชำระแล้วล่าสุด</span> and that no confirm control is offered for it.</li>
+  <li>Assert receipt-number monotonicity across the run: no two receipts share a number, and the receipt issued here is higher than every receipt issued earlier. <strong>Never assert that the sequence has no gaps</strong> — a rolled-back transaction consumes a number and that is documented, accepted behaviour (D-26, D-27).</li>
+</ol>
+
+<h3 id="e2e-code">Playwright implementation of E2E-01</h3>
+
+<p>Seven files. Two are configuration, three are page objects, two are fixtures. Nothing is generated, nothing is abstracted for a second application that will never exist, and every selector below is either a route, one of the four hooks of §1.10, or a Thai label that a decision fixes.</p>
+
+<h4><code>playwright.config.ts</code></h4>
+
+<pre><code>import { defineConfig, devices } from '@playwright/test';
+
+export default defineConfig({
+  testDir: './test/e2e',
+  globalSetup: './test/e2e/global-setup.ts',
+
+  // One MySQL, one process, shared state. Parallel workers would need a database each,
+  // which buys nothing at seven scenarios.
+  workers: 1,
+  fullyParallel: false,
+
+  // A flaky money test is a defect, not something to retry until it passes.
+  retries: 0,
+
+  timeout: 90_000,
+  expect: { timeout: 10_000 },
+  reporter: [['list'], ['html', { outputFolder: '.tmp/playwright-report', open: 'never' }]],
+
+  use: {
+    baseURL: process.env.E2E_BASE_URL ?? 'http://127.0.0.1:3100',
+    locale: 'th-TH',
+    timezoneId: 'Asia/Bangkok',          // matches TZ=Asia/Bangkok on the server (D-03)
+    trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
+    video: 'off',
+  },
+
+  // Chromium only. D-45 targets current Chrome and Edge; Edge and a real Android
+  // handset are checked by hand once per milestone.
+  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+
+  webServer: {
+    command: 'node --env-file=.env.e2e server.js',
+    url: (process.env.E2E_BASE_URL ?? 'http://127.0.0.1:3100') + '/healthz',
+    reuseExistingServer: !process.env.CI,
+    timeout: 60_000,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  },
+});
+</code></pre>
+
+<h4><code>test/e2e/global-setup.ts</code></h4>
+
+<pre><code>import { execFileSync } from 'node:child_process';
+import { mkdirSync, rmSync } from 'node:fs';
+
+// Rebuilds juristic_e2e from empty, exactly as a student would: npm run db:reset.
+// This is the only place the whole database is recreated; per-scenario fixtures
+// layer small, idempotent .sql files on top of it.
+export default function globalSetup() {
+  mkdirSync('.tmp', { recursive: true });
+  rmSync(process.env.LINE_OUTBOX_FILE ?? '.tmp/line-outbox.jsonl', { force: true });
+  execFileSync('npm', ['run', 'db:reset'], { stdio: 'inherit', env: process.env });
+}
+</code></pre>
+
+<h4><code>test/e2e/fixtures/dates.ts</code> — the oracles</h4>
+
+<pre><code>// Asia/Bangkok is UTC+7 with no DST, so a fixed offset is exact and needs no library.
+// These are deliberately an INDEPENDENT implementation of the product's date rules:
+// if the two disagree, one of them is wrong, and that is the point of an oracle.
+
+export const todayBangkok = (): string =&gt;
+  new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10);
+
+export const currentPeriod = (): string =&gt; todayBangkok().slice(0, 7);
+
+export const addDays = (iso: string, n: number): string =&gt;
+  new Date(Date.parse(iso + 'T00:00:00Z') + n * 86_400_000).toISOString().slice(0, 10);
+
+/**
+ * D-20: due_date = MAX(due day of the period month, approval date + 3 days).
+ * The clamp applies to the DAY-OF-MONTH term only — never to the result of the MAX,
+ * which would otherwise be able to produce a due date before the three-day floor.
+ * See the S3 documentation defect raised in the strategy section.
+ */
+export function expectedDueDate(period: string, dueDay = 5, approvedOn = todayBangkok()): string {
+  const [y, m] = period.split('-').map(Number);
+  const lastDayOfMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const onDueDay = `${period}-${String(Math.min(dueDay, lastDayOfMonth)).padStart(2, '0')}`;
+  const floor = addDays(approvedOn, 3);
+  return onDueDay &gt; floor ? onDueDay : floor;   // ISO dates compare correctly as strings
+}
+
+// LINE messages and the receipt use the full Thai month with a GREGORIAN year.
+// The -u-ca-gregory keyword is load-bearing: plain th-TH renders Buddhist Era (D-03).
+export const thaiFullDate = (iso: string): string =&gt;
+  new Intl.DateTimeFormat('th-TH-u-ca-gregory-nu-latn', {
+    timeZone: 'Asia/Bangkok', day: 'numeric', month: 'long', year: 'numeric',
+  }).format(new Date(iso + 'T12:00:00+07:00'));
+
+// REC-&lt;payment month YYYYMM&gt;-&lt;6 digits&gt;. The month comes from the RUN DATE, never
+// from a literal: D-44 forbids any test asserting the documentation's 202609.
+export const receiptNo = (seq: number, on = todayBangkok()): string =&gt;
+  `REC-${on.slice(0, 4)}${on.slice(5, 7)}-${String(seq).padStart(6, '0')}`;
+</code></pre>
+
+<h4><code>test/e2e/fixtures/test.ts</code> — the <code>db</code> and <code>outbox</code> fixtures</h4>
+
+<pre><code>import { test as base, expect } from '@playwright/test';
+import { createConnection, type Connection } from 'mysql2/promise';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+
+export type OutboxEntry = { api: 'push' | 'multicast' | 'reply'; to?: string; msg: any; key?: string };
+
+class Db {
+  constructor(private readonly c: Connection) {}
+
+  static async open() {
+    // dateStrings mirrors db/pool.js so a DATE never passes through a JS Date (ADR A-5).
+    const c = await createConnection({
+      uri: process.env.DATABASE_URL,
+      multipleStatements: true,
+      dateStrings: true,
+      timezone: '+07:00',
+      decimalNumbers: false,          // DECIMAL arrives as a string, as in production
+    });
+    return new Db(c);
+  }
+
+  async rows&lt;T = any&gt;(sql: string, params: unknown[] = []): Promise&lt;T[]&gt; {
+    const [r] = await this.c.query(sql, params);
+    return r as T[];
+  }
+
+  async one&lt;T = any&gt;(sql: string, params: unknown[] = []): Promise&lt;T&gt; {
+    const r = await this.rows&lt;T&gt;(sql, params);
+    expect(r, `expected exactly one row for: ${sql}`).toHaveLength(1);
+    return r[0];
+  }
+
+  /** Applies one idempotent .sql fixture from test/fixtures/. */
+  async applyFixture(name: string) {
+    await this.c.query(readFileSync(`test/fixtures/${name}`, 'utf8'));
+  }
+
+  roomId = (code: string) =&gt;
+    this.one&lt;{ id: number }&gt;('SELECT id FROM rooms WHERE room_code = ?', [code]).then((r) =&gt; r.id);
+
+  billId = (roomCode: string, period: string) =&gt;
+    this.one&lt;{ id: number }&gt;(
+      'SELECT b.id FROM bills b JOIN rooms r ON r.id = b.room_id WHERE r.room_code = ? AND b.period = ?',
+      [roomCode, period],
+    ).then((r) =&gt; r.id);
+
+  items = (billId: number) =&gt;
+    this.rows('SELECT item_type, quantity, unit_price, amount FROM bill_items WHERE bill_id = ? ORDER BY item_type', [billId]);
+
+  notifications = (billId: number) =&gt;
+    this.rows('SELECT type, status, attempt_count, recipient_user_id FROM notifications WHERE bill_id = ? ORDER BY id', [billId]);
+
+  close = () =&gt; this.c.end();
+}
+
+class Outbox {
+  private readonly path = process.env.LINE_OUTBOX_FILE ?? '.tmp/line-outbox.jsonl';
+
+  truncate() { writeFileSync(this.path, ''); }
+
+  all(): OutboxEntry[] {
+    if (!existsSync(this.path)) return [];
+    return readFileSync(this.path, 'utf8').split('\n').filter(Boolean).map((l) =&gt; JSON.parse(l));
+  }
+
+  /** The rendered Thai text of every message sent so far. */
+  texts(): string[] { return this.all().map((e) =&gt; e.msg?.text ?? ''); }
+
+  /** Polls the file — the send happens after the response, so it can land a beat late. */
+  async waitForText(needle: string, timeoutMs = 15_000): Promise&lt;string&gt; {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() &lt; deadline) {
+      const hit = this.texts().find((t) =&gt; t.includes(needle));
+      if (hit) return hit;
+      await new Promise((r) =&gt; setTimeout(r, 250));
+    }
+    throw new Error(`no LINE message containing "${needle}" after ${timeoutMs}ms. Sent: ${JSON.stringify(this.texts())}`);
+  }
+}
+
+export const test = base.extend&lt;{ db: Db; outbox: Outbox }&gt;({
+  db: async ({}, use) =&gt; { const db = await Db.open(); await use(db); await db.close(); },
+  outbox: async ({}, use) =&gt; { await use(new Outbox()); },
+});
+
+export { expect };
+
+/** D-44: the staff password is not specified, so fall back to the admin's. */
+export const credentials = (role: 'admin' | 'staff') =&gt; ({
+  username: role,
+  password: role === 'admin'
+    ? process.env.SEED_ADMIN_PASSWORD!
+    : process.env.E2E_STAFF_PASSWORD ?? process.env.SEED_ADMIN_PASSWORD!,
+});
+</code></pre>
+
+<h4><code>test/e2e/pages/*.ts</code> — page objects</h4>
+
+<pre><code>// test/e2e/pages/LoginPage.ts
+import { expect, type Page } from '@playwright/test';
+import { credentials } from '../fixtures/test';
+
+export class LoginPage {
+  constructor(private readonly page: Page) {}
+
+  async signIn(role: 'admin' | 'staff') {
+    const { username, password } = credentials(role);
+    await this.page.goto('/login');
+    await expect(this.page.getByRole('heading', { name: 'Juristic Platform' })).toBeVisible();
+    await this.page.getByLabel('ชื่อผู้ใช้').fill(username);
+    await this.page.getByLabel('รหัสผ่าน').fill(password);
+    await this.page.getByRole('button', { name: 'เข้าสู่ระบบ' }).click();
+    // FR-01: admin lands on ภาพรวม, staff on จดมิเตอร์.
+    await expect(this.page).toHaveURL(role === 'admin' ? /\/dashboard/ : /\/readings/);
+  }
+}
+</code></pre>
+
+<pre><code>// test/e2e/pages/ReadingsPage.ts
+import { expect, type Page, type Locator } from '@playwright/test';
+
+export class ReadingsPage {
+  constructor(private readonly page: Page) {}
+
+  goto = (period: string) =&gt; this.page.goto(`/readings?period=${period}`);
+  gotoReview = (period: string) =&gt; this.page.goto(`/readings?period=${period}&amp;view=review`);
+
+  card = (roomCode: string): Locator =&gt; this.page.locator(`[data-room="${roomCode}"]`);
+
+  /** Each utility block is a fieldset with a legend, so the two ครั้งนี้ inputs are distinct. */
+  private field = (roomCode: string, utility: 'น้ำ' | 'ไฟ', which: 'ครั้งก่อน' | 'ครั้งนี้') =&gt;
+    this.card(roomCode).getByRole('group', { name: utility }).getByLabel(which);
+
+  previous = (roomCode: string, utility: 'น้ำ' | 'ไฟ') =&gt; this.field(roomCode, utility, 'ครั้งก่อน');
+
+  async enter(roomCode: string, water: number, electric: number) {
+    await this.field(roomCode, 'น้ำ', 'ครั้งนี้').fill(String(water));
+    await this.field(roomCode, 'ไฟ', 'ครั้งนี้').fill(String(electric));
+  }
+
+  save = (roomCode: string) =&gt; this.card(roomCode).getByRole('button', { name: 'บันทึก' }).click();
+
+  counter = (): Locator =&gt; this.page.getByText(/จดแล้ว\s+\d+\/\d+\s+ห้อง/);
+
+  async counterDone(): Promise&lt;number&gt; {
+    const text = (await this.counter().innerText()).replace(/[^\d/]/g, '');
+    return Number(text.split('/')[0]);
+  }
+
+  async submitForReview() {
+    await this.page.getByRole('button', { name: 'ส่งให้นิติตรวจสอบ' }).click();
+    // D-18/D-39: generation creates Drafts only and carries NO confirmation dialog.
+    await expect(this.page.getByRole('dialog')).toHaveCount(0);
+  }
+}
+</code></pre>
+
+<pre><code>// test/e2e/pages/BillPages.ts
+import { expect, type Page, type Locator } from '@playwright/test';
+
+export class BillsPage {
+  constructor(private readonly page: Page) {}
+
+  goto = (period: string) =&gt; this.page.goto(`/bills?period=${period}`);
+  row = (roomCode: string): Locator =&gt; this.page.locator(`tr[data-room="${roomCode}"]`);
+  status = (roomCode: string): Locator =&gt; this.row(roomCode).locator('[data-status]');
+
+  async open(roomCode: string) {
+    await this.row(roomCode).getByRole('link').first().click();
+    await expect(this.page).toHaveURL(/\/bills\/\d+/);
+  }
+}
+
+export class BillDetailPage {
+  constructor(private readonly page: Page) {}
+
+  amount = (kind: 'water' | 'electric' | 'common' | 'total'): Locator =&gt;
+    this.page.locator(`[data-amount="${kind}"]`);
+
+  status = (): Locator =&gt; this.page.locator('[data-status]').first();
+
+  itemRow = (label: 'ค่าน้ำ' | 'ค่าไฟ' | 'ค่าส่วนกลาง'): Locator =&gt;
+    this.page.getByRole('row').filter({ hasText: label });
+
+  async approve(roomCode: string) {
+    await this.page.getByRole('button', { name: 'อนุมัติและส่งบิล' }).click();
+    const dialog = this.page.getByRole('dialog');
+    // D-39 dialog 1, verbatim — and the primary repeats the verb, never ตกลง.
+    await expect(dialog).toContainText(`อนุมัติและส่งบิลห้อง ${roomCode} ผ่าน LINE — ยกเลิกไม่ได้`);
+    await expect(dialog.getByRole('button', { name: 'ตกลง' })).toHaveCount(0);
+    await dialog.getByRole('button', { name: 'อนุมัติและส่ง' }).click();
+  }
+
+  /** The result screen drains at most 20 messages per call and loops while remaining &gt; 0. */
+  waitForDelivered = () =&gt;
+    expect(this.page.getByText('ส่งแล้ว')).toBeVisible({ timeout: 60_000 });
+}
+</code></pre>
+
+<pre><code>// test/e2e/pages/PaymentPages.ts
+import { expect, type Page, type Locator } from '@playwright/test';
+
+export class PaymentPage {
+  constructor(private readonly page: Page) {}
+
+  goto = () =&gt; this.page.goto('/payments');
+
+  async search(query: string) {
+    await this.page.getByPlaceholder('เลขห้อง หรือ ชื่อผู้เช่า').fill(query);
+    await expect(this.page.getByText(/พบ \d+ ห้อง/)).toBeVisible();
+  }
+
+  selectBill = (billId: number) =&gt; this.page.locator(`[data-bill="${billId}"]`).click();
+
+  amountDue = (): Locator =&gt; this.page.locator('[data-amount="total"]');
+
+  /** D-24: the amount is read-only text. This asserts there is no way to type one. */
+  async assertAmountIsNotAnInput() {
+    await expect(this.page.locator('input[name="amount"]')).toHaveCount(0);
+    await expect(this.amountDue()).not.toHaveAttribute('contenteditable', /.*/);
+  }
+
+  async confirmCash(roomCode: string, thaiTotal: string, periodTh: string) {
+    await this.page.getByRole('button', { name: 'ยืนยันรับเงินสด' }).click();
+    const dialog = this.page.getByRole('dialog');
+    // D-39 dialog 3 — the billing period is part of the sentence on purpose.
+    await expect(dialog).toContainText(`ยืนยันรับเงินสด ${thaiTotal} บาท`);
+    await expect(dialog).toContainText(`ห้อง ${roomCode}`);
+    await expect(dialog).toContainText(`รอบ ${periodTh}`);
+    await dialog.getByRole('button', { name: 'ยืนยันรับเงินสด' }).click();
+    await expect(this.page).toHaveURL(/\/receipts\/\d+/);
+  }
+}
+
+export class ReceiptPage {
+  constructor(private readonly page: Page) {}
+
+  number = (): Locator =&gt; this.page.getByText(/REC-\d{6}-\d{6}/).first();
+  amount = (kind: 'water' | 'electric' | 'common' | 'total'): Locator =&gt;
+    this.page.locator(`[data-amount="${kind}"]`);
+}
+</code></pre>
+
+<h4><code>test/e2e/e2e-01-demo-path.spec.ts</code></h4>
+
+<pre><code>import { test, expect } from './fixtures/test';
+import { LoginPage } from './pages/LoginPage';
+import { ReadingsPage } from './pages/ReadingsPage';
+import { BillsPage, BillDetailPage } from './pages/BillPages';
+import { PaymentPage, ReceiptPage } from './pages/PaymentPages';
+import { currentPeriod, expectedDueDate, thaiFullDate, receiptNo, todayBangkok } from './fixtures/dates';
+
+const PERIOD = currentPeriod();
+const ROOM = '205';
+
+// PRD §28, and the only numbers this scenario is allowed to hard-code.
+const WATER_PREV = 1250, WATER_CURR = 1260, WATER_UNITS = 10;
+const ELEC_PREV = 5280,  ELEC_CURR = 5350,  ELEC_UNITS = 70;
+
+test.describe('E2E-01 · the complete PRD §28 demo path', () =&gt; {
+  test.beforeEach(async ({ db, outbox }) =&gt; {
+    await db.applyFixture('reset-205.sql');
+    outbox.truncate();
+  });
+
+  test(
+    'E2E-01 · FR-01 FR-10 FR-11 FR-12 FR-13 FR-14 FR-15 FR-16 FR-17 FR-18 FR-19 FR-22 FR-23 FR-24 FR-28 · ' +
+    'room 205 from meter reading to receipt to Dashboard',
+    async ({ browser, db, outbox }) =&gt; {
+
+    // ---------------------------------------------------------------- staff, 360 x 640
+    const staffCtx = await browser.newContext({ viewport: { width: 360, height: 640 } });
+    const staff = await staffCtx.newPage();
+    const readings = new ReadingsPage(staff);
+
+    await test.step('1-2 · staff signs in and lands on the reading round', async () =&gt; {
+      await new LoginPage(staff).signIn('staff');
+      await readings.goto(PERIOD);
+      await expect(readings.card(ROOM)).toBeVisible();
+      await expect(readings.previous(ROOM, 'น้ำ')).toHaveValue(String(WATER_PREV));
+      await expect(readings.previous(ROOM, 'น้ำ')).toHaveAttribute('readonly', '');
+      await expect(readings.previous(ROOM, 'ไฟ')).toHaveValue(String(ELEC_PREV));
+    });
+
+    const before = await readings.counterDone();
+
+    await test.step('3-4 · enter the readings and save one room', async () =&gt; {
+      await readings.enter(ROOM, WATER_CURR, ELEC_CURR);
+      await expect(readings.card(ROOM)).toContainText(`${WATER_UNITS} หน่วย`);
+      await expect(readings.card(ROOM)).toContainText(`${ELEC_UNITS} หน่วย`);
+      await readings.save(ROOM);
+      await expect(staff.getByText(`บันทึกห้อง ${ROOM} แล้ว`)).toBeVisible();
+      await expect(readings.card(ROOM)).toContainText('จดแล้ว');
+      expect(await readings.counterDone()).toBe(before + 1);
+    });
+
+    await test.step('4b · the readings are one row each, with the units snapshotted', async () =&gt; {
+      const roomId = await db.roomId(ROOM);
+      const rows = await db.rows(
+        'SELECT utility_type, previous_reading, current_reading, units, previous_period ' +
+        'FROM meter_readings WHERE room_id = ? AND period = ? ORDER BY utility_type',
+        [roomId, PERIOD],
+      );
+      expect(rows).toHaveLength(2);                       // FR-10, FR-11 — an UPSERT, never two rows
+      expect(rows.find((r) =&gt; r.utility_type === 'water')).toMatchObject(
+        { previous_reading: WATER_PREV, current_reading: WATER_CURR, units: WATER_UNITS });
+      expect(rows.find((r) =&gt; r.utility_type === 'electric')).toMatchObject(
+        { previous_reading: ELEC_PREV, current_reading: ELEC_CURR, units: ELEC_UNITS });
+    });
+
+    await test.step('5 · ส่งให้นิติตรวจสอบ generates the Draft bill', async () =&gt; {
+      await readings.gotoReview(PERIOD);
+      await readings.submitForReview();
+      await expect(staff.getByText(/สร้างบิลใหม่ 1 ใบ/)).toBeVisible();
+    });
+
+    const billId = await db.billId(ROOM, PERIOD);
+
+    await test.step('6 · the never-red arithmetic, asserted as strings', async () =&gt; {
+      const items = await db.items(billId);
+      expect(items).toHaveLength(3);                      // D-18, D-41 — always exactly three
+      expect(items).toEqual([
+        { item_type: 'common',   quantity: '30.00', unit_price: '35.00', amount: '1050.00' },
+        { item_type: 'electric', quantity: '70.00', unit_price: '8.00',  amount: '560.00'  },
+        { item_type: 'water',    quantity: '10.00', unit_price: '18.00', amount: '180.00'  },
+      ]);
+      const bill = await db.one('SELECT status, total, room_area_sqm FROM bills WHERE id = ?', [billId]);
+      expect(bill.status).toBe('Draft');
+      expect(bill.total).toBe('1790.00');                 // the sum of the printed lines
+      expect(bill.room_area_sqm).toBe('30.00');           // snapshotted at generation (D-09)
+    });
+
+    await staffCtx.close();
+
+    // -------------------------------------------------------------- admin, 1280 x 900
+    const adminCtx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const admin = await adminCtx.newPage();
+    const bills = new BillsPage(admin);
+    const detail = new BillDetailPage(admin);
+
+    await test.step('7-8 · the office reviews the bill', async () =&gt; {
+      await new LoginPage(admin).signIn('admin');
+      await bills.goto(PERIOD);
+      await expect(bills.status(ROOM)).toHaveAttribute('data-status', 'Draft');
+      await expect(bills.status(ROOM)).toHaveText('ฉบับร่าง');
+      await bills.open(ROOM);
+
+      await expect(detail.itemRow('ค่าน้ำ')).toContainText('1,250');
+      await expect(detail.itemRow('ค่าน้ำ')).toContainText('1,260');
+      await expect(detail.itemRow('ค่าน้ำ')).toContainText('18.00');
+      await expect(detail.amount('water')).toHaveText('180.00');
+      await expect(detail.amount('electric')).toHaveText('560.00');
+      await expect(detail.amount('common')).toHaveText('1,050.00');
+      await expect(detail.amount('total')).toHaveText('1,790.00');
+      await expect(admin.getByText(/กำหนดชำระ .* \(ยืนยันเมื่ออนุมัติ\)/)).toBeVisible();
+    });
+
+    await test.step('9-10 · อนุมัติและส่งบิล freezes the bill and queues the message', async () =&gt; {
+      await detail.approve(ROOM);
+      await expect(detail.status()).toHaveAttribute('data-status', 'Unpaid');
+      await expect(detail.status()).toHaveText('รอชำระ');
+      await detail.waitForDelivered();
+
+      const bill = await db.one('SELECT status, due_date, approved_by FROM bills WHERE id = ?', [billId]);
+      expect(bill.status).toBe('Unpaid');
+      expect(bill.due_date).toBe(expectedDueDate(PERIOD, 5));     // D-20, independently computed
+      expect(bill.approved_by).not.toBeNull();
+
+      const audit = await db.rows(
+        "SELECT action FROM audit_log WHERE bill_id = ? AND action = 'BILL_APPROVE'", [billId]);
+      expect(audit).toHaveLength(1);                               // D-38, same transaction
+    });
+
+    await test.step('11 · the tenant receives the bill on LINE', async () =&gt; {
+      const text = await outbox.waitForText('ค่าใช้จ่ายประจำเดือน');
+      for (const line of [
+        `ห้อง ${ROOM}`,
+        'ค่าน้ำ 10 หน่วย × 18 บาท = 180 บาท',
+        'ค่าไฟ 70 หน่วย × 8 บาท = 560 บาท',
+        'ค่าส่วนกลาง 30 ตร.ม. × 35 บาท = 1,050 บาท',
+        'ยอดรวม 1,790 บาท',
+        `กรุณาชำระภายในวันที่ ${thaiFullDate(expectedDueDate(PERIOD, 5))}`,
+      ]) expect(text).toContain(line);
+      expect(text).not.toMatch(/25\d\d/);                          // never Buddhist Era (D-03, R-11)
+
+      const [row, ...rest] = await db.notifications(billId);
+      expect(rest).toHaveLength(0);                                // one row per recipient, not per call
+      expect(row).toMatchObject({ type: 'BILL', status: 'sent', attempt_count: 1 });
+      // Test mode redirects the SEND; the row still records the intended recipient (D-34).
+      expect(row.recipient_user_id).toMatch(/^Useed/);
+    });
+
+    // ------------------------------------------------------------------ cash at the counter
+    const payment = new PaymentPage(admin);
+    const receipt = new ReceiptPage(admin);
+    const periodTh = new Intl.DateTimeFormat('th-TH-u-ca-gregory-nu-latn',
+      { month: 'long', year: 'numeric', timeZone: 'Asia/Bangkok' })
+      .format(new Date(PERIOD + '-15T12:00:00+07:00'));
+
+    await test.step('12-13 · ยืนยันรับเงินสด takes exactly the bill total', async () =&gt; {
+      await payment.goto();
+      await payment.search(ROOM);
+      await payment.selectBill(billId);
+      await expect(payment.amountDue()).toHaveText('1,790.00');
+      await payment.assertAmountIsNotAnInput();                    // D-24 — never an input
+      await payment.confirmCash(ROOM, '1,790', periodTh);
+    });
+
+    await test.step('14 · the receipt, numbered from the run date', async () =&gt; {
+      await expect(receipt.number()).toHaveText(receiptNo(852));   // REC-&lt;YYYYMM&gt;-000852
+      await expect(admin.getByText('ใบเสร็จรับเงิน')).toBeVisible();
+      await expect(receipt.amount('water')).toHaveText('180.00');
+      await expect(receipt.amount('electric')).toHaveText('560.00');
+      await expect(receipt.amount('common')).toHaveText('1,050.00');
+      await expect(receipt.amount('total')).toHaveText('1,790.00');
+      await expect(admin.getByText('หนึ่งพันเจ็ดร้อยเก้าสิบบาทถ้วน')).toBeVisible();
+      await expect(admin.getByText('เงินสด')).toBeVisible();
+      await expect(admin.getByText('สำเนา')).toHaveCount(0);       // original until the first print
+
+      const paid = await db.one('SELECT status FROM bills WHERE id = ?', [billId]);
+      expect(paid.status).toBe('Paid');
+      const pay = await db.one(
+        'SELECT amount, method, voided_at FROM payments WHERE bill_id = ?', [billId]);
+      expect(pay).toMatchObject({ amount: '1790.00', method: 'cash', voided_at: null });
+    });
+
+    await test.step('15 · the tenant receives the confirmation', async () =&gt; {
+      const text = await outbox.waitForText('ยืนยันการชำระเงิน');
+      expect(text).toContain(`ห้อง ${ROOM}`);
+      expect(text).toContain('1,790 บาท');
+      expect(text).toContain(receiptNo(852));
+      expect(text).toContain(thaiFullDate(todayBangkok()));
+
+      const types = (await db.notifications(billId)).map((n) =&gt; n.type);
+      expect(types).toEqual(['BILL', 'PAID']);
+    });
+
+    await test.step('16 · the Dashboard tiles reconcile and the report agrees', async () =&gt; {
+      await admin.goto(`/dashboard?period=${PERIOD}`);
+      await expect(admin.locator('[data-amount="common"]')).toHaveText('70,350.00');  // 67 x 30 x 35
+
+      const money = (sel: string) =&gt; admin.locator(sel).innerText()
+        .then((t) =&gt; Number(t.replace(/[^\d.]/g, '')));
+      const billed = await money('[data-amount="billed"]');
+      const collected = await money('[data-amount="collected"]');
+      const outstanding = await money('[data-amount="outstanding"]');
+      expect(collected).toBe(1790);                                 // the only Paid bill this period
+      expect(Number((billed - collected).toFixed(2))).toBe(outstanding);   // FR-28 reconciliation
+
+      const roomId = await db.roomId(ROOM);
+      await admin.goto(`/reports/room-history?room_id=${roomId}`);
+      const row = admin.locator(`tr[data-period="${PERIOD}"]`);
+      await expect(row).toContainText('10');
+      await expect(row).toContainText('70');
+      await expect(row).toContainText('1,790.00');
+      await expect(row.locator('[data-status]')).toHaveAttribute('data-status', 'Paid');
+      await expect(row).toContainText(receiptNo(852));
+    });
+
+    await adminCtx.close();
+  });
+});
+</code></pre>
+
+<div class="callout note">
+<div class="title">One extra hook the Dashboard step needs</div>
+<p>Step 16 reads <code>[data-amount="billed|collected|outstanding"]</code>. Those are three more values of the same <code>data-amount</code> attribute already introduced in §1.10, rendered by the same <code>money.ejs</code> partial — not a new mechanism. The report row also uses <code>data-period</code>, which is the one place a period must be identified without reading the Thai month name; it is added to the same request.</p>
+</div>
+
+<h3 id="api-test">API integration test — bill generation</h3>
+
+<p>Tier 2, <code>node:test</code> with built-in <code>fetch</code>. The helper first: the "15-line cookie helper" ADR A-9 promises, which in practice is thirty lines because it also has to carry the CSRF token.</p>
+
+<pre><code>// test/helpers/client.js — session cookie + CSRF, no supertest (ADR A-9)
+const BASE = process.env.TEST_BASE_URL ?? 'http://127.0.0.1:3000';
+
+export async function login(role) {
+  const jar = { cookie: '', csrf: '' };
+  const keep = (res) =&gt; {
+    const set = res.headers.getSetCookie?.() ?? [];
+    if (set.length) jar.cookie = set.map((c) =&gt; c.split(';')[0]).join('; ');
+    return res;
+  };
+
+  // The token is issued on GET and read out of the form's hidden input.
+  const form = await keep(await fetch(`${BASE}/login`, { headers: { cookie: jar.cookie } }));
+  jar.csrf = /name="_csrf"\s+value="([^"]+)"/.exec(await form.text())[1];
+
+  const password = role === 'admin'
+    ? process.env.SEED_ADMIN_PASSWORD
+    : process.env.E2E_STAFF_PASSWORD ?? process.env.SEED_ADMIN_PASSWORD;
+
+  await keep(await fetch(`${BASE}/login`, {
+    method: 'POST', redirect: 'manual',
+    headers: { cookie: jar.cookie, 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ username: role, password, _csrf: jar.csrf }),
+  }));
+  return jar;
+}
+
+/** JSON call. Returns { status, body } so a test can assert both halves of a failure. */
+export async function api(jar, method, path, payload) {
+  const res = await fetch(BASE + path, {
+    method,
+    headers: {
+      cookie: jar.cookie,
+      'content-type': 'application/json',
+      'X-CSRF-Token': jar.csrf,
+    },
+    body: payload === undefined ? undefined : JSON.stringify(payload),
+  });
+  return { status: res.status, body: await res.json().catch(() =&gt; null) };
+}
+</code></pre>
+
+<pre><code>// test/integration/bills.generate.test.js
+import { test, before, beforeEach } from 'node:test';
+import assert from 'node:assert/strict';
+import { login, api } from '../helpers/client.js';
+import { db, applyFixture } from '../helpers/db.js';
+
+const PERIOD = new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 7);
+let admin, roomId;
+
+before(async () =&gt; {
+  admin = await login('admin');
+  roomId = (await db.one('SELECT id FROM rooms WHERE room_code = ?', ['205'])).id;
+});
+
+beforeEach(async () =&gt; {
+  await applyFixture('reset-205.sql');
+  await api(admin, 'POST', '/api/readings', {
+    period: PERIOD, room_id: roomId,
+    water:    { current_reading: 1260 },
+    electric: { current_reading: 5350 },
+  });
+});
+
+test('FR-14 FR-15 FR-16 FR-17 · D-16 D-18 · generation writes exactly three items and the §28 total', async () =&gt; {
+  const run = await api(admin, 'POST', '/api/bills/generate', { period: PERIOD });
+  assert.equal(run.status, 200);
+  assert.equal(run.body.data.created, 1);
+
+  const bill = await db.one(
+    'SELECT id, status, total FROM bills WHERE room_id = ? AND period = ?', [roomId, PERIOD]);
+  assert.equal(bill.status, 'Draft');
+  assert.equal(bill.total, '1790.00');            // a string: mysql2 returns DECIMAL as text (D-16)
+
+  const items = await db.rows(
+    'SELECT item_type, quantity, unit_price, amount FROM bill_items WHERE bill_id = ? ORDER BY item_type',
+    [bill.id]);
+  assert.equal(items.length, 3);                  // never two, never four — uq_bill_items (ENG-2)
+  assert.deepEqual(items, [
+    { item_type: 'common',   quantity: '30.00', unit_price: '35.00', amount: '1050.00' },
+    { item_type: 'electric', quantity: '70.00', unit_price: '8.00',  amount: '560.00'  },
+    { item_type: 'water',    quantity: '10.00', unit_price: '18.00', amount: '180.00'  },
+  ]);
+
+  // The printed total is the sum of the printed lines. Satang arithmetic in the TEST only.
+  const sum = items.reduce((acc, i) =&gt; acc + Math.round(Number(i.amount) * 100), 0);
+  assert.equal(sum, Math.round(Number(bill.total) * 100));
+});
+
+test('FR-17 · D-18 · a second run creates nothing, recalculates Drafts and touches no approved bill', async () =&gt; {
+  await api(admin, 'POST', '/api/bills/generate', { period: PERIOD });
+
+  const approvedBefore = await db.rows(
+    "SELECT id, total, status FROM bills WHERE period = ? AND status IN ('Unpaid','Paid') ORDER BY id", [PERIOD]);
+
+  const again = await api(admin, 'POST', '/api/bills/generate', { period: PERIOD });
+  assert.equal(again.status, 200);
+  assert.equal(again.body.data.created, 0);       // uq_bills(room_id, period) is the idempotency key
+  assert.equal(again.body.data.updated, 1);       // the one Draft is recalculated in place
+  assert.equal(again.body.data.skipped, approvedBefore.length);
+  assert.ok(Array.isArray(again.body.data.missing_rooms));
+
+  const approvedAfter = await db.rows(
+    "SELECT id, total, status FROM bills WHERE period = ? AND status IN ('Unpaid','Paid') ORDER BY id", [PERIOD]);
+  assert.deepEqual(approvedAfter, approvedBefore); // an approved bill is never touched (D-18, D-22)
+
+  const count = await db.one(
+    'SELECT COUNT(*) AS n FROM bills WHERE room_id = ? AND period = ?', [roomId, PERIOD]);
+  assert.equal(count.n, 1);
+});
+
+test('FR-12 · D-13 · a corrected reading recalculates the Draft bill in place on save', async () =&gt; {
+  await api(admin, 'POST', '/api/bills/generate', { period: PERIOD });
+
+  const saved = await api(admin, 'POST', '/api/readings', {
+    period: PERIOD, room_id: roomId,
+    water:    { current_reading: 1272 },   // 22 units instead of 10
+    electric: { current_reading: 5350 },
+  });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.body.data.bill_recalculated, true);
+  assert.equal(saved.body.data.water.units, 22);
+  assert.ok(!JSON.stringify(saved.body).match(/\d+\.\d{2}/), 'the reading response carries no money');
+
+  const bill = await db.one(
+    'SELECT total FROM bills WHERE room_id = ? AND period = ?', [roomId, PERIOD]);
+  assert.equal(bill.total, '2006.00');   // 22 x 18 = 396, + 560 + 1,050
+});
+
+test('FR-12 · D-13 · a current reading below the previous one is refused for every role', async () =&gt; {
+  const res = await api(admin, 'POST', '/api/readings', {
+    period: PERIOD, room_id: roomId,
+    water: { current_reading: 1240 }, electric: { current_reading: 5350 },
+  });
+  assert.equal(res.status, 422);
+  assert.equal(res.body.error.code, 'READING_BELOW_PREVIOUS');
+  assert.match(res.body.error.message, /เลขมิเตอร์ปัจจุบันน้อยกว่าเดือนก่อน \(1,250\)/);
+  assert.ok(res.body.error.fields, 'a 422 always carries fields keyed by input name');
+  assert.equal(res.body.data, undefined, 'a response never carries both data and error');
+});
+</code></pre>
+
+<h3 id="unit-tests">Unit tests — the formulas, the rollover and rate resolution</h3>
+
+<div class="callout note">
+<div class="title">Which half of a formula a unit test can prove</div>
+<p>Each of the three formulas has two halves. The <strong>quantity</strong> half — <code>current − previous</code>, and the room's snapshotted area — is pure JavaScript and is unit-tested below. The <strong>money</strong> half — <code>ROUND(quantity × unit_price, 2)</code> — is executed by MySQL on <code>DECIMAL</code> (D-16, A-4), so no unit test can reach it; reimplementing it in JavaScript would be testing the test. It is proved instead by the DB-backed test above, which is the one that may never go red. Saying so plainly is better than a unit test that looks like it covers money and does not.</p>
+</div>
+
+<pre><code>// test/unit/formulas.test.js — no database, runs in about a second
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { computeUnits, resolvePreviousReading, commonQuantity } from '../../services/billing.js';
+
+test('FR-12 · D-14 · water units — PRD §28', () =&gt; {
+  assert.equal(computeUnits({ previous_reading: 1250, current_reading: 1260 }), 10);
+});
+
+test('FR-13 · D-14 · electricity units — PRD §28', () =&gt; {
+  assert.equal(computeUnits({ previous_reading: 5280, current_reading: 5350 }), 70);
+});
+
+test('FR-16 · D-09 · the common-area quantity is the BILL snapshot, not the live room', () =&gt; {
+  // A bill approved at 30.00 must still print 30.00 after the room is changed to 32.00.
+  assert.equal(commonQuantity({ room_area_sqm: '30.00', rooms: { area_sqm: '32.00' } }), '30.00');
+});
+
+test('FR-12 · D-13 · zero units is legal and is not an error', () =&gt; {
+  assert.equal(computeUnits({ previous_reading: 1260, current_reading: 1260 }), 0);
+});
+
+test('FR-12 · D-13 · a current reading below the previous one throws, replacement box off', () =&gt; {
+  assert.throws(
+    () =&gt; computeUnits({ previous_reading: 1250, current_reading: 1240 }),
+    /READING_BELOW_PREVIOUS/,
+  );
+});
+
+// ---------------------------------------------------------------- rollover = meter replacement
+// D-13: there is NO automatic rollover detection. A rolled dial is entered as a replacement,
+// and the §28 arithmetic is deliberately unchanged by it — a replacement must not move money.
+
+test('FR-33 · D-13 · a rolled dial entered as a replacement yields the same 10 units', () =&gt; {
+  assert.equal(computeUnits({
+    previous_reading: 1250, current_reading: 2,
+    meter_replaced: true, old_final: 1258, new_start: 0,
+    replace_reason: 'มิเตอร์น้ำชำรุด เปลี่ยนใหม่ต้นรอบ',
+  }), 10);                                  // (1258 − 1250) + (2 − 0)
+});
+
+test('FR-33 · D-13 · the replacement branch suspends the below-previous block', () =&gt; {
+  assert.equal(computeUnits({
+    previous_reading: 1250, current_reading: 5,
+    meter_replaced: true, old_final: 1250, new_start: 0,
+  }), 5);                                   // current 5 &lt; previous 1250, and that is correct here
+});
+
+test('FR-33 · D-13 · old_final below the previous reading is rejected', () =&gt; {
+  assert.throws(() =&gt; computeUnits({
+    previous_reading: 1250, current_reading: 2,
+    meter_replaced: true, old_final: 1249, new_start: 0,
+  }), /REPLACEMENT_INVALID/);
+});
+
+test('FR-33 · D-13 · a current reading below new_start is rejected', () =&gt; {
+  assert.throws(() =&gt; computeUnits({
+    previous_reading: 1250, current_reading: 5,
+    meter_replaced: true, old_final: 1258, new_start: 10,
+  }), /REPLACEMENT_INVALID/);
+});
+
+test('FR-33 · D-13 · units can never be negative, whichever branch runs', () =&gt; {
+  for (const input of [
+    { previous_reading: 0, current_reading: 0 },
+    { previous_reading: 1250, current_reading: 1250, meter_replaced: true, old_final: 1250, new_start: 0 },
+  ]) assert.ok(computeUnits(input) &gt;= 0);   // mirrors CHECK (units &gt;= 0)
+});
+
+// ---------------------------------------------------------------- previous-reading resolution
+const rows = (...periods) =&gt; periods.map(([period, current_reading]) =&gt; ({ period, current_reading }));
+const BASELINE = { baseline: 1250 };
+
+test('FR-13 · D-06 · with no earlier row the room baseline applies, tagged "baseline"', () =&gt; {
+  assert.deepEqual(
+    resolvePreviousReading([], { period: '2026-09', ...BASELINE }),
+    { previous_reading: 1250, previous_period: 'baseline' },
+  );
+});
+
+test('FR-10 · D-14 · the greatest period strictly earlier wins, never the latest recorded_at', () =&gt; {
+  assert.deepEqual(
+    resolvePreviousReading(rows(['2026-06', 1180], ['2026-08', 1250], ['2026-07', 1210]),
+      { period: '2026-09', ...BASELINE }),
+    { previous_reading: 1250, previous_period: '2026-08' },
+  );
+});
+
+test('FR-10 · D-14 · a skipped month resolves to the last month that exists, and does not block', () =&gt; {
+  assert.deepEqual(
+    resolvePreviousReading(rows(['2026-06', 1180], ['2026-07', 1210]), { period: '2026-09', ...BASELINE }),
+    { previous_reading: 1210, previous_period: '2026-07' },
+  );
+});
+
+test('FR-10 · D-12 · the row being written is excluded, so a double submit is harmless', () =&gt; {
+  // The re-save of 2026-09 must not take its own 1,260 as its previous value.
+  assert.deepEqual(
+    resolvePreviousReading(rows(['2026-08', 1250], ['2026-09', 1260]), { period: '2026-09', ...BASELINE }),
+    { previous_reading: 1250, previous_period: '2026-08' },
+  );
+});
+
+test('FR-26 · D-14 · a reading taken while the room was vacant still counts', () =&gt; {
+  assert.deepEqual(
+    resolvePreviousReading(rows(['2026-08', 1250]), { period: '2026-09', ...BASELINE, vacantIn: ['2026-08'] }),
+    { previous_reading: 1250, previous_period: '2026-08' },
+  );
+});
+</code></pre>
+
+<pre><code>// test/unit/rates.test.js
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { resolveRate } from '../../services/billing.js';
+
+// rates is append-only and effective-dated: resolution takes the greatest effective_from
+// that is on or before the FIRST DAY OF THE BILL'S PERIOD MONTH (D-17), never CURDATE().
+const WATER = [
+  { utility_type: 'water', unit_price: '16.00', effective_from: '2025-10-01' },
+  { utility_type: 'water', unit_price: '18.00', effective_from: '2026-01-01' },
+  { utility_type: 'water', unit_price: '19.50', effective_from: '2026-10-01' },  // future
+];
+
+test('FR-07 FR-08 · D-17 · the rate is keyed to the period, not to the moment generate was pressed', () =&gt; {
+  assert.equal(resolveRate(WATER, '2026-09'), '18.00');
+  assert.equal(resolveRate(WATER, '2025-12'), '16.00');
+});
+
+test('FR-08 · D-17 · a rate effective on the first day of the period month applies to it', () =&gt; {
+  assert.equal(resolveRate(WATER, '2026-01'), '18.00');   // boundary: effective_from = 2026-01-01
+});
+
+test('FR-08 · D-17 · a future-dated rate never disturbs an earlier period', () =&gt; {
+  assert.equal(resolveRate(WATER, '2026-09'), '18.00');   // 2026-10-01 &gt; 2026-09-01, so 19.50 is ignored
+  assert.equal(resolveRate(WATER, '2026-10'), '19.50');   // and it takes effect the moment its month opens
+});
+
+test('FR-08 · D-17 · a rate saved mid-period does not apply to that period', () =&gt; {
+  const mid = [...WATER, { utility_type: 'water', unit_price: '20.00', effective_from: '2026-09-20' }];
+  assert.equal(resolveRate(mid, '2026-09'), '18.00');     // 2026-09-20 &gt; 2026-09-01
+});
+
+test('FR-08 · D-17 · no eligible row is a business rejection, never a silent 0', () =&gt; {
+  assert.throws(() =&gt; resolveRate(WATER, '2025-01'), /RATE_NOT_FOUND/);
+});
+
+test('D-16 · the resolved price is returned as a string and never as a float', () =&gt; {
+  assert.equal(typeof resolveRate(WATER, '2026-09'), 'string');
+});
+</code></pre>
+
+<pre><code>// test/unit/dueDate.test.js — the oracle from §1.6, asserted against the product's rule
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { computeDueDate } from '../../services/billing.js';
+
+test('FR-18 · D-20 · the PRD §28 case — approval on the 1st, due day 5', () =&gt; {
+  assert.equal(computeDueDate({ period: '2026-09', dueDay: 5, approvedOn: '2026-09-01' }), '2026-09-05');
+});
+
+test('FR-18 · D-20 · a late approval gets the three-day floor, not the due day', () =&gt; {
+  assert.equal(computeDueDate({ period: '2026-09', dueDay: 5, approvedOn: '2026-09-10' }), '2026-09-13');
+});
+
+test('FR-18 · D-20 · the floor is never below approval + 3, even at the end of the month', () =&gt; {
+  // The clamp applies to the day-of-month term only. See the S3 defect in §1.6.
+  assert.equal(computeDueDate({ period: '2026-09', dueDay: 5, approvedOn: '2026-09-30' }), '2026-10-03');
+});
+
+test('FR-18 · D-20 · every bill in one batch approved on one day gets one due date', () =&gt; {
+  const a = computeDueDate({ period: '2026-09', dueDay: 5, approvedOn: '2026-09-08' });
+  const b = computeDueDate({ period: '2026-09', dueDay: 5, approvedOn: '2026-09-08' });
+  assert.equal(a, b);
+});
+</code></pre>
+
+<h3 id="e2e-assumptions">Assumptions recorded by this section</h3>
+
+<ol>
+  <li><strong>Bill and receipt ids are never hard-coded.</strong> The design document's 1842 and 418 and the API specification's 118 and 96 are illustrative. Every test resolves an id by query — <code>db.billId('205', PERIOD)</code> — so a reseed cannot break a scenario.</li>
+  <li><strong>Only three things are hard-coded anywhere in the E2E tier:</strong> the room code <code>205</code>, the §28 arithmetic (1,250 / 1,260 / 10 / 5,280 / 5,350 / 70 / 30.00 / 18.00 / 8.00 / 35.00 / 180.00 / 560.00 / 1,050.00 / 1,790.00), and the receipt sequence <code>852</code>. Every date, period and receipt month is derived from the run date (D-44).</li>
+  <li><strong><code>data-amount</code> extends to <code>billed</code>, <code>collected</code> and <code>outstanding</code> on the Dashboard</strong>, and <code>data-period</code> is added to report rows. Both are the same mechanism as §1.10, not new ones.</li>
+  <li><strong>The reading round's per-room save is asserted through the UI counter and the database</strong>, not through the JSON response, because the tenant-facing guarantee is that a lost connection loses at most the room being typed (D-15, D-40).</li>
+  <li><strong>Room codes 206–213 are used as scratch rooms</strong> by E2E-02, E2E-03 and E2E-05. They are ordinary seeded rooms with no special meaning; a fixture that ages or unlinks one is idempotent and is never applied to a demo database.</li>
+  <li><strong>E2E-02's ladder ceiling test needs a bill at day 22</strong>, which the <code>due-dates.sql</code> fixture provides on room 213 for that step only.</li>
+  <li><strong>Concurrency in E2E-07 step 6 is two <code>fetch</code> calls issued without awaiting the first</strong>, not a load generator. Two is enough: the guarantee under test is a unique key and a conditional <code>UPDATE</code>, and both fail at two if they fail at all.</li>
+  <li><strong>No scenario asserts a LINE delivery receipt.</strong> LINE reports a blocked recipient as success, so the word "blocked" appears in no badge, report or test case, and the gap is a listed limitation (D-05 item 9, D-30).</li>
+  <li><strong>Nothing in these seven scenarios touches a PRD §24 exclusion.</strong> Every payment is cash at the counter, the tenant's only client is LINE itself, and no test mentions rent, a lease, a gateway, a card, online banking, a slip, a QR code, an IoT meter or AI.</li>
+</ol>
+
+</section>

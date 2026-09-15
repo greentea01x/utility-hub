@@ -1,0 +1,1008 @@
+<section id="tc-rooms-readings">
+<h2>Rooms, Tenants &amp; Meter Readings</h2>
+
+<p>Sixty-nine executable test cases covering the master data every later screen reads and the reading round that turns it into money: <strong>Rooms</strong> (ห้องพัก), <strong>Tenants</strong> (ผู้เช่า) and <strong>Meter Reading</strong> (จดมิเตอร์). Everything downstream — the bill, the receipt, the LINE message — is a snapshot of a value entered on one of these three screens, so a defect here is silent and permanent: it does not crash, it charges the wrong number and prints it.</p>
+
+<p>Each case is written to be run by one person against the <code>seed.sql</code> fixture of D-44 with a stopwatch and a browser, and every expected value is exact. Where a case is an API case the request is the endpoint from the engineering specification §3.2–§3.3 verbatim; where it is a UI case the copy is the Thai string from the UI design verbatim. A case that says "422 <code>READING_BELOW_PREVIOUS</code>" fails if the response is a 400, a 409, or a 422 carrying a different code.</p>
+
+<div class="callout note">
+<div class="title">Fixture, priorities and how to read the tables</div>
+<dl class="kv">
+<dt>Fixture</dt><dd>The D-44 seed: 80 rooms on 5 floors (101–116 … 501–516), all 30.00 ตร.ม.; 67 Occupied, 13 Vacant; 54 tenants with a LINE binding, 13 without. Users: <code>admin</code> / นิติบุคคล (id 1) and <code>staff</code> / เจ้าหน้าที่ (id 2).</dd>
+<dt>Demo room</dt><dd>Room <code>205</code> = room id 41, floor 2, 30.00 ตร.ม.; tenant id 37; period <code>2026-09</code>; readings 812 (water) / 813 (electric); bill 118, total 1,790.00; payment 96; receipt <code>REC-202609-000852</code> (spec §3.1.10).</dd>
+<dt>Priority</dt><dd><span class="badge p0">P0</span> demo-critical or touches money · <span class="badge p1">P1</span> core correctness, validation, permissions · <span class="badge p2">P2</span> polish and rare edges.</dd>
+<dt>Type</dt><dd><code>unit</code> = a pure function or a single SQL expression · <code>API</code> = one HTTP request and its response body · <code>UI</code> = one screen and its rendered copy · <code>e2e</code> = a sequence crossing at least two screens or two roles.</dd>
+<dt>Sessions</dt><dd>"Admin" = a session for user id 1, "Staff" = a session for user id 2, "anonymous" = no session cookie at all.</dd>
+<dt>Dates</dt><dd>Written on the documentation calendar (period <code>2026-09</code>, today 7 ก.ย. 2026). On a live run <code>seed.sql</code> computes every date relative to the run date (D-44) — reproduce the <em>arithmetic</em>, never the calendar.</dd>
+</dl>
+</div>
+
+<div class="callout warn">
+<div class="title">Assumptions recorded by this section</div>
+<ol>
+<li><strong>Room 205's tenant is อารยา ศรีสุวรรณ · 0812345678 · LINE display name <code>Araya</code></strong>, following the UI design, which declares that cast binding for every chapter. The engineering specification's fixture table (§3.1.10) labels tenant id 37 "สมชาย ใจดี", who is room 202's tenant in the same UI design. The id (37) and the phone number are consistent across both documents; only the name differs. Tests assert on the id and on <code>tenant_name_snapshot</code> being <em>stable</em> rather than on a literal name, so this section passes under either reading — but the two documents should be reconciled.</li>
+<li><strong>The binding floor range is 1–99</strong> (spec §3.3.3). The room form's validation table says 1–127, which is the raw <code>TINYINT</code> range, not a product rule. TC-ROOM-007 asserts 1–99 and treats 100 as rejected.</li>
+<li><strong>New rooms created by a test use codes outside the seed's 101–516 block</strong> — <code>517</code> and <code>518</code>. The UI design's example toast "เพิ่มห้อง 209 แล้ว" uses a code the seed already occupies; it is an illustration, not a fixture.</li>
+<li><strong>An out-of-range room area is rejected at the same boundary in the form and in the API</strong> (&gt; 0 and ≤ 9999.99). The specification gives the range; the form gives the Thai sentence. Neither states which layer rejects first, so both are asserted.</li>
+<li><strong>Room deactivation is reversible</strong> via เปิดใช้งานอีกครั้ง, per the room detail's success banner. No decision states the button's endpoint, so TC-ROOM-018 asserts the banner and the exclusion behaviour, not a route.</li>
+</ol>
+</div>
+
+<div class="diagram">
+<pre class="mermaid">
+stateDiagram-v2
+  [*] --> NoBill: "room has a tenant, no bill yet"
+  NoBill --> DraftBill: "generation run, D-18"
+  DraftBill --> DraftBill: "reading edited, bill recalculated in place"
+  DraftBill --> Approved: "Approve and Send, D-19"
+  Approved --> DraftBill: "Admin revert with reason, D-22"
+  NoBill: editable by Staff and Admin
+  DraftBill: editable by Staff and Admin
+  Approved: frozen for everyone
+</pre>
+<div class="caption">A reading has no status of its own. Its editability is derived from its room's bill for that period — the single rule TC-ROOM-063 to TC-ROOM-066 exercise from four directions (D-11, D-12, D-22, ADR §3.4).</div>
+</div>
+
+<h3 id="tc-rooms-crud">1. Rooms — create, edit and field validation</h3>
+
+<p>Eleven cases on the Rooms form. Five of them are P0 because the two values they guard multiply into money on every future bill: the area (× 35.00 THB/ตร.ม. every month, forever) and the opening baselines (entered wrong, the room's first bill charges 1,260 units instead of 10).</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th></tr></thead>
+<tbody>
+
+<tr>
+<td><strong>TC-ROOM-001</strong></td>
+<td>Create a room with its opening meter baselines</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Admin session; no room with code <code>517</code> exists</td>
+<td><ol><li>Open <code>/rooms</code></li><li>Press เพิ่มห้อง</li><li>Fill every field</li><li>Press บันทึก</li></ol></td>
+<td>หมายเลขห้อง <code>517</code> · ชั้น <code>5</code> · ประเภทห้อง <code>สตูดิโอ</code> · ขนาดพื้นที่ <code>30.00</code> · เลขมิเตอร์น้ำเริ่มต้น <code>1250</code> · เลขมิเตอร์ไฟเริ่มต้น <code>5280</code> · วันที่เริ่มต้น <code>2026-08-31</code></td>
+<td>303 → <code>/rooms/:id</code> for the new room. Toast <code>เพิ่มห้อง 517 แล้ว</code>. Detail shows ขนาดพื้นที่ <code>30.00 ตร.ม.</code>, สถานะ <span class="badge neutral">ว่าง</span> with the hint <code>กำหนดจากผู้เช่าโดยอัตโนมัติ</code>, and the three baseline fields still editable. One <code>audit_log</code> row, action <code>ROOM_CREATE</code>, <code>actor_user_id = 1</code>. Chip counts become ทั้งหมด 81 · มีผู้เช่า 67 · ว่าง 14 · ปิดใช้งาน 0.</td>
+<td>FR-04, FR-41, D-47, D-06, D-07</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-002</strong></td>
+<td>Duplicate room code is refused by the unique key, not by a lookup</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Admin session; room <code>205</code> exists</td>
+<td><ol><li><code>POST /rooms</code> with a code that already exists</li><li>Repeat the same submit through the form</li></ol></td>
+<td><code>room_code=205</code>, floor <code>2</code>, area <code>30.00</code>, baselines <code>1250</code> / <code>5280</code>, date <code>2026-08-31</code></td>
+<td>409 <code>ROOM_CODE_TAKEN</code>, message <code>เลขห้องนี้มีอยู่แล้ว</code>. Through the form: 200, the page re-renders (no redirect) with <code>บันทึกไม่สำเร็จ — ตรวจสอบ 1 ช่องด้านล่าง</code>, the field error <code>หมายเลขห้องนี้ถูกใช้แล้ว กรุณาใช้หมายเลขอื่น</code>, and every typed value still present. <code>SELECT COUNT(*) FROM rooms</code> is unchanged. No 500 escapes from <code>ER_DUP_ENTRY</code>.</td>
+<td>FR-04, D-04, D-40</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-003</strong></td>
+<td>Room code: required, ≤ 10 characters, non-numeric accepted</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Admin session</td>
+<td><ol><li>Submit with an empty code</li><li>Submit with an 11-character code</li><li>Submit with <code>A-205</code></li></ol></td>
+<td><code>""</code> · <code>"12345678901"</code> · <code>"A-205"</code></td>
+<td>(1) 422 <code>VALIDATION_FAILED</code>, field message <code>กรุณากรอกหมายเลขห้อง</code>. (2) 422 <code>VALIDATION_FAILED</code> — <code>VARCHAR(10)</code> is never silently truncated. (3) 303, room created; it appears in the list and is grouped under ชั้น 2 on <code>/readings</code> because grouping reads <code>rooms.floor</code>, not the code.</td>
+<td>FR-04, D-04, D-47</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-004</strong></td>
+<td>Room area boundaries — the number every common-area fee multiplies</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Admin session</td>
+<td><ol><li>Submit each value in turn as <code>area_sqm</code></li><li>Read back the stored value for the accepted ones</li></ol></td>
+<td><code>0</code> · <code>-1</code> · <code>0.00</code> · <code>10000.00</code> · <code>0.01</code> · <code>9999.99</code> · <code>30.00</code></td>
+<td>The first four are 422 <code>VALIDATION_FAILED</code> with <code>กรอกเป็นตัวเลข เช่น 30.00 (มากกว่า 0 และไม่เกิน 9999.99)</code>. <code>0.01</code>, <code>9999.99</code> and <code>30.00</code> are accepted and read back as the JSON strings <code>"0.01"</code>, <code>"9999.99"</code>, <code>"30.00"</code> — <code>DECIMAL(6,2)</code>, never a float.</td>
+<td>FR-06, D-16, D-47</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-005</strong></td>
+<td>Non-numeric area is rejected and the typed value survives</td>
+<td>UI</td><td><span class="badge p1">P1</span></td>
+<td>Admin session on <code>/rooms/108/edit</code></td>
+<td><ol><li>Type an invalid area</li><li>Blur the field</li><li>Press บันทึก</li></ol></td>
+<td><code>30ก</code> · <code>30,00</code> · <code>3 0</code></td>
+<td>On blur: <code>.field.invalid</code>, <code>aria-invalid="true"</code> and <code>กรอกเป็นตัวเลข เช่น 30.00 (มากกว่า 0 และไม่เกิน 9999.99)</code>. On submit: no redirect, no full-page reload, <code>บันทึกไม่สำเร็จ — ตรวจสอบ 1 ช่องด้านล่าง</code> above the form and <code>ข้อมูลที่กรอกไว้ยังอยู่ครบ แก้ไขแล้วกด บันทึก อีกครั้ง</code>; the exact characters typed are still in the input.</td>
+<td>FR-06, FR-48, D-40</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-006</strong></td>
+<td>Changing the area is audited and never rewrites an issued bill</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Bill 118 (room 205, <code>2026-09</code>) approved and Paid at 30.00 ตร.ม.; receipt <code>REC-202609-000852</code> exists</td>
+<td><ol><li>Open <code>/rooms/41/edit</code></li><li>Change ขนาดพื้นที่ 30.00 → 32.00, press บันทึก</li><li>Open <code>/bills/118</code> and <code>/receipts/96</code></li><li>Record the next period's reading and re-run generation</li></ol></td>
+<td>area <code>30.00</code> → <code>32.00</code>; common rate 35.00 THB/ตร.ม.</td>
+<td>Edit mode shows the warning <code>การแก้ไขขนาดพื้นที่มีผลกับบิลรอบถัดไปเท่านั้น</code>. One <code>audit_log</code> row, action <code>ROOM_AREA_CHANGE</code>, with <code>before_json.area_sqm = "30.00"</code> and <code>after_json.area_sqm = "32.00"</code>. Bill 118 still renders common quantity <code>30.00</code> × <code>35.00</code> = <code>1,050.00</code> and total <code>1,790.00</code>; the receipt reprint carries the same three lines. The next period's bill carries <code>32.00</code> × <code>35.00</code> = <code>1,120.00</code>.</td>
+<td>FR-06, D-09, D-38, D-47</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-007</strong></td>
+<td>Floor is an entered column, validated 1–99</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Admin session</td>
+<td><ol><li>Submit each floor value</li><li>Create <code>A-205</code> on floor 2 and open <code>/readings</code></li></ol></td>
+<td><code>0</code> · <code>100</code> · <code>""</code> · <code>5</code> · then <code>A-205</code> with floor <code>2</code></td>
+<td><code>0</code>, <code>100</code> and empty are 422 <code>VALIDATION_FAILED</code> with <code>กรุณาเลือกชั้น</code>; <code>5</code> is accepted. <code>A-205</code> appears under the sticky header <code>ชั้น 2</code> on <code>/readings</code> and is returned by <code>/rooms?floor=2</code> — no code is ever substring-parsed for a floor.</td>
+<td>FR-04, D-47, D-04</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-008</strong></td>
+<td>ประเภทห้อง is a display label and touches no amount</td>
+<td>API</td><td><span class="badge p2">P2</span></td>
+<td>Admin session; room <code>517</code> from TC-ROOM-001, with an Active tenant and both readings for <code>2026-09</code></td>
+<td><ol><li>Submit a 21-character room type</li><li>Submit <code>สตูดิโอ</code></li><li>Change it to <code>เพนต์เฮาส์</code> and re-run generation for the Draft bill</li></ol></td>
+<td>21 characters · <code>สตูดิโอ</code> · <code>เพนต์เฮาส์</code>; area 30.00, common rate 35.00</td>
+<td>21 characters → 422 <code>VALIDATION_FAILED</code> with <code>ประเภทห้องต้องไม่เกิน 20 ตัวอักษร</code>. Both valid values save. The common item is <code>30.00</code> × <code>35.00</code> = <code>1,050.00</code> before and after the change — the type appears in no <code>bill_items</code> row and in no rate lookup.</td>
+<td>FR-04, D-47</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-009</strong></td>
+<td>Baselines are mandatory whole numbers</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Admin session; creating a new room</td>
+<td><ol><li>Submit with <code>baseline_water</code> omitted</li><li>Submit each invalid value</li><li>Submit <code>1250</code></li></ol></td>
+<td>omitted · <code>1250.5</code> · <code>-5</code> · <code>"หนึ่งพัน"</code> · <code>1250</code></td>
+<td>The first four are 422 <code>VALIDATION_FAILED</code> with <code>กรอกเลขมิเตอร์เริ่มต้นเป็นจำนวนเต็ม</code>; the room is not created. <code>1250</code> is accepted and read back as the JSON number <code>1250</code> (<code>INT UNSIGNED</code>). No <code>meter_readings</code> row is written by a room create under any input.</td>
+<td>FR-41, D-06, D-16</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-010</strong></td>
+<td>วันที่เริ่มต้น may not be in the future</td>
+<td>UI</td><td><span class="badge p1">P1</span></td>
+<td>Admin session on <code>/rooms/new</code>; today is 7 ก.ย. 2026</td>
+<td><ol><li>Enter a future baseline date, blur</li><li>Enter today's date, press บันทึก</li></ol></td>
+<td><code>2026-12-31</code> · <code>2026-09-07</code></td>
+<td>Future date: <code>วันที่เริ่มต้นต้องไม่เป็นวันในอนาคต</code> on blur and 422 on submit. Today's date saves and renders on the detail as <code>7 ก.ย. 2026</code> — Gregorian year, Thai short month, Latin digits.</td>
+<td>FR-41, D-06, D-03</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-011</strong></td>
+<td>Baselines are editable until the room's first reading exists, then locked</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Room <code>517</code> exists with baselines 1,250 / 5,280 and no <code>meter_readings</code> row</td>
+<td><ol><li>Admin edits <code>baseline_water</code> 1,250 → 1,251, saves</li><li>Reset it to 1,250</li><li>Staff saves the room's first reading for <code>2026-09</code></li><li>Admin reopens <code>/rooms/:id/edit</code></li><li><code>POST /rooms/:id</code> with a changed baseline anyway</li></ol></td>
+<td><code>baseline_water</code> 1,250 → 1,251 → 1,250; then water current <code>1260</code>, electric current <code>5350</code></td>
+<td>Steps 1–2 succeed. After step 3 the three baseline inputs render <code>readonly</code> with dashed borders, the card badge reads <span class="badge neutral">ล็อกแล้ว</span> and the note reads <code>ห้องนี้มีการจดมิเตอร์แล้ว 1 รอบ จึงแก้ไขเลขเริ่มต้นไม่ได้</code>. Step 5 is refused server-side with 422 <code>BASELINE_LOCKED</code>, <code>ห้องนี้มีการจดมิเตอร์แล้ว แก้ไขเลขมิเตอร์เริ่มต้นไม่ได้</code> — a readonly input is never the guard.</td>
+<td>FR-41, D-06, D-40</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<h3 id="tc-rooms-status">2. Rooms — Occupied/Vacant status, deactivation and deletion</h3>
+
+<p>Room status is the switch that decides whether a room is billed at all (D-07). It is derived, never entered, and no screen in the product offers a control for it. These seven cases prove that the only two writers of <code>rooms.status</code> are the tenant transactions, and that a room carrying history can be retired but never erased.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th></tr></thead>
+<tbody>
+
+<tr>
+<td><strong>TC-ROOM-012</strong></td>
+<td>Room status cannot be set by hand from any surface</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Admin session; room 203 is Vacant, room 41 (<code>205</code>) is Occupied</td>
+<td><ol><li>Inspect <code>/rooms/new</code> and <code>/rooms/41/edit</code> for a status control</li><li><code>POST /rooms/&lt;203&gt;</code> including <code>status=Occupied</code></li><li><code>POST /rooms/41</code> including <code>status=Vacant</code></li></ol></td>
+<td><code>status=Occupied</code> · <code>status=Vacant</code> injected into an otherwise valid body</td>
+<td>Neither form renders a status input; both render the sentence <code>สถานะห้องกำหนดจากผู้เช่าโดยอัตโนมัติ</code>. Both posts return 303 and the injected field is ignored, not merged: room 203 is still <code>Vacant</code> and room 41 is still <code>Occupied</code>. No <code>audit_log</code> row records a status change.</td>
+<td>FR-04, D-07, D-47</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-013</strong></td>
+<td>Creating an Active tenant flips the room to Occupied in the same transaction</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Admin session; room 208 is Vacant with no Active tenant</td>
+<td><ol><li>Open <code>/tenants/new</code></li><li>Select ห้อง 208, fill the form, press บันทึก</li><li>Open <code>/rooms/208</code> and <code>/readings</code></li></ol></td>
+<td>ชื่อ-นามสกุล <code>สุชาติ พงษ์ไพบูลย์</code> · เบอร์โทรศัพท์ <code>0899990001</code> · ห้อง <code>208</code> · วันที่เข้าอยู่ <code>2026-09-01</code></td>
+<td>The form states the consequence before the save: <code>สถานะห้อง 208 จะเปลี่ยนเป็น มีผู้เช่า ทันทีที่บันทึก</code>. After saving, <code>rooms.status = 'Occupied'</code>, the detail badge reads <span class="badge ok">มีผู้เช่า</span>, the chips read มีผู้เช่า 68 · ว่าง 12, and room 208 now appears in the จดมิเตอร์ counter denominator (68), not in the ห้องว่าง chip.</td>
+<td>FR-05, D-07, D-10, D-15</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-014</strong></td>
+<td>Ending a tenancy flips the room to Vacant in the same transaction</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Room 312's tenant ประเสริฐ ชูเกียรติ is Active; final readings recorded for <code>2026-08</code> and that bill is Paid (receipt <code>REC-202608-000774</code>)</td>
+<td><ol><li>Open the tenant detail</li><li>Press สิ้นสุดสัญญาเช่า</li><li>Type a reason of ≥ 10 characters, confirm</li><li>Open <code>/rooms/312</code></li></ol></td>
+<td>เหตุผล <code>ครบกำหนดสัญญา ผู้เช่าแจ้งย้ายออก</code></td>
+<td><code>rooms.status</code> for 312 becomes <code>Vacant</code>; the badge reads <span class="badge neutral">ว่าง</span> and the tenant card becomes the empty state <code>ห้องนี้ยังไม่มีผู้เช่า</code> with เพิ่มผู้เช่า. Chip counts move to มีผู้เช่า 66 · ว่าง 14. Room 312 leaves the จดมิเตอร์ counter and appears under the ห้องว่าง chip.</td>
+<td>FR-36, D-07, D-08, D-10</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-015</strong></td>
+<td>A Vacant room is skipped entirely by the billing run</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Room 203 is Vacant; a voluntary reading exists for it in <code>2026-09</code>; 67 rooms are Occupied</td>
+<td><ol><li>Run <code>POST /api/bills/generate</code> for <code>2026-09</code></li><li>Query <code>bills</code> for room 203</li><li>Attempt a single-room generation against room 203</li></ol></td>
+<td><code>{"period": "2026-09"}</code>; common rate 35.00 THB/ตร.ม.; area 30.00 ตร.ม.</td>
+<td>No <code>bills</code> row and no <code>bill_items</code> row exists for room 203 — no bill, no zero bill, no common-area fee of 30.00 × 35.00 = 1,050.00. The run's <code>created</code> count never includes it and it is absent from <code>missing_rooms</code>. The single-room attempt returns 422 <code>ROOM_NOT_BILLABLE</code>, <code>ห้องนี้ไม่มีผู้เช่า จึงไม่ออกบิล</code>. The voluntary reading row still exists and is untouched.</td>
+<td>FR-16, FR-17, D-07, D-23</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-016</strong></td>
+<td>A room no bill references can be deleted outright</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Room <code>518</code> created for this test; it has never been billed</td>
+<td><ol><li>Confirm the detail offers ลบห้อง and not ปิดใช้งานห้อง</li><li><code>POST /rooms/&lt;518&gt;/delete</code></li></ol></td>
+<td>room <code>518</code>, floor 5, 30.00 ตร.ม., no <code>bills</code> rows</td>
+<td>303 → <code>/rooms</code>; the row is gone from every filter including ปิดใช้งาน; <code>SELECT COUNT(*) FROM rooms WHERE room_code='518'</code> returns 0. Chip totals drop by one.</td>
+<td>FR-45, D-47</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-017</strong></td>
+<td>A room any bill references cannot be deleted</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Room 41 (<code>205</code>) has bill 118 and eleven history bills</td>
+<td><ol><li>Open <code>/rooms/41</code></li><li><code>POST /rooms/41/delete</code></li><li>Re-open <code>/bills/118</code></li></ol></td>
+<td>room id 41, bill 118 total 1,790.00</td>
+<td>The detail offers ปิดใช้งานห้อง and no ลบห้อง. The post returns 409 <code>ROOM_HAS_BILLS</code>, <code>ห้องนี้มีบิลแล้ว ลบไม่ได้ กรุณาใช้ปิดใช้งานห้อง</code>. The room row and all twelve bills are intact; bill 118 still renders 180.00 + 560.00 + 1,050.00 = 1,790.00 — the reprint guarantee is not breakable through a delete.</td>
+<td>FR-45, D-47, D-09</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-018</strong></td>
+<td>ปิดใช้งานห้อง — reason gate, audit row and exclusion from every list</td>
+<td>e2e</td><td><span class="badge p1">P1</span></td>
+<td>Admin session; room 108 is Vacant with eleven Paid bills</td>
+<td><ol><li>Open <code>/rooms/108</code>, press ปิดใช้งานห้อง</li><li>Type 9 characters, observe the primary button</li><li>Extend the reason past 10 characters and confirm</li><li>Check <code>/rooms</code>, <code>/readings</code> and the ปิดใช้งาน chip</li><li>Run generation for <code>2026-09</code></li></ol></td>
+<td>reason <code>ปิดปรับปรุง</code> (9 chars) then <code>ปิดปรับปรุงห้องน้ำรั่ว</code></td>
+<td>The dialog title reads <code>ปิดใช้งานห้อง 108</code>, the body carries <code>ห้องนี้จะไม่ถูกสร้างบิล ไม่ปรากฏในหน้าจดมิเตอร์ และไม่แสดงในรายการห้อง ยกเว้นเมื่อเลือกตัวกรอง ปิดใช้งาน</code> and, in bold, <code>ประวัติบิลและใบเสร็จจะยังคงอยู่</code>. At 9 characters the primary button (labelled ปิดใช้งานห้อง, never ตกลง) stays <code>.is-disabled</code>. On confirm: one <code>audit_log</code> row, action <code>ROOM_DEACTIVATE</code>, <code>reason</code> stored; the detail shows the banner <code>ห้องนี้ถูกปิดใช้งาน เมื่อ 7 ก.ย. 2026 · เหตุผล: ปิดปรับปรุงห้องน้ำรั่ว</code> with เปิดใช้งานอีกครั้ง. The room is absent from ทั้งหมด / มีผู้เช่า / ว่าง, present only under ปิดใช้งาน (count 1), absent from <code>/readings</code>, and produces no bill. Its eleven bills still render.</td>
+<td>FR-45, FR-46, D-39, D-38, D-47</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<h3 id="tc-tenants-crud">3. Tenants — create, edit, validation and permissions</h3>
+
+<p>The tenant record is the LINE recipient and the name printed on every receipt issued during the tenancy. Eight cases. The uniqueness rule is deliberately tested as a <em>database</em> rejection (ENG-1's <code>UNIQUE(active_room_id)</code>), because a service-level <code>SELECT</code>-then-<code>INSERT</code> would pass every one of these tests and still lose a race at the counter.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th></tr></thead>
+<tbody>
+
+<tr>
+<td><strong>TC-ROOM-019</strong></td>
+<td>Create a tenant on a vacant room</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Admin session; room 312 is Vacant (after TC-ROOM-014)</td>
+<td><ol><li>Open <code>/tenants/new</code></li><li>Fill the four fields, select ห้อง 312</li><li>Press บันทึก</li></ol></td>
+<td>ชื่อ-นามสกุล <code>วิภาดา นาคเกษม</code> · เบอร์โทรศัพท์ <code>0901184402</code> · ห้อง <code>312</code> · วันที่เข้าอยู่ <code>2026-09-01</code></td>
+<td>303 → the new tenant's detail; toast <code>เพิ่มผู้เช่าห้อง 312 แล้ว</code>. The row stores <code>phone = '0901184402'</code> (<code>CHAR(10)</code>, separators stripped), <code>status='Active'</code>, <code>move_out_date IS NULL</code>, <code>line_user_id IS NULL</code>. Detail renders เบอร์โทรศัพท์ <code>090-118-4402</code>, วันที่เข้าอยู่ <code>1 ก.ย. 2026</code>, วันที่ย้ายออก <code>—</code>, สถานะ <span class="badge ok">กำลังเช่า</span>, LINE <span class="badge neutral">ยังไม่ผูก</span>. Room 312 is <code>Occupied</code>.</td>
+<td>FR-05, D-10, D-07, D-03</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-020</strong></td>
+<td>A second Active tenant on one room is refused by the database</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Admin session; room 41 (<code>205</code>) has Active tenant id 37</td>
+<td><ol><li>Open <code>/tenants/new</code> and inspect the ห้อง select</li><li><code>POST /tenants</code> with <code>room_id=41</code> anyway</li><li>Read <code>tenants</code> for room 41</li></ol></td>
+<td><code>full_name=ทดสอบ ซ้อนห้อง</code>, <code>phone=0800000000</code>, <code>room_id=41</code>, <code>move_in_date=2026-09-01</code></td>
+<td>The select offers only the 13 vacant rooms, with the note <code>แสดงเฉพาะห้องว่าง 13 ห้อง · หนึ่งห้องมีผู้เช่าที่กำลังเช่าอยู่ได้ครั้งละหนึ่งราย</code> — room 205 is not offered. The post is rejected with 409 <code>TENANT_ROOM_OCCUPIED</code>, <code>ห้องนี้มีผู้เช่าอยู่แล้ว กรุณาสิ้นสุดสัญญาเช่าเดิมก่อน</code>; through the form the field message is <code>ห้องนี้มีผู้เช่าอยู่แล้ว กรุณาเลือกห้องอื่น</code>. Exactly one Active tenant row exists for room 41; the rejection comes from <code>uq_tenants(active_room_id)</code>, verified by the error being raised even when two requests are issued concurrently.</td>
+<td>FR-05, D-10, ADR ENG-1</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-021</strong></td>
+<td>Thai mobile number format <code>0XXXXXXXXX</code></td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Admin session on the tenant form</td>
+<td><ol><li>Submit each value</li><li>For accepted values, read back the stored column</li></ol></td>
+<td><code>0812345678</code> · <code>081-234-5678</code> · <code>812345678</code> · <code>08123456789</code> · <code>+66812345678</code> · <code>0abcdefghi</code> · <code>""</code></td>
+<td><code>0812345678</code> and <code>081-234-5678</code> are accepted and both store <code>0812345678</code>. The other five are 422 <code>VALIDATION_FAILED</code> with <code>กรอกเบอร์มือถือ 10 หลัก ขึ้นต้นด้วย 0 เช่น 0901184402</code>, fired on blur and again on submit; the field keeps exactly what was typed, separators included.</td>
+<td>FR-05, D-10, D-40</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-022</strong></td>
+<td>ชื่อ-นามสกุล is required, ≤ 100 characters, and is snapshotted onto bills</td>
+<td>e2e</td><td><span class="badge p1">P1</span></td>
+<td>Admin session; tenant id 37 has an approved bill 118</td>
+<td><ol><li>Submit an empty name</li><li>Submit a 101-character name</li><li>Edit tenant 37's name and reopen <code>/bills/118</code></li></ol></td>
+<td><code>""</code> · 101 characters · rename tenant 37 by appending <code> (แก้ชื่อ)</code></td>
+<td>Empty and 101 characters → 422 <code>VALIDATION_FAILED</code>, <code>กรุณากรอกชื่อ-นามสกุลของผู้เช่า</code>. After the rename, <code>/bills/118</code> and <code>/receipts/96</code> still print the original <code>tenant_name_snapshot</code> — the page joins the bill's own snapshot, never live to <code>tenants</code>. The Tenants list shows the new name.</td>
+<td>FR-05, D-09, D-10</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-023</strong></td>
+<td>วันที่เข้าอยู่ is required, not future-dated, and moves no amount</td>
+<td>e2e</td><td><span class="badge p1">P1</span></td>
+<td>Admin session; today 7 ก.ย. 2026; room 208's tenant moved in 2026-09-20 is not permitted</td>
+<td><ol><li>Submit an empty date, then <code>2026-12-01</code></li><li>Create the tenant with <code>2026-09-25</code> — expect refusal — then with <code>2026-09-01</code></li><li>Run generation for <code>2026-09</code> and read the bill</li></ol></td>
+<td><code>""</code> · <code>2026-12-01</code> · <code>2026-09-25</code> · <code>2026-09-01</code>; water 10 units × 18.00, electric 70 units × 8.00, common 30.00 × 35.00</td>
+<td>Empty and both future dates → <code>วันที่เข้าอยู่ต้องไม่เป็นวันในอนาคต</code> (422 on submit). With <code>2026-09-01</code> the room is billed for the whole period regardless of the day: 180.00 + 560.00 + 1,050.00 = <code>1,790.00</code>. No proration factor appears in any <code>bill_items</code> quantity.</td>
+<td>FR-05, D-08, D-10</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-024</strong></td>
+<td>LINE User ID is never accepted from a form, in any state</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Admin session; tenant id 37 is linked, room 204's tenant is unlinked</td>
+<td><ol><li>Inspect the LINE User ID field on <code>/tenants/new</code> and on the edit form</li><li><code>POST /tenants</code> with a <code>line_user_id</code> in the body</li><li><code>POST /tenants/&lt;204's tenant&gt;</code> with a <code>line_user_id</code> in the body</li></ol></td>
+<td><code>line_user_id=U0123456789abcdef0123456789abcdef</code></td>
+<td>The field is <code>readonly</code> and empty in both modes, with the hint <code>กรอกเองไม่ได้ — หลังบันทึก ให้กด สร้างรหัสผูก LINE แล้วให้ผู้เช่าส่งรหัสเข้ามาในไลน์ของนิติบุคคล</code>. Both posts succeed for their other fields and the value is ignored, not merged: <code>tenants.line_user_id</code> is still <code>NULL</code> for the unlinked tenant and unchanged for tenant 37. No <code>TENANT_LINE_LINK</code> audit row is written.</td>
+<td>FR-05, FR-31, D-29, D-10</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-025</strong></td>
+<td>วันที่ย้ายออก is never hand-editable and a tenant is never deleted</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Admin session; tenant id 37 Active; a completed tenancy exists (ประเสริฐ ชูเกียรติ, room 312)</td>
+<td><ol><li><code>POST /tenants/37</code> with <code>move_out_date</code> and <code>status</code> in the body</li><li>Attempt <code>POST /tenants/37/delete</code></li><li>Open the completed tenancy under the สิ้นสุดสัญญาแล้ว chip</li></ol></td>
+<td><code>move_out_date=2026-09-30</code>, <code>status=Inactive</code>, <code>room_id=41</code></td>
+<td>The update touches only <code>full_name</code>, <code>phone</code> and <code>move_in_date</code>; tenant 37 is still <code>Active</code> with <code>move_out_date IS NULL</code> and room 41 is still <code>Occupied</code>. <code>/tenants/37/delete</code> does not exist — 404 <code>NOT_FOUND</code>, <code>ไม่พบข้อมูลที่ต้องการ</code>. The completed tenancy is greyed but present, with วันที่ย้ายออก <code>31 ส.ค. 2026</code> and a ดูประวัติ action.</td>
+<td>FR-05, D-10, D-08</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-026</strong></td>
+<td>Staff is refused on every Tenants route, with a page and not a redirect</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Staff session (user id 2); anonymous client available</td>
+<td><ol><li>GET each Tenants route as Staff</li><li>POST each Tenants route as Staff</li><li>Repeat one GET anonymously</li><li>Inspect the Staff navigation</li></ol></td>
+<td><code>/tenants</code>, <code>/tenants/new</code>, <code>/tenants/37/edit</code>, <code>POST /tenants</code>, <code>POST /tenants/37</code>, <code>POST /tenants/37/end-tenancy</code>, <code>POST /tenants/37/link-code</code>, <code>POST /tenants/37/unlink-line</code></td>
+<td>Every Staff request returns HTTP <strong>403</strong> with the Thai page <code>ไม่มีสิทธิ์เข้าถึงหน้านี้ · บัญชีของคุณเป็นเจ้าหน้าที่ กรุณาติดต่อนิติบุคคล</code> and one button <code>กลับไปหน้าจดมิเตอร์</code>; JSON calls return 403 <code>FORBIDDEN_ROLE</code>. Never a 302 to <code>/readings</code>, never an empty 200. Anonymous requests return 401 <code>UNAUTHENTICATED</code> / the login page with <code>เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่</code>. The Staff shell renders exactly three tabs — จดมิเตอร์, ห้องพัก, ภาพรวม — with no ผู้เช่า entry.</td>
+<td>FR-02, D-36, D-40</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<h3 id="tc-tenancy">4. Tenants — move-in, move-out and re-letting</h3>
+
+<p>D-08 makes ending a tenancy a settlement rather than a status flip: the departing tenant must have a final reading and a paid bill before the record can be closed. Seven cases, five of them P0 because each one guards against a room leaving the system with money still on it, or against consumption crossing a tenancy boundary and being billed to the wrong person.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th></tr></thead>
+<tbody>
+
+<tr>
+<td><strong>TC-ROOM-027</strong></td>
+<td>สิ้นสุดสัญญาเช่า is blocked when the final reading is missing</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Admin session; room 207's tenant กิตติศักดิ์ พูนสิน has no reading for the current period</td>
+<td><ol><li>Open the tenant detail</li><li>Hover the สิ้นสุดสัญญาเช่า button</li><li><code>POST /tenants/&lt;id&gt;/end-tenancy</code> directly with a valid reason</li></ol></td>
+<td>reason <code>ผู้เช่าแจ้งย้ายออกกลางเดือน</code></td>
+<td>The button is disabled with the hover text <code>ปิดสัญญาไม่ได้: ยังไม่ได้จดมิเตอร์รอบสุดท้ายของห้อง 207</code> and a <code>.notice.warn</code> on the page. The direct post is refused 422 <code>TENANCY_END_BLOCKED</code>, <code>ยังสิ้นสุดสัญญาเช่าไม่ได้ ต้องจดมิเตอร์ครั้งสุดท้ายและบิลรอบล่าสุดต้องชำระแล้ว</code>. The tenant is still <code>Active</code>, the room still <code>Occupied</code>, the LINE binding still intact.</td>
+<td>FR-36, D-08, D-40</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-028</strong></td>
+<td>สิ้นสุดสัญญาเช่า is blocked while the covering bill is unpaid</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Admin session; room 207 has both final readings recorded and its <code>2026-09</code> bill is Unpaid with a past due date (displays เกินกำหนด)</td>
+<td><ol><li>Open the tenant detail</li><li>Read the button state and the notice</li><li>POST the action directly</li><li>Take cash for the bill, then retry</li></ol></td>
+<td>bill total <code>1,684.00</code>, due <code>5 ก.ย. 2026</code>, reason <code>ครบกำหนดสัญญา ผู้เช่าย้ายออก</code></td>
+<td>Disabled with <code>ปิดสัญญาไม่ได้: ห้อง 207 ยังมีบิลค้างชำระ 1 ใบ</code> and the notice <code>ยังสิ้นสุดสัญญาเช่าไม่ได้ ห้อง 207 มีบิลค้างชำระ 1 ใบ — รับชำระและออกใบเสร็จก่อน</code>; the bill badge carries <code>data-status="Unpaid"</code> and renders <span class="badge overdue">เกินกำหนด</span>. The direct post is 422 <code>TENANCY_END_BLOCKED</code>. After ยืนยันรับเงินสด 1,684.00 บาท the button enables and the action succeeds.</td>
+<td>FR-36, D-08, D-21, D-24</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-029</strong></td>
+<td>A successful settlement performs all four effects in one transaction</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Admin session; room 312, tenant ประเสริฐ ชูเกียรติ, final readings for <code>2026-08</code> (💧 1,402 · ⚡ 6,118) recorded and that bill Paid, receipt <code>REC-202608-000774</code>; LINE bound as <code>Prasert</code></td>
+<td><ol><li>Confirm the green precondition banner</li><li>Press สิ้นสุดสัญญาเช่า</li><li>Read the four listed effects, type the reason, confirm</li><li>Verify each of the four in the database</li></ol></td>
+<td>reason <code>ครบกำหนดสัญญา ผู้เช่าแจ้งย้ายออก</code>; action taken on <code>2026-08-31</code></td>
+<td>Banner reads <code>พร้อมสิ้นสุดสัญญาเช่า</code> and names the evidence. The dialog lists four effects, not "are you sure", and states <code>ประวัติบิลและใบเสร็จจะยังคงอยู่</code>. On confirm, in one transaction: <code>tenants.status='Inactive'</code>; <code>move_out_date='2026-08-31'</code> (the date the action was taken, never a typed field); <code>line_user_id</code>, <code>line_display_name</code> and <code>line_linked_at</code> all <code>NULL</code>; <code>rooms.status='Vacant'</code>. One <code>audit_log</code> row, action <code>TENANCY_END</code>, with the reason. Page banner <code>สิ้นสุดสัญญาเช่าห้อง 312 แล้ว เมื่อ 31 ส.ค. 2026 · ห้อง 312 เปลี่ยนเป็น ว่าง · ยกเลิกการผูก LINE แล้ว</code>. The LINE coverage banner falls from 54 to 53.</td>
+<td>FR-36, D-08, D-10, D-38, ADR ENG-5</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-030</strong></td>
+<td>The settlement reason is mandatory at ten characters, client and server</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Admin session; a tenancy that satisfies both D-08 gates</td>
+<td><ol><li>Type 9 characters into the dialog and watch the primary button</li><li>Submit each reason value directly to the endpoint</li></ol></td>
+<td><code>""</code> · <code>สั้นไป</code> (6) · <code>ครบกำหนด9</code> (9) · <code>ครบกำหนดสัญญาเช่า</code> (17)</td>
+<td>The primary button stays <code>.is-disabled</code> below 10 characters, with the hint <code>อย่างน้อย 10 ตัวอักษร · บันทึกลงประวัติการแก้ไข</code>. Direct posts of the first three return 422 <code>REASON_TOO_SHORT</code>, <code>กรุณาระบุเหตุผลอย่างน้อย 10 ตัวอักษร</code>, and change nothing. The 17-character reason succeeds and is stored verbatim in <code>audit_log.reason</code> — a collected reason is never discarded.</td>
+<td>FR-36, FR-46, D-39, D-38</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-031</strong></td>
+<td>A departed tenant's bills, payments and receipts stay attached and reachable</td>
+<td>e2e</td><td><span class="badge p1">P1</span></td>
+<td>Room 312's previous tenancy is Inactive; a new Active tenant occupies room 312</td>
+<td><ol><li>Open <code>/tenants?status=inactive</code> and the departed tenant's detail</li><li>Open <code>/rooms/312</code> and read ประวัติบิล</li><li>Open the departed tenant's last receipt</li></ol></td>
+<td>receipt <code>REC-202608-000774</code>; room 312's 12-month history</td>
+<td>The departed record is greyed but listed under สิ้นสุดสัญญาแล้ว with ดูประวัติ. Its bill list is intact and each bill still carries its own <code>tenant_name_snapshot</code>. The room's 12-month history shows both tenancies' periods with no gap and no re-attribution. The receipt reprints with identical billed data and carries the สำเนา mark.</td>
+<td>FR-25, D-08, D-09, D-42</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-032</strong></td>
+<td>Re-letting needs no baseline edit — the chain carries across the tenancy</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Room 312: departing tenant's final <code>2026-08</code> readings 💧 1,402 / ⚡ 6,118; new tenant Active from 1 ก.ย. 2026</td>
+<td><ol><li>Open <code>/rooms/312/edit</code> as Admin and inspect the baseline card</li><li>Open <code>/readings?period=2026-09&amp;room=312</code> as Staff</li><li>Save the new tenant's first reading</li></ol></td>
+<td>water current <code>1412</code>, electric current <code>6188</code></td>
+<td>The baselines are still locked (<code>BASELINE_LOCKED</code> on any write) and are not needed. Previous renders <code>1,402</code> and <code>6,118</code> with the source hint <code>รอบ ส.ค. 2026</code> — never <code>ค่าเริ่มต้นของห้อง</code>. Saved units are 1,412 − 1,402 = <code>10</code> and 6,188 − 6,118 = <code>70</code>; <code>previous_period</code> is <code>"2026-08"</code> on both rows. Nothing is re-entered and no consumption is billed twice.</td>
+<td>FR-13, FR-26, D-06, D-08, D-14</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-033</strong></td>
+<td>No proration: the tenant Active on the generation date gets the whole period</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Room 312's new tenant moved in 1 ก.ย. 2026; readings from TC-ROOM-032 saved; generation run for <code>2026-09</code></td>
+<td><ol><li>Run <code>POST /api/bills/generate</code> for <code>2026-09</code></li><li>Open the room's bill and read the three items</li><li>Approve it and check the LINE recipient</li></ol></td>
+<td>10 units × 18.00 · 70 units × 8.00 · 30.00 ตร.ม. × 35.00; move-in 2026-09-01</td>
+<td>Exactly one bill for room 312 in <code>2026-09</code>, addressed to the new tenant, with three items: <code>180.00</code>, <code>560.00</code>, <code>1,050.00</code>, total <code>1,790.00</code>. No fractional quantity, no day count, no second bill for the departed tenant. The queued <code>BILL</code> notification names the new tenant only.</td>
+<td>FR-16, FR-17, FR-19, D-08, D-07</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<h3 id="tc-line-link">5. Tenants — LINE account linking states</h3>
+
+<p>Eight cases over the six-character code flow of D-29. A tenant cannot read their own <code>userId</code> anywhere in the LINE client, so the binding can only arrive through the webhook — which makes the failure replies as much a part of the contract as the success one. The alphabet <code>ABCDEFGHJKLMNPQRSTUVWXYZ23456789</code> is asserted character by character, because an <code>O</code> read aloud across a counter as a zero is the exact failure this alphabet exists to prevent.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th></tr></thead>
+<tbody>
+
+<tr>
+<td><strong>TC-ROOM-034</strong></td>
+<td>สร้างรหัสผูก LINE issues one code of the right shape</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Admin session; room 204's tenant ธนกฤต วงศ์ทอง is <span class="badge neutral">ยังไม่ผูก</span>; today 7 ก.ย. 2026</td>
+<td><ol><li>Press สร้างรหัสผูก LINE on the row</li><li>Read the created <code>link_codes</code> row</li><li>Open the printable slip</li></ol></td>
+<td><code>POST /tenants/&lt;id&gt;/link-code</code>, body <code>_csrf</code> only</td>
+<td>303 → <code>/tenants/&lt;id&gt;/link-code/slip</code>; toast <code>สร้างรหัสผูก LINE สำหรับห้อง 204 แล้ว</code>. The row is exactly <code>{ tenant_id, code, expires_at, used_at: null }</code>; <code>code</code> is 6 characters, every one of them in <code>ABCDEFGHJKLMNPQRSTUVWXYZ23456789</code> — none of <code>O</code>, <code>0</code>, <code>I</code>, <code>1</code> appears in 100 consecutive generations; <code>expires_at</code> is exactly 7 days ahead (<code>2026-09-14</code>). The detail panel shows the code at 28 px monospace with the expiry as both a date and a remaining-days count, plus the three tenant steps and พิมพ์ใบผูกบัญชี. The row's LINE state becomes <span class="badge warn">รอผูก</span>.</td>
+<td>FR-31, D-29</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-035</strong></td>
+<td>Issuing a new code invalidates the outstanding one</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Room 207's tenant holds an unused, unexpired code <code>K7QM9X</code></td>
+<td><ol><li>Press สร้างรหัสใหม่</li><li>Read all <code>link_codes</code> rows for that tenant</li><li>Send the old code to the webhook</li></ol></td>
+<td>old code <code>K7QM9X</code>; new code as issued</td>
+<td>The old row now carries a non-null <code>used_at</code> (stamped in the same transaction), so exactly one live code exists per tenant. The screen shows only the new code. Sending <code>K7QM9X</code> to <code>POST /line/webhook</code> replies <code>❌ ไม่พบรหัสนี้ หรือรหัสหมดอายุแล้ว กรุณาติดต่อสำนักงานนิติบุคคล</code> and binds nothing.</td>
+<td>FR-31, D-29</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-036</strong></td>
+<td>A correct code binds the account and names the room in the reply</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Room 207's tenant holds the live code <code>K7QM9X</code>; the LINE account has sent a <code>follow</code> event</td>
+<td><ol><li>Post a <code>follow</code> event with a valid <code>X-Line-Signature</code></li><li>Post a message event carrying the code</li><li>Reload the tenant detail and the Tenants list</li></ol></td>
+<td><code>userId=U0123456789abcdef0123456789abcdef</code>, display name <code>Kittisak</code>, message text <code>K7QM9X</code></td>
+<td>The webhook returns <strong>200 before</strong> doing any work. <code>line_followers</code> holds the userId and display name. The tenant row is bound (<code>line_user_id</code>, <code>line_display_name='Kittisak'</code>, <code>line_linked_at</code> set), the code's <code>used_at</code> is stamped, and one <code>audit_log</code> row with action <code>TENANT_LINE_LINK</code> is written. The reply is exactly <code>✅ ผูกบัญชีสำเร็จ</code> + newline + <code>คุณจะได้รับบิลและประกาศของห้อง 207 ผ่าน LINE นี้</code>. The list row flips to <span class="badge ok">ผูกแล้ว</span> with <code>Kittisak</code> and the linked date, and the coverage banner increments.</td>
+<td>FR-31, D-29, D-31, D-38</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-037</strong></td>
+<td>A wrong code binds nothing</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>A live code exists for some tenant; the sending account is not bound</td>
+<td><ol><li>Post a message event with a code that was never issued</li><li>Post one with the right characters in the wrong order</li><li>Read <code>tenants</code> and <code>link_codes</code></li></ol></td>
+<td><code>ZZZZZZ</code> · <code>X9MQ7K</code> (reversal of <code>K7QM9X</code>)</td>
+<td>Both reply <code>❌ ไม่พบรหัสนี้ หรือรหัสหมดอายุแล้ว กรุณาติดต่อสำนักงานนิติบุคคล</code>. No tenant row is bound, no <code>used_at</code> is stamped, no <code>TENANT_LINE_LINK</code> audit row is written, and the coverage banner is unchanged. The webhook still returns 200.</td>
+<td>FR-31, D-29</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-038</strong></td>
+<td>An expired code is refused on day 8</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>A code issued on <code>2026-08-30</code> with <code>expires_at = 2026-09-06</code>; today 7 ก.ย. 2026</td>
+<td><ol><li>Confirm the row is unused</li><li>Send the code to the webhook</li><li>Read the tenant row and press สร้างรหัสใหม่</li></ol></td>
+<td>the expired code; <code>used_at IS NULL</code></td>
+<td>Reply <code>❌ ไม่พบรหัสนี้ หรือรหัสหมดอายุแล้ว กรุณาติดต่อสำนักงานนิติบุคคล</code>; nothing is bound. The Tenants row still shows <span class="badge warn">รอผูก</span> with the expired date visible, and สร้างรหัสใหม่ issues a fresh code with a new 7-day window — an expired code is never silently reused.</td>
+<td>FR-31, D-29</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-039</strong></td>
+<td>A code is single use</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>A code has already been redeemed successfully (TC-ROOM-036)</td>
+<td><ol><li>Send the same code from the same LINE account</li><li>Send it from a different LINE account</li></ol></td>
+<td>the redeemed code; second account <code>Ufedcba9876543210fedcba9876543210</code></td>
+<td>Both attempts reply <code>❌ ไม่พบรหัสนี้ หรือรหัสหมดอายุแล้ว กรุณาติดต่อสำนักงานนิติบุคคล</code>. The tenant's binding still points at the first account; the second account is never bound to that tenant.</td>
+<td>FR-31, D-29</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-040</strong></td>
+<td>One LINE account may be bound to two tenants; uniqueness is on the tenant</td>
+<td>e2e</td><td><span class="badge p2">P2</span></td>
+<td>One person rents rooms 204 and 208; both tenant records are Active with live codes</td>
+<td><ol><li>Redeem room 204's code from the account</li><li>Redeem room 208's code from the same account</li><li>Approve both rooms' bills and read <code>notifications</code></li></ol></td>
+<td>one <code>userId</code>, two tenant ids, two codes</td>
+<td>Both bindings succeed; the second reply names <code>ห้อง 208</code>, so nothing is ambiguous. <code>uq</code> is on <code>tenant_id</code>, not on the LINE account — there is no rejection. Approving both bills writes <strong>two</strong> <code>notifications</code> rows, one per bill, each with its own <code>dedupe_key</code>, and the tenant receives two messages naming two different rooms.</td>
+<td>FR-31, FR-32, D-29, D-30</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-041</strong></td>
+<td>ยกเลิกการผูก clears the binding and a new code restores it</td>
+<td>e2e</td><td><span class="badge p1">P1</span></td>
+<td>Admin session; tenant id 37 (room 205) is bound as <code>Araya</code>; coverage banner reads 54</td>
+<td><ol><li>Press ยกเลิกการผูก on the row</li><li>Read the tenant row and the banner</li><li>Issue a new code and redeem it</li></ol></td>
+<td><code>POST /tenants/37/unlink-line</code>; then a fresh code</td>
+<td>No confirmation dialog is shown — unlink is not one of the six D-39 call sites. Toast <code>ยกเลิกการผูก LINE ของ อารยา ศรีสุวรรณ แล้ว</code>; the three LINE columns are <code>NULL</code>; the row shows <span class="badge neutral">ยังไม่ผูก</span>; the banner reads <code>LINE ผูกแล้ว 53 จาก 67 ห้องที่มีผู้เช่า</code>. One <code>audit_log</code> row, action <code>TENANT_LINE_UNLINK</code>. After redeeming the new code the binding returns and the banner reads 54 again.</td>
+<td>FR-31, D-29, D-38, D-39</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<h3 id="tc-previous-reading">6. Meter Reading — period selection and previous-reading resolution</h3>
+
+<p>Seven cases on the one query the whole billing chain hangs from: <code>the greatest earlier period for this room and this utility, otherwise the room's baseline</code>. Getting it wrong does not throw — it silently bills the wrong number of units, which is why all seven are P0 or P1 and every one of them states its arithmetic.</p>
+
+<div class="formula">previous_reading = (SELECT current_reading FROM meter_readings WHERE room_id = ? AND utility_type = ? AND period &lt; ? ORDER BY period DESC LIMIT 1) ?? rooms.baseline_&lt;utility&gt;</div>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th></tr></thead>
+<tbody>
+
+<tr>
+<td><strong>TC-ROOM-042</strong></td>
+<td>Previous comes from the immediately preceding period and is read-only for both roles</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Room 41 (<code>205</code>) has <code>2026-08</code> rows: water 1,250, electric 5,280; no <code>2026-09</code> row</td>
+<td><ol><li>Open <code>/readings?period=2026-09&amp;room=205</code> as Staff</li><li>Read the two Previous fields</li><li>Repeat as Admin</li><li>Attempt to type into the Previous input</li></ol></td>
+<td>period <code>2026-09</code>, room id 41</td>
+<td>Previous renders <code>1,250</code> and <code>5,280</code> as read-only text with thousands separators, each with the source hint <code>รอบ ส.ค. 2026</code>. The value is identical for Staff and Admin. There is no "get previous reading" endpoint to call and no editable control — the field is a dashed read-only input and a posted <code>previous_reading</code> is ignored; the server always recomputes it.</td>
+<td>FR-10, FR-11, D-14, D-06, D-12</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-043</strong></td>
+<td>The first-ever reading resolves to the room's baseline, with <code>previous_period = 'baseline'</code></td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Room <code>517</code> from TC-ROOM-001, baselines 1,250 / 5,280, no <code>meter_readings</code> row; an Active tenant; rates 18.00 / 8.00 / 35.00</td>
+<td><ol><li>Open the room's card for <code>2026-09</code></li><li>Read Previous and its hint</li><li>Save the first reading</li><li>Run generation and open the Draft bill</li></ol></td>
+<td>water current <code>1260</code>, electric current <code>5350</code>; area 30.00 ตร.ม.</td>
+<td>Previous shows <code>1,250</code> / <code>5,280</code> with the hint <code>ค่าเริ่มต้นของห้อง</code> (not a period). Saved rows carry <code>previous_period = "baseline"</code> (a <code>VARCHAR(8)</code> literal, not a null and not a fabricated <code>2026-08</code>). Units are 1,260 − 1,250 = <code>10</code> and 5,350 − 5,280 = <code>70</code>. The bill reads 10 × 18.00 = <code>180.00</code>, 70 × 8.00 = <code>560.00</code>, 30.00 × 35.00 = <code>1,050.00</code>, total <code>1,790.00</code>. <code>SELECT COUNT(*) FROM meter_readings WHERE room_id=&lt;517&gt;</code> is exactly 2 — no synthetic baseline row was ever written.</td>
+<td>FR-13, FR-41, D-06, D-14, D-16</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-044</strong></td>
+<td>A skipped month resolves to the last real reading and says so</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Room 116 has water rows for <code>2026-09</code> (current 1,076) and nothing for <code>2026-10</code>; the office is entering <code>2026-11</code></td>
+<td><ol><li>Open the room's card for <code>2026-11</code></li><li>Read Previous and the hint</li><li>Save, run generation, open Bill Detail</li><li>Approve and read the LINE message</li></ol></td>
+<td>water current <code>1096</code>, previous <code>1,076</code> from <code>2026-09</code>; rate 18.00</td>
+<td>Previous is <code>1,076</code> with the hint <code>ครอบคลุมการใช้ตั้งแต่รอบ กันยายน 2026</code>. The row stores <code>previous_period = "2026-09"</code>. Units are 1,096 − 1,076 = <code>20</code>, billed once as 20 × 18.00 = <code>360.00</code> — never split across the two months and never back-dated. No bill exists for <code>2026-10</code> and the missing month is not created. Bill Detail carries the coverage sentence and the BILL message carries the matching extra line. The room's 12-month chart plots <code>2026-10</code> as a gap, not as 0.</td>
+<td>FR-14, FR-26, FR-30, D-14</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-045</strong></td>
+<td>A month entered late resolves by period, never by entry time</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Room 41 has a <code>2026-09</code> water row (previous 1,250, current 1,260) but no <code>2026-08</code> row; the <code>2026-07</code> row holds 1,239</td>
+<td><ol><li>Save the missing <code>2026-08</code> reading now</li><li>Read the <code>2026-08</code> row's resolved previous</li><li>Re-read the <code>2026-09</code> row</li></ol></td>
+<td>water <code>2026-08</code> current <code>1250</code>; <code>2026-07</code> current <code>1,239</code></td>
+<td>The late row resolves to <code>previous_reading = 1,239</code>, <code>previous_period = "2026-07"</code> — the ordering is by <code>period DESC</code>, never by <code>recorded_at</code> — giving units 1,250 − 1,239 = <code>11</code>, identical to a punctual entry. The existing <code>2026-09</code> row is a stored snapshot and is not silently rewritten by the insertion; if its bill is still Draft, correcting it is the sanctioned path (TC-ROOM-063).</td>
+<td>FR-10, D-14, D-12</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-046</strong></td>
+<td>A voluntary reading taken while the room was vacant counts as the previous value</td>
+<td>e2e</td><td><span class="badge p1">P1</span></td>
+<td>Room 203 is Vacant; Staff session; period <code>2026-09</code></td>
+<td><ol><li>Select the ห้องว่าง chip</li><li>Save both readings for room 203</li><li>Run generation for <code>2026-09</code></li><li>Add an Active tenant to room 203 and read <code>2026-10</code></li></ol></td>
+<td><code>2026-09</code> water <code>880</code>, electric <code>3,410</code>; then <code>2026-10</code> water <code>890</code>, electric <code>3,480</code></td>
+<td>Room 203 lists under ห้องว่าง carrying <span class="badge neutral">ไม่ออกบิล</span> and is never counted in <code>จดแล้ว X/67</code>. Both rows are stored. Generation creates no bill for it. In <code>2026-10</code> the new tenant's Previous resolves to <code>880</code> / <code>3,410</code> with <code>previous_period = "2026-09"</code> — not the baseline — giving units <code>10</code> and <code>70</code>.</td>
+<td>FR-17, FR-26, D-07, D-14, D-15</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-047</strong></td>
+<td>The month picker defaults to the current Bangkok month and tolerates junk</td>
+<td>UI</td><td><span class="badge p1">P1</span></td>
+<td>Any session; server clock at <code>2026-09-07 23:30</code> Asia/Bangkok (i.e. <code>16:30 UTC</code>)</td>
+<td><ol><li>Open <code>/readings</code> with no query string</li><li>Open <code>/readings?period=2026-13</code></li><li>Open <code>/readings?period=banana</code></li><li>Step back one month with the arrow</li></ol></td>
+<td>no <code>period</code> · <code>2026-13</code> · <code>banana</code> · <code>2026-08</code></td>
+<td>All three of the first cases render <strong>กันยายน 2026</strong> — the current calendar month in Asia/Bangkok, never the UTC month, and never a 404. The header displays <code>‹ กันยายน 2026 ›</code> while the wire value is <code>2026-09</code>. Stepping back loads <code>?period=2026-08</code> and shows that month's rooms; nothing is "closed" and no lock message appears anywhere.</td>
+<td>FR-10, D-11, D-03</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-048</strong></td>
+<td>A malformed period in a JSON body is a 422, not a fallback</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Staff session</td>
+<td><ol><li><code>POST /api/readings</code> with each malformed period</li><li><code>POST /api/bills/generate</code> with the same</li></ol></td>
+<td><code>"2026-13"</code> · <code>"2026-9"</code> · <code>"26-09"</code> · <code>""</code> · field omitted</td>
+<td>Every case returns 422 <code>PERIOD_INVALID</code>, <code>รูปแบบรอบบิลไม่ถูกต้อง</code>. Nothing is written: no reading row, no bill. The page-level fallback of TC-ROOM-047 applies to the query string only — a body is validated by <code>^\d{4}-(0[1-9]|1[0-2])$</code> and never guessed.</td>
+<td>FR-10, FR-17, D-11</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<h3 id="tc-reading-entry">7. Meter Reading — entry validation and one row per room, period and utility</h3>
+
+<p>Eight cases on <code>POST /api/readings</code>. The below-previous block is P0 because it is the only thing standing between a mistyped dial and a negative charge, and the "no money in a Staff response" case is P0 because D-36 makes it a data rule rather than a CSS rule — a test that only checks the rendered page would pass on a broken build.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th></tr></thead>
+<tbody>
+
+<tr>
+<td><strong>TC-ROOM-049</strong></td>
+<td>Save one room's water and electricity — the PRD §28 round</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Staff session; room 41 (<code>205</code>), period <code>2026-09</code>, previous 1,250 / 5,280; 41 other rooms already complete</td>
+<td><ol><li><code>POST /api/readings</code> with both utilities</li><li>Read the response body</li><li>Read the two stored rows</li></ol></td>
+<td><code>{"period":"2026-09","room_id":41,"water":{"current_reading":1260},"electric":{"current_reading":5350}}</code></td>
+<td>200. Body: <code>complete: true</code>; water <code>previous_reading 1250</code>, <code>previous_period "2026-08"</code>, <code>current_reading 1260</code>, <code>units 10</code>, <code>flag null</code>; electric <code>5280 / "2026-08" / 5350 / 70 / null</code>; <code>counter: {done: 42, total: 67}</code>; <code>bill_recalculated: false</code>. The sticky bar reads <code>จดแล้ว 42/67 ห้อง</code> and the card collapses to a จดแล้ว summary. Two rows exist with <code>units</code> stored as a snapshot (10 and 70), <code>recorded_by = 2</code>, <code>recorded_at</code> set.</td>
+<td>FR-10, FR-11, FR-12, FR-13, D-12, D-15</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-050</strong></td>
+<td>A current reading below the previous one is a hard block for every role</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Room 41, period <code>2026-09</code>, previous water 1,250; the replacement checkbox is off</td>
+<td><ol><li>Submit 1,240 as Staff</li><li>Submit the same as Admin</li><li>Observe the card while typing</li><li>Query <code>meter_readings</code></li></ol></td>
+<td>water <code>current_reading = 1240</code> (and <code>1180</code> for the UI frame); electric <code>5350</code></td>
+<td>Both roles get <strong>422</strong> <code>READING_BELOW_PREVIOUS</code>, message <code>เลขมิเตอร์ปัจจุบันน้อยกว่าเดือนก่อน (1,250) กรุณาตรวจสอบ</code>, <code>fields: {"water.current_reading": "ต้องไม่น้อยกว่า 1,250"}</code>. On the phone: the summary banner <code>บันทึกไม่ได้ 1 รายการ</code>, the field takes <code>.field.invalid</code> and <code>aria-invalid="true"</code>, the units read-out clears to <code>— หน่วย คำนวณไม่ได้</code> rather than showing −10, บันทึก is <code>.is-disabled</code>, and the เปลี่ยนมิเตอร์ในรอบนี้ checkbox stays visible. No row is written for either utility; <code>CHECK (units &gt;= 0)</code> is never reached because the API refuses first.</td>
+<td>FR-12, D-13, D-16, D-40</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-051</strong></td>
+<td>Equal readings are valid: zero units, plus the ไม่มีการใช้งาน flag</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Room 409 has an Active tenant; previous water 1,344</td>
+<td><ol><li>Submit current 1,344</li><li>Read the flag and the review screen</li><li>Run generation and open the bill</li></ol></td>
+<td>water previous <code>1,344</code>, current <code>1344</code>; rate 18.00</td>
+<td>200, not an error: <code>units: 0</code>, <code>flag: "no_usage"</code>. The card and the review screen show <span class="badge warn">ไม่มีการใช้งาน</span> with the line <code>💧 1,344 → 1,344 · 0 หน่วย · มีผู้เช่าอยู่</code>; nothing is blocked. The bill still carries three items, the water one being 0 × 18.00 = <code>0.00</code>. On a room with <em>no</em> Active tenant the flag does not fire.</td>
+<td>FR-44, FR-17, D-13, D-18</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-052</strong></td>
+<td>Decimals, negatives and non-numeric input are refused</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Staff session; room 41, period <code>2026-09</code></td>
+<td><ol><li>Type each value into ครั้งนี้ on the phone</li><li>Submit each value to the endpoint</li></ol></td>
+<td><code>1260.5</code> · <code>1260,5</code> · <code>-1260</code> · <code>"หนึ่งพัน"</code> · <code>"12 60"</code> · <code>1e3</code></td>
+<td>The input rejects a decimal point, a minus sign and every non-digit on keystroke (<code>inputmode="numeric"</code>, whole units only). The endpoint re-validates and returns 422 <code>VALIDATION_FAILED</code> for all six — <code>INT UNSIGNED</code>, never a rounded or truncated value, never a float. No row is written and no partial save occurs for the other utility.</td>
+<td>FR-12, D-16, D-15</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-053</strong></td>
+<td>Both utilities are required — a half-saved room is never จดแล้ว</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Staff session; room 108 has no reading for <code>2026-09</code>; counter reads 42/67</td>
+<td><ol><li>Submit water only, leaving electric empty</li><li>Read the field errors and the counter</li><li>Submit both</li></ol></td>
+<td>water <code>1260</code>, electric <code>""</code>; then electric <code>5350</code></td>
+<td>The empty field shows <code>กรุณากรอกเลขมิเตอร์</code> and บันทึก stays disabled; a direct post is 422 <code>VALIDATION_FAILED</code>. The counter is unchanged at 42/67 and the room stays under the ยังไม่จด chip. After both are supplied the room becomes จดแล้ว and the counter reads 43/67 — recomputed from the server response, never incremented client-side.</td>
+<td>FR-11, D-15, D-40</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-054</strong></td>
+<td>One reading per room per period per utility — a double submit is a no-op</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Staff session; room 41, period <code>2026-09</code>, previous 1,250 / 5,280</td>
+<td><ol><li>Submit the save</li><li>Submit the identical payload again immediately (double-tap)</li><li>Fire two identical requests concurrently</li><li>Count the rows and re-read the units</li></ol></td>
+<td>the TC-ROOM-049 payload, sent three times</td>
+<td>Exactly two rows exist for room 41 in <code>2026-09</code> (one per utility) after every attempt — the write is an UPSERT on <code>uq_readings_room_period_utility</code>. Units are still <code>10</code> and <code>70</code>: because the previous-reading query uses a strict <code>period &lt;</code>, the row being written is excluded and a re-save can never take itself as its own previous (which would yield 0). The counter never double-counts the room.</td>
+<td>FR-10, D-12, D-14</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-055</strong></td>
+<td>ใช้สูงผิดปกติ fires only above the ten-unit floor and above 3×</td>
+<td>unit</td><td><span class="badge p1">P1</span></td>
+<td>Rooms with the stated previous-period usage for the same utility</td>
+<td><ol><li>Save each current reading</li><li>Read <code>flag</code> in the response</li><li>Check the review screen's ควรตรวจสอบ count</li></ol></td>
+<td>prev usage <code>62</code> → now <code>245</code> · prev <code>11</code> → now <code>96</code> · prev <code>9</code> → now <code>90</code> · prev <code>10</code> → now <code>30</code> · prev <code>10</code> → now <code>31</code> · no previous usage at all → now <code>500</code></td>
+<td><code>"high_usage"</code> for 62 → 245 and 11 → 96. <code>null</code> for 9 → 90 (below the ≥ 10-unit floor), for 10 → 30 (exactly 3×, which does not <em>exceed</em> 3×), and for a room with no previous usage. <code>"high_usage"</code> for 10 → 31. The flag never blocks a save, a generation run or an approval; the review screen lists the flagged rooms with an แก้ไข jump and counts them under ควรตรวจสอบ.</td>
+<td>FR-44, D-13</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-056</strong></td>
+<td>No rate, amount or total reaches a Staff session — in the body, not the CSS</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>Staff session; room 41 has a Draft bill of 1,790.00 for <code>2026-09</code></td>
+<td><ol><li>Save a reading and capture the raw response</li><li>Capture the raw HTML of <code>/readings</code> and <code>/rooms/41</code></li><li>Grep all three for money</li><li>Repeat as Admin</li></ol></td>
+<td>search terms <code>1790</code>, <code>1,790</code>, <code>180.00</code>, <code>560.00</code>, <code>1050.00</code>, <code>unit_price</code>, <code>amount</code>, <code>total</code>, <code>18.00</code>, <code>35.00</code></td>
+<td>Zero matches in every Staff payload — the columns are absent from the query, not hidden with CSS or <code>display:none</code>. The Staff room detail renders ข้อมูลห้อง, ผู้เช่าปัจจุบัน and ประวัติการจดมิเตอร์ only, with no ประวัติบิล panel and no แก้ไขห้อง / ปิดใช้งานห้อง buttons. The same routes as Admin do return the Draft preview 180.00 / 560.00 / 1,050.00 / <code>1,790.00 บาท</code>.</td>
+<td>FR-02, D-36, D-40</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<h3 id="tc-meter-replacement">8. Meter Reading — the replacement branch (rollover and swapped meters)</h3>
+
+<p>There is no automatic rollover detection anywhere in the product: a dial that has rolled past its maximum and a physically swapped meter are the same input, entered through the same explicit checkbox, with the same recorded arithmetic. Five cases. The first is P0 for a reason worth stating: a meter replacement must not move money.</p>
+
+<div class="formula">units = (old_final − previous_reading) + (current_reading − new_start),  valid while old_final ≥ previous_reading AND current_reading ≥ new_start</div>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th></tr></thead>
+<tbody>
+
+<tr>
+<td><strong>TC-ROOM-057</strong></td>
+<td>A replacement reproduces the demo total exactly — money does not move</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Room 41 (<code>205</code>), period <code>2026-09</code>, previous water 1,250; water rate 18.00; electric 5,280 → 5,350; area 30.00 ตร.ม.; common 35.00</td>
+<td><ol><li>Tick เปลี่ยนมิเตอร์ในรอบนี้ on the water block</li><li>Enter the three replacement fields and the current reading</li><li>Save, then run generation and open the bill</li></ol></td>
+<td><code>{"water":{"current_reading":2,"meter_replaced":true,"old_final":1258,"new_start":0,"replace_reason":"มิเตอร์น้ำชำรุด เปลี่ยนใหม่วันที่ 1 ก.ย. 2026"},"electric":{"current_reading":5350}}</code></td>
+<td>200. Units = (1,258 − 1,250) + (2 − 0) = 8 + 2 = <strong>10</strong>. The card renders the arithmetic as two lines and a total before saving. The bill reads 10 × 18.00 = <code>180.00</code>, 70 × 8.00 = <code>560.00</code>, 30.00 × 35.00 = <code>1,050.00</code>, total <strong><code>1,790.00</code></strong> — identical to the ordinary path. The row stores <code>meter_replaced = 1</code>, <code>old_final = 1258</code>, <code>new_start = 0</code> and the reason; one <code>audit_log</code> row, action <code>METER_REPLACEMENT</code>, carries the reason and the entering user.</td>
+<td>FR-33, FR-14, D-13, D-16, D-38</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-058</strong></td>
+<td>The two-dial sum is rendered line by line before the save</td>
+<td>UI</td><td><span class="badge p0">P0</span></td>
+<td>Room 210, electricity previous 1,830; the meter was swapped mid-round</td>
+<td><ol><li>Tick the checkbox on the electricity block</li><li>Enter old_final, new_start and the current reading</li><li>Read the arithmetic panel, then save</li><li>Open the review screen</li></ol></td>
+<td>previous <code>1,830</code> · old_final <code>1926</code> · new_start <code>0</code> · current <code>96</code></td>
+<td>The panel shows <code>⚡ มิเตอร์เดิม 96</code> (<code>1,926 − 1,830</code>) and <code>⚡ มิเตอร์ใหม่ 96</code> (<code>96 − 0</code>) with <code>รวมหน่วยที่คิด 192 หน่วย</code>, and the live read-out reads <code>192 หน่วย รวมมิเตอร์เดิมและมิเตอร์ใหม่</code>. The mode warning <code>โหมดเปลี่ยนมิเตอร์ระบบจะไม่ตรวจว่าเลขปัจจุบันน้อยกว่ารอบก่อน แต่จะคิดหน่วยจากมิเตอร์เดิมบวกมิเตอร์ใหม่</code> is shown. The stored <code>units</code> is <code>192</code>; the client never sends a units value. The review screen lists the room under ห้องที่แจ้งเปลี่ยนมิเตอร์ with <code>⚡ 192 หน่วย · มิเตอร์เดิม 96 + มิเตอร์ใหม่ 96</code>.</td>
+<td>FR-33, D-13, D-16</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-059</strong></td>
+<td><code>old_final</code> below the previous reading is refused</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Room 41, water previous 1,250, checkbox ticked</td>
+<td><ol><li>Submit an <code>old_final</code> below the previous</li><li>Read the code, the message and the field map</li></ol></td>
+<td><code>old_final = 1240</code>, <code>new_start = 0</code>, <code>current_reading = 12</code>, reason supplied</td>
+<td>422 <code>REPLACEMENT_INVALID</code>, message <code>เลขมิเตอร์ที่กรอกไม่สอดคล้องกับการเปลี่ยนมิเตอร์ กรุณาตรวจสอบ</code>, with the specific field sentence <code>เลขสุดท้ายของมิเตอร์เดิมต้องไม่น้อยกว่าเลขเดือนก่อน (1,250)</code>. The form shows the same string under the field with the hint <code>ต้องไม่น้อยกว่า 1,250</code>. No row is written and no negative units can reach <code>CHECK (units &gt;= 0)</code>.</td>
+<td>FR-33, D-13</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-060</strong></td>
+<td><code>current_reading</code> below <code>new_start</code> is refused</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Room 41, water previous 1,250, checkbox ticked</td>
+<td><ol><li>Submit a current reading below the new meter's start</li><li>Re-submit with <code>new_start = 0</code></li></ol></td>
+<td><code>old_final = 1258</code>, <code>new_start = 50</code>, <code>current_reading = 12</code>; then <code>new_start = 0</code>, <code>current_reading = 12</code></td>
+<td>First: 422 <code>REPLACEMENT_INVALID</code> with the field sentence <code>เลขปัจจุบันต้องไม่น้อยกว่าเลขเริ่มต้นของมิเตอร์ใหม่ (50)</code>. Second: 200, units = (1,258 − 1,250) + (12 − 0) = 8 + 12 = <code>20</code>. <code>new_start</code> defaults to <code>0</code> when the field is untouched, with the hint <code>ปกติเป็น 0</code>.</td>
+<td>FR-33, D-13</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-061</strong></td>
+<td>Reason is mandatory, both roles may record a replacement, and unticking restores the block</td>
+<td>e2e</td><td><span class="badge p1">P1</span></td>
+<td>Room 41, water previous 1,250; a Staff session and an Admin session</td>
+<td><ol><li>Tick the box, fill the numbers, leave the reason empty, save</li><li>Supply the reason and save as Staff</li><li>Repeat the whole flow as Admin on another room</li><li>Untick the box and submit a below-previous value</li></ol></td>
+<td>reason <code>""</code>, then <code>มิเตอร์น้ำชำรุด ช่างเปลี่ยนใหม่ 1 ก.ย. 2026</code>; after unticking, <code>current_reading = 1240</code></td>
+<td>Empty reason blocks the save with <code>กรุณาระบุเหตุผลการเปลี่ยนมิเตอร์</code> (422 on a direct post). With a reason, both Staff and Admin succeed — the branch is not Admin-only, because Staff are the ones standing at the meter. Unticking hides the three fields, discards their values and restores the ordinary guard: the below-previous submit is again 422 <code>READING_BELOW_PREVIOUS</code>, and the saved row carries <code>meter_replaced = 0</code> with <code>old_final</code>, <code>new_start</code> and <code>replace_reason</code> all <code>NULL</code>.</td>
+<td>FR-33, D-13, D-36, D-38</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<h3 id="tc-round-edit-window">9. Meter Reading — the round, the edit window, freezing and concurrency</h3>
+
+<p>Eight cases on the mechanics of a 67-room walk and on the one rule that governs whether a reading can still be touched. Nothing in this product is ever "closed"; a reading is editable exactly while its room's bill for that period is Draft or does not yet exist, and the word <em>closed</em> should not appear in any screen, message or test the team writes.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th></tr></thead>
+<tbody>
+
+<tr>
+<td><strong>TC-ROOM-062</strong></td>
+<td>Round mechanics: chips, floor grouping, counter and no pagination</td>
+<td>UI</td><td><span class="badge p1">P1</span></td>
+<td>Staff session on a 360 × 640 Chrome for Android viewport; 42 of 67 billable rooms complete for <code>2026-09</code>; 13 vacant</td>
+<td><ol><li>Open <code>/readings</code></li><li>Read the default chip and the counts</li><li>Scroll the whole list</li><li>Type <code>205</code> into ค้นหาห้อง and clear it</li><li>Select each chip in turn</li></ol></td>
+<td>67 billable, 25 unread, 42 done, 13 vacant</td>
+<td>Default chip is <strong>ยังไม่จด</strong>. Counts read ทั้งหมด 67 · ยังไม่จด 25 · จดแล้ว 42 · ห้องว่าง 13, and 67 = 25 + 42 — the vacant 13 are outside the counter. Rooms are grouped under sticky <code>ชั้น N</code> headers from <code>rooms.floor</code> and ordered by room code inside a group. The page is one continuous scroll — no pagination control appears at any length. The search filters the visible list only and leaves the chip counts and the X/Y counter unchanged; clearing it restores the chip's full list. The sticky bar reads <code>จดแล้ว 42/67 ห้อง</code> and sits above the three-tab bar without either covering the other. Every meter input is ≥ 44 px tall with a numeric keypad.</td>
+<td>FR-11, D-15, D-45, D-07</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-063</strong></td>
+<td>Editing a reading while the bill is Draft recalculates that bill in place</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Room 41 has readings for <code>2026-09</code> and a <strong>Draft</strong> bill of 1,790.00; rates 18.00 / 8.00 / 35.00</td>
+<td><ol><li>Re-open the room's card and press แก้ไข</li><li>Change the water current reading, save</li><li>Read <code>bill_recalculated</code></li><li>Open <code>/bills/118</code> as Admin</li></ol></td>
+<td>water current <code>1260</code> → <code>1270</code>; electric unchanged at <code>5350</code></td>
+<td>The card re-expands (it is still editable, because the bill is ฉบับร่าง). The save returns <code>units: 20</code> and <code>bill_recalculated: true</code>. Bill 118 immediately reads water 20 × 18.00 = <code>360.00</code>, electric <code>560.00</code>, common <code>1,050.00</code>, total <code>1,970.00</code> — recalculated in place, with the same bill id and still <code>Draft</code>. Exactly three <code>bill_items</code> rows exist; no fourth item and no adjustment line is created. An <code>audit_log</code> row with action <code>READING_EDIT</code> carries <code>bill_id = 118</code>.</td>
+<td>FR-17, FR-39, D-12, D-18, D-38</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-064</strong></td>
+<td>Approving the bill freezes its readings for every role</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Bill 118 approved (<code>Draft → Unpaid</code>, due 5 ก.ย. 2026)</td>
+<td><ol><li>Open the room's card as Staff</li><li>Attempt <code>POST /api/readings</code> for that room and period as Staff</li><li>Repeat as Admin</li><li>Read the row and the bill</li></ol></td>
+<td>water <code>1275</code>, electric <code>5360</code>, period <code>2026-09</code>, room id 41</td>
+<td>The card renders read-only: no ครั้งนี้ input, no แก้ไข button, the badge <span class="badge neutral">แก้ไขไม่ได้</span> and the meta line <code>💧 10 หน่วย · ⚡ 70 หน่วย · บิลอนุมัติแล้ว แก้ไขไม่ได้</code>. Both the Staff and the <strong>Admin</strong> post are refused 422 <code>READING_FROZEN</code>, <code>บิลอนุมัติแล้ว แก้ไขไม่ได้</code> — approval freezes the data, not the role. The stored readings are still 1,260 / 5,350, units 10 / 70, and the bill total is still <code>1,790.00</code>.</td>
+<td>FR-18, D-12, D-22</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-065</strong></td>
+<td>Admin's ตีกลับเป็นฉบับร่าง unfreezes the reading and reaches the walker</td>
+<td>e2e</td><td><span class="badge p0">P0</span></td>
+<td>Room 312's <code>2026-09</code> bill is Unpaid; no later bill exists for that room</td>
+<td><ol><li>Admin presses ตีกลับเป็นฉบับร่าง on Bill Detail and supplies a reason</li><li>Staff reloads <code>/readings?period=2026-09</code></li><li>Staff re-reads the meter and saves</li></ol></td>
+<td>reason <code>เลขมิเตอร์ไฟสูงผิดปกติ ขอให้ขึ้นไปอ่านซ้ำที่หน้างานก่อนอนุมัติ</code>; corrected electric current</td>
+<td>The bill returns to <code>Draft</code>; one <code>audit_log</code> row, action <code>BILL_REVERT</code>, with before/after JSON and the reason. Staff's list shows the banner <code>นิติบุคคลส่งกลับให้แก้ไข 1 ห้อง</code> quoting the reason verbatim with <code>นิติบุคคล · 4 ก.ย. 2026 09:12 น.</code> and a ไปที่ห้อง 312 link; the card is live again with the button <code>บันทึกและส่งตรวจอีกครั้ง</code>. Saving succeeds (no <code>READING_FROZEN</code>) and recalculates the Draft bill. Nothing about "returned" is stored on the reading row — the banner is derived from the audit row.</td>
+<td>FR-34, FR-39, D-22, D-12, D-38</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-066</strong></td>
+<td>Revert is refused server-side when a later bill exists for the room</td>
+<td>API</td><td><span class="badge p1">P1</span></td>
+<td>Room 41 has an Unpaid <code>2026-09</code> bill and a Draft <code>2026-10</code> bill</td>
+<td><ol><li>Open <code>/bills/118</code> and read the button state</li><li><code>POST /bills/118/revert</code> with a valid reason anyway</li><li>Attempt to edit the <code>2026-09</code> reading</li></ol></td>
+<td>reason <code>ตรวจพบเลขมิเตอร์ผิดในรอบกันยายน</code></td>
+<td>The button is disabled with <code>มีบิลรอบถัดไปแล้ว ไม่สามารถแก้ไขย้อนหลังได้ — กรุณาแก้ในรอบล่าสุด</code>; <code>can_revert</code> is <code>false</code> in the payload. The post is refused 422 <code>REVERT_NOT_NEWEST</code> with the same sentence — refused by a query, not merely by a disabled button. The <code>2026-09</code> reading stays frozen, which is what keeps the <code>2026-10</code> row's snapshotted <code>previous_reading</code> from going stale.</td>
+<td>FR-34, D-22, D-12</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-067</strong></td>
+<td>Two people saving the same room concurrently produce one row, not two</td>
+<td>API</td><td><span class="badge p0">P0</span></td>
+<td>A Staff session and an Admin session, both on room 108's card for <code>2026-09</code>, previous water 1,100 / electric 4,200; no bill yet</td>
+<td><ol><li>Both load the card</li><li>Staff saves 1,110 / 4,270</li><li>Admin, without reloading, saves 1,112 / 4,275</li><li>Count rows, read units and the counter</li></ol></td>
+<td>Staff <code>1110 / 4270</code>; Admin <code>1112 / 4275</code> — issued back-to-back and again fired simultaneously</td>
+<td>Exactly two rows exist (one per utility) under <code>uq_readings_room_period_utility</code>; the last write wins and stores <code>current_reading 1112</code>, <code>units 12</code> and <code>recorded_by = 1</code>. No duplicate-key 500 escapes — the write is an UPSERT. Both callers receive a <code>counter</code> recomputed server-side, so the room is counted once whatever the ordering. A subsequent read of the card shows the stored value, not either client's stale copy.</td>
+<td>FR-10, D-12, D-15, ADR §6.8</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-068</strong></td>
+<td>ส่งให้นิติตรวจสอบ is idempotent and names the rooms it skipped</td>
+<td>e2e</td><td><span class="badge p1">P1</span></td>
+<td>Period <code>2026-09</code>: 42 of 67 billable rooms complete, 25 unread, 0 approved</td>
+<td><ol><li>Open the review screen from the round bar</li><li>Press ส่งให้นิติตรวจสอบ</li><li>Press it again with nothing changed</li><li>Read the missing-room banner on <code>/bills?period=2026-09</code></li><li>Read the remaining 25 rooms and press it once more</li></ol></td>
+<td><code>{"period":"2026-09"}</code></td>
+<td>First run: <code>{created: 42, updated: 0, skipped: 0, unread: 25, missing_rooms: [...]}</code>, rendered as <code>สร้างบิลใหม่ 42 ใบ · อัปเดต 0 ใบ · ข้าม (อนุมัติแล้ว) 0 ใบ · ยังไม่ได้จด 25 ห้อง</code>. Second run: <code>created: 0</code>, not an error, and no duplicate bill — <code>uq_bills(room_id, period)</code> is the idempotency key. Monthly Billing carries the persistent warn callout <code>ยังไม่ได้จดมิเตอร์ 25 ห้อง: 101, 106, 108 … — ยังไม่ได้สร้างบิล</code>, each code linking to <code>/readings?period=2026-09&amp;room=101</code>, and approval is not blocked. After the stragglers are read the third run creates only their 25 bills, at the same rates, and the missing count reaches <strong>0</strong>. Nothing is described anywhere as closed or locked.</td>
+<td>FR-17, FR-42, D-18, D-23, D-11</td>
+</tr>
+
+<tr>
+<td><strong>TC-ROOM-069</strong></td>
+<td>A failed save on the phone loses at most the room being typed</td>
+<td>UI</td><td><span class="badge p1">P1</span></td>
+<td>Staff mid-round on a phone; 41 rooms saved; network can be dropped</td>
+<td><ol><li>Type both readings into room 108's card</li><li>Drop the connection and press บันทึก</li><li>Restore the connection and press ลองอีกครั้ง</li><li>Scroll and check the other cards</li></ol></td>
+<td>water <code>1260</code>, electric <code>5350</code></td>
+<td>The button takes <code>.btn.is-loading</code> and is disabled while in flight; the inputs stay enabled. On failure: an inline <code>.notice.bad</code> reading <code>บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง</code> with a retry — never a redirect, never a full-page reload, never a lost form. Both typed values are still in their inputs, byte for byte. The counter still reads 41/67 (a failed save can never inflate it). Every other card on the page is untouched. Retrying saves the room and the counter moves to 42/67.</td>
+<td>FR-48, D-40, D-15</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<h3 id="tc-rooms-coverage">10. Coverage</h3>
+
+<p>Every requirement this section is accountable for, and the cases that discharge it. A requirement with no case in the right-hand column is untested; a case tracing to no requirement is scope creep. Both are review findings.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Requirement</th><th>What it demands</th><th>Cases</th></tr></thead>
+<tbody>
+<tr><td><strong>FR-02</strong></td><td>Every Admin-only route refuses Staff with 403; no money in a Staff body</td><td>TC-ROOM-026, 056</td></tr>
+<tr><td><strong>FR-04</strong></td><td>Room create, duplicate code, deactivate-not-delete</td><td>TC-ROOM-001–003, 007, 008, 012</td></tr>
+<tr><td><strong>FR-05</strong></td><td>One Active tenant per room, phone format, read-only LINE id</td><td>TC-ROOM-019–025</td></tr>
+<tr><td><strong>FR-06</strong></td><td>Area is <code>DECIMAL(6,2)</code>, Admin-only, audited, snapshotted</td><td>TC-ROOM-004–006</td></tr>
+<tr><td><strong>FR-10 / FR-11</strong></td><td>Water and electricity entry, UPSERT, both-utilities rule</td><td>TC-ROOM-042, 045, 049, 053, 054, 062, 067</td></tr>
+<tr><td><strong>FR-12 / FR-13</strong></td><td>Units computed and stored at save time; below-previous refused; baseline path</td><td>TC-ROOM-043, 050–052</td></tr>
+<tr><td><strong>FR-14 / FR-16</strong></td><td>Water and common-area amounts; a Vacant room produces neither</td><td>TC-ROOM-015, 033, 044, 057</td></tr>
+<tr><td><strong>FR-17</strong></td><td>Generation is idempotent; three items per bill; Drafts recalculated</td><td>TC-ROOM-015, 033, 046, 051, 063, 068</td></tr>
+<tr><td><strong>FR-18</strong></td><td>Approval freezes every snapshot</td><td>TC-ROOM-064</td></tr>
+<tr><td><strong>FR-25 / FR-26</strong></td><td>History survives a tenancy; baseline and gaps render correctly</td><td>TC-ROOM-031, 032, 044, 046</td></tr>
+<tr><td><strong>FR-31</strong></td><td>Six-character code, 7 days, single use, webhook binding</td><td>TC-ROOM-034–041</td></tr>
+<tr><td><strong>FR-33</strong></td><td>Meter replacement arithmetic and validation, both roles</td><td>TC-ROOM-057–061</td></tr>
+<tr><td><strong>FR-34</strong></td><td>Revert to Draft unfreezes readings; newest bill only</td><td>TC-ROOM-065, 066</td></tr>
+<tr><td><strong>FR-36</strong></td><td>End of tenancy as a gated settlement</td><td>TC-ROOM-014, 027–030</td></tr>
+<tr><td><strong>FR-39</strong></td><td>Audit rows on the same connection as the change</td><td>TC-ROOM-006, 018, 029, 036, 041, 057, 063, 065</td></tr>
+<tr><td><strong>FR-41</strong></td><td>Baselines on the room, mandatory, locked after the first reading</td><td>TC-ROOM-009–011, 043</td></tr>
+<tr><td><strong>FR-42</strong></td><td>Missing-reading banner; the count must reach 0</td><td>TC-ROOM-068</td></tr>
+<tr><td><strong>FR-44</strong></td><td>Soft usage flags, never blocking</td><td>TC-ROOM-051, 055</td></tr>
+<tr><td><strong>FR-45</strong></td><td>Deactivate, never delete, once a bill references the room</td><td>TC-ROOM-016–018</td></tr>
+<tr><td><strong>FR-46</strong></td><td>Shared confirmation dialog with a reason gate</td><td>TC-ROOM-018, 030</td></tr>
+<tr><td><strong>FR-48</strong></td><td>Failed save preserves every typed value</td><td>TC-ROOM-005, 069</td></tr>
+</tbody>
+</table>
+</div>
+
+<details>
+<summary>Decisions exercised by this section, and where</summary>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Decision</th><th>Cases</th></tr></thead>
+<tbody>
+<tr><td>D-03 formats and timezone</td><td>TC-ROOM-010, 019, 047</td></tr>
+<tr><td>D-04 one property, free-text room code</td><td>TC-ROOM-002, 003, 007</td></tr>
+<tr><td>D-06 baselines on the room</td><td>TC-ROOM-001, 009–011, 032, 042, 043</td></tr>
+<tr><td>D-07 vacant rooms are not billed; status is derived</td><td>TC-ROOM-012–015, 019, 046, 062</td></tr>
+<tr><td>D-08 settlement, no proration</td><td>TC-ROOM-014, 023, 027–029, 031–033</td></tr>
+<tr><td>D-09 snapshots and the reprint guarantee</td><td>TC-ROOM-006, 017, 022, 031</td></tr>
+<tr><td>D-10 one Active tenant, never deleted</td><td>TC-ROOM-019–025, 029</td></tr>
+<tr><td>D-11 no period lock, no closed state</td><td>TC-ROOM-047, 048, 068</td></tr>
+<tr><td>D-12 reading shape and edit window</td><td>TC-ROOM-042, 045, 049, 054, 063–067</td></tr>
+<tr><td>D-13 below-previous block, replacement, soft flags</td><td>TC-ROOM-050, 051, 055, 057–061</td></tr>
+<tr><td>D-14 previous-reading resolution</td><td>TC-ROOM-042–046, 054</td></tr>
+<tr><td>D-15 the phone round</td><td>TC-ROOM-046, 049, 052, 053, 062, 067, 069</td></tr>
+<tr><td>D-16 numeric types and rounding</td><td>TC-ROOM-004, 009, 043, 050, 052, 057, 058</td></tr>
+<tr><td>D-18 generation trigger and idempotency</td><td>TC-ROOM-051, 063, 068</td></tr>
+<tr><td>D-21 Overdue is a display value</td><td>TC-ROOM-028</td></tr>
+<tr><td>D-22 freeze at approval, sanctioned correction</td><td>TC-ROOM-064–066</td></tr>
+<tr><td>D-23 missing readings do not block approval</td><td>TC-ROOM-015, 068</td></tr>
+<tr><td>D-24 payment at the counter (as a precondition)</td><td>TC-ROOM-028</td></tr>
+<tr><td>D-29 LINE linking</td><td>TC-ROOM-024, 034–041</td></tr>
+<tr><td>D-30 / D-31 notification rows and message text</td><td>TC-ROOM-036, 040</td></tr>
+<tr><td>D-36 two roles, no money for Staff</td><td>TC-ROOM-026, 056, 061</td></tr>
+<tr><td>D-38 audit trail</td><td>TC-ROOM-006, 018, 029, 036, 041, 057, 063, 065</td></tr>
+<tr><td>D-39 confirmation dialogs and reason gates</td><td>TC-ROOM-018, 030, 041</td></tr>
+<tr><td>D-40 403 pages, empty states, failed saves</td><td>TC-ROOM-002, 005, 011, 021, 026, 027, 050, 053, 056, 069</td></tr>
+<tr><td>D-42 twelve-month history</td><td>TC-ROOM-031</td></tr>
+<tr><td>D-45 device and performance targets</td><td>TC-ROOM-062</td></tr>
+<tr><td>D-47 the room record</td><td>TC-ROOM-001, 003, 004, 006–008, 012, 016–018</td></tr>
+</tbody>
+</table>
+</div>
+</details>
+
+<div class="callout ok">
+<div class="title">Exit criteria for this section</div>
+<ul class="checklist">
+<li>All 32 <span class="badge p0">P0</span> cases pass on the D-44 seed, twice in a row, with the database reset between runs.</li>
+<li>TC-ROOM-043, 049 and 057 each reproduce the PRD §28 arithmetic exactly: 10 หน่วย × 18.00 = 180.00, 70 หน่วย × 8.00 = 560.00, 30.00 ตร.ม. × 35.00 = 1,050.00, total <strong>1,790.00</strong>.</li>
+<li>TC-ROOM-068's missing-reading count reaches 0 for the demo period — the single assertion behind "ทุกห้องที่มีผู้เช่าได้รับบิล".</li>
+<li>No <span class="badge p1">P1</span> failure remains open without a written waiver from the PM naming the decision it contradicts.</li>
+<li>The word "closed" appears in no screen, message, log line or test name produced while running this section (D-11).</li>
+</ul>
+</div>
+
+</section>

@@ -1,0 +1,1038 @@
+<section id="billing">
+<h2>Monthly Billing &amp; Bill Detail</h2>
+
+<p>These two screens are the money spine of the product: Monthly Billing is where an Admin sees a whole period at once and pushes a batch of Draft bills through the single approval gate (D-19), and Bill Detail is where one bill is checked line by line, approved, delivered over LINE, paid, and — when something is wrong — corrected. Both are Admin-only surfaces; Staff never reach them and never receive an amount in an API response (D-36). Every figure below is the PRD §28 demo room reproduced exactly: room 205, 30 ตร.ม., water 1,250→1,260 = 10 units × 18 = 180, electricity 5,280→5,350 = 70 units × 8 = 560, common area 30 × 35 = 1,050, total 1,790 THB, due 5 ก.ย. 2026, paid 3 ก.ย. 2026, receipt REC-202609-000852.</p>
+
+<div class="callout decision">
+  <div class="title">Design decisions taken in these two screens (recorded, not asked)</div>
+  <ul>
+    <li><b>The list mockup is dated 8 ก.ย. 2026, the detail mockups 1–3 ก.ย. 2026.</b> One period page cannot show all four statuses on the day of approval, because Overdue is derived from <code>due_date &lt; CURDATE()</code> (D-21). The list is therefore shown a week into the period, when the first batch (approved 1 ก.ย., due 5 ก.ย.) has aged into <span class="badge overdue">เกินกำหนด</span>, a second small batch (approved 7 ก.ย., due 10 ก.ย.) is still <span class="badge unpaid">รอชำระ</span>, three late-read rooms are fresh <span class="badge draft">ฉบับร่าง</span>, and room 205 — approved 1 ก.ย., paid 3 ก.ย. — is <span class="badge paid">ชำระแล้ว</span>. All four badges are real states of the same period, not a display sampler.</li>
+    <li><b>Generation has no confirmation dialog.</b> The brief asked for one, but D-39 fixes the confirmation list at exactly six call sites and generation is not among them. Generation is idempotent, never touches an approved bill and only ever writes or rewrites Drafts (D-18), so it runs on click and reports the D-18 summary as an inline <code>.notice</code>. Adding a seventh dialog would contradict a binding decision; the destructive act in this period is approval, and that one is guarded.</li>
+    <li><b>Checkboxes exist only on Draft rows.</b> D-19 enables the bulk button when at least one selected bill is Draft; rather than letting an Admin select 43 paid bills and silently skip them, non-Draft rows render a disabled checkbox with a Thai title. The selected count and the button count are therefore always the number of bills that will actually change.</li>
+    <li><b>The revert-to-Draft dialog is specified in the copy table, not drawn.</b> It is the shared D-39 dialog with a required reason field, identical in shape to the void-payment dialog; a fourth Bill Detail frame would add no information the copy table does not carry.</li>
+    <li><b>Every mockup is Admin. The Staff view of both routes is the Thai 403 page (D-40)</b>, specified in each states table rather than drawn twice.</li>
+  </ul>
+</div>
+
+<style>
+/* Layout specifics for the Monthly Billing and Bill Detail mockups only.
+   Every selector is scoped under .screen; the product design system in
+   tokens.css supplies all colour, type and component styling. */
+.screen{position:relative}
+.screen .anchor{position:relative}
+.screen .bd-cols{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:var(--ui-sp-4);align-items:start}
+.screen .bd-rows > div{display:flex;justify-content:space-between;gap:var(--ui-sp-3);padding:var(--ui-sp-2) 0;border-bottom:1px solid var(--ui-border);font-size:var(--ui-fs-sm)}
+.screen .bd-rows > div:last-child{border-bottom:0}
+.screen .bd-rows dt,.screen .bd-rows .k{color:var(--ui-text-2)}
+.screen .bd-rows .v{font-weight:var(--ui-fw-med);text-align:right}
+.screen .bd-sum{display:flex;flex-wrap:wrap;gap:var(--ui-sp-2) var(--ui-sp-4);font-size:var(--ui-fs-sm);color:var(--ui-text-2);margin-bottom:var(--ui-sp-3);font-variant-numeric:tabular-nums}
+.screen .bd-sum b{color:var(--ui-text);font-weight:var(--ui-fw-semi)}
+.screen .bd-dim{filter:saturate(.35);opacity:.55}
+</style>
+
+<h3>1. Monthly Billing — <code>/bills?period=2026-09</code></h3>
+
+<div class="screen-meta">
+  <span><b>Role:</b> Admin only (D-36)</span>
+  <span><b>Entry points:</b> sidebar บิลประจำเดือน · Dashboard tile ยอดค้างชำระ · the Meter Reading run summary · D-23's unread-rooms banner</span>
+  <span><b>Primary action:</b> อนุมัติและส่งบิล (N ห้อง)</span>
+  <span><b>Secondary:</b> สร้าง/อัปเดตบิลฉบับร่าง</span>
+  <span><b>State shown:</b> period 2026-09 as of 8 ก.ย. 2026 14:05 น.</span>
+</div>
+
+<div class="device desktop">
+  <div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/bills?period=2026-09</span></div>
+  <div class="screen">
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand"><b>ศุภาลัย เรสซิเดนซ์</b><span>Juristic Platform</span></div>
+        <span class="nav-item">ภาพรวม</span>
+        <span class="nav-item">ห้องพัก</span>
+        <span class="nav-item">ผู้เช่า</span>
+        <span class="nav-item">จดมิเตอร์ <span class="count">64/67</span></span>
+        <span class="nav-item active">บิลประจำเดือน <span class="count">3</span></span>
+        <span class="nav-item">รับชำระเงิน</span>
+        <span class="nav-item">ประกาศ</span>
+        <span class="nav-item">รายงาน</span>
+        <span class="nav-item">ตั้งค่า</span>
+        <span class="nav-item">ผู้ใช้งานระบบ</span>
+        <div class="user">สมหญิง รักษ์ทรัพย์ · นิติบุคคล</div>
+      </aside>
+
+      <div class="main">
+        <div class="topbar">
+          <span class="title">บิลประจำเดือน</span>
+          <span class="month-picker anchor"><span class="arrow">‹</span> กันยายน 2026 <span class="arrow">›</span>
+            <span class="ann" style="top:-4px;left:-11px">1</span>
+          </span>
+          <span class="actions">
+            <span class="anchor"><button class="btn">สร้าง/อัปเดตบิลฉบับร่าง</button>
+              <span class="ann" style="top:-4px;left:-11px">2</span>
+            </span>
+            <span class="anchor"><button class="btn primary">อนุมัติและส่งบิล (3 ห้อง)</button>
+              <span class="ann" style="top:-4px;right:-11px">3</span>
+            </span>
+          </span>
+        </div>
+
+        <div class="page">
+          <div class="notice ok anchor" style="margin-bottom:var(--ui-sp-3)">
+            <b>สร้าง/อัปเดตบิลฉบับร่างเสร็จแล้ว</b>
+            สร้างบิลใหม่ 3 ใบ · อัปเดต 0 ใบ · ข้าม (อนุมัติแล้ว) 61 ใบ · ยังไม่ได้จด 3 ห้อง
+            <span class="ann" style="top:-11px;left:-11px">4</span>
+          </div>
+
+          <div class="notice warn anchor">
+            <b>ยังไม่ได้จดมิเตอร์ 3 ห้อง: 108, 312, 405 — ยังไม่ได้สร้างบิล</b>
+            อนุมัติบิลที่มีอยู่ได้ตามปกติ เมื่อจดมิเตอร์ครบแล้วให้กด สร้าง/อัปเดตบิลฉบับร่าง อีกครั้ง
+            <span class="ann" style="top:-11px;left:-11px">5</span>
+          </div>
+
+          <div class="bd-sum anchor">
+            <span>บิลครบทุกห้อง <b>64/67</b></span>
+            <span>อนุมัติแล้ว <b>61</b></span>
+            <span>ชำระแล้ว <b>43</b></span>
+            <span class="ui-muted">อัปเดต 8 ก.ย. 2026 14:05 น.</span>
+            <span class="ann" style="top:-13px;left:-11px">6</span>
+          </div>
+
+          <div class="kpi-grid anchor">
+            <div class="kpi"><div class="label">ยอดเรียกเก็บรอบนี้ (อนุมัติแล้ว)</div><div class="value">111,240.00</div><div class="sub">61 ใบ · ไม่รวมฉบับร่าง</div></div>
+            <div class="kpi paid"><div class="label">ชำระแล้ว</div><div class="value">78,930.00</div><div class="sub">43 ใบ</div></div>
+            <div class="kpi overdue"><div class="label">ค้างชำระ</div><div class="value">32,310.00</div><div class="sub">18 ใบ · เกินกำหนด 14 ใบ</div></div>
+            <div class="kpi neutral"><div class="label">ฉบับร่าง (ยังไม่นับเป็นยอดเรียกเก็บ)</div><div class="value">5,886.00</div><div class="sub">3 ใบ</div></div>
+            <span class="ann" style="top:-11px;right:-11px">7</span>
+          </div>
+
+          <div class="toolbar">
+            <span class="chip-row anchor" style="margin-bottom:0">
+              <span class="chip active">ทั้งหมด <span class="count">64</span></span>
+              <span class="chip">ฉบับร่าง <span class="count">3</span></span>
+              <span class="chip">รอชำระ <span class="count">4</span></span>
+              <span class="chip">ชำระแล้ว <span class="count">43</span></span>
+              <span class="chip">เกินกำหนด <span class="count">14</span></span>
+              <span class="ann" style="top:-11px;left:-11px">8</span>
+            </span>
+            <span class="search anchor" style="min-width:220px;margin-left:auto">
+              <span class="ui-muted">🔍</span><input placeholder="ค้นหาห้องหรือชื่อผู้เช่า">
+              <span class="ann" style="top:-11px;right:-11px">9</span>
+            </span>
+          </div>
+
+          <div class="table-scroll">
+            <table class="zebra compact sticky">
+              <thead>
+                <tr>
+                  <th class="anchor" style="width:34px"><input type="checkbox" aria-label="เลือกทั้งหน้า">
+                    <span class="ann" style="top:-9px;left:-9px">10</span>
+                  </th>
+                  <th>ห้อง</th>
+                  <th>ผู้เช่า</th>
+                  <th class="num">ค่าน้ำ</th>
+                  <th class="num">ค่าไฟ</th>
+                  <th class="num">ค่าส่วนกลาง</th>
+                  <th class="num">รวม</th>
+                  <th class="anchor">สถานะ<span class="ann" style="top:-9px;left:34px">11</span></th>
+                  <th class="anchor">การส่ง LINE<span class="ann" style="top:-9px;left:64px">12</span></th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><input type="checkbox" disabled title="อนุมัติแล้ว เลือกไม่ได้"></td>
+                  <td><b>201</b></td><td>นายอนุชา พงษ์ไพบูลย์</td>
+                  <td class="num">216.00</td><td class="num">672.00</td><td class="num">1,050.00</td><td class="num">1,938.00</td>
+                  <td><span class="badge paid" data-status="Paid">ชำระแล้ว</span></td>
+                  <td><span class="badge ok">ส่งแล้ว</span></td>
+                  <td><span class="btn ghost sm">ดูบิล</span></td>
+                </tr>
+                <tr>
+                  <td><input type="checkbox" disabled title="อนุมัติแล้ว เลือกไม่ได้"></td>
+                  <td><b>202</b></td><td>น.ส. ปาริชาต แก้วมณี</td>
+                  <td class="num">108.00</td><td class="num">360.00</td><td class="num">1,050.00</td><td class="num">1,518.00</td>
+                  <td><span class="badge overdue" data-status="Overdue">เกินกำหนด</span></td>
+                  <td><span class="badge ok">ส่งแล้ว</span></td>
+                  <td><span class="btn ghost sm">ดูบิล</span></td>
+                </tr>
+                <tr>
+                  <td><input type="checkbox" disabled title="อนุมัติแล้ว เลือกไม่ได้"></td>
+                  <td><b>203</b></td><td>นายธีรภัทร สุขเจริญ</td>
+                  <td class="num">162.00</td><td class="num">416.00</td><td class="num">1,050.00</td><td class="num">1,628.00</td>
+                  <td><span class="badge paid" data-status="Paid">ชำระแล้ว</span></td>
+                  <td><span class="badge ok">ส่งแล้ว</span></td>
+                  <td><span class="btn ghost sm">ดูบิล</span></td>
+                </tr>
+                <tr>
+                  <td><input type="checkbox" disabled title="อนุมัติแล้ว เลือกไม่ได้"></td>
+                  <td><b>204</b></td><td>น.ส. วิลาวัณย์ ทองอินทร์</td>
+                  <td class="num">270.00</td><td class="num">768.00</td><td class="num">1,050.00</td><td class="num">2,088.00</td>
+                  <td><span class="badge overdue" data-status="Overdue">เกินกำหนด</span></td>
+                  <td class="anchor"><span class="badge bad" title="LINE API 500 · 1 ก.ย. 2026 14:32 น. · ลองแล้ว 3 ครั้ง">ส่งไม่สำเร็จ</span>
+                    <span class="ann" style="top:-9px;right:-9px">13</span>
+                  </td>
+                  <td><span class="btn ghost sm">ดูบิล</span></td>
+                </tr>
+                <tr class="is-selected">
+                  <td><input type="checkbox" disabled title="อนุมัติแล้ว เลือกไม่ได้"></td>
+                  <td class="anchor"><b>205</b><span class="ann" style="top:-9px;left:-13px">14</span></td>
+                  <td>นายสมชาย ใจดี</td>
+                  <td class="num">180.00</td><td class="num">560.00</td><td class="num">1,050.00</td><td class="num"><b>1,790.00</b></td>
+                  <td><span class="badge paid" data-status="Paid">ชำระแล้ว</span></td>
+                  <td><span class="badge ok">ส่งแล้ว</span></td>
+                  <td><span class="btn ghost sm">ดูบิล</span></td>
+                </tr>
+                <tr>
+                  <td><input type="checkbox" disabled title="อนุมัติแล้ว เลือกไม่ได้"></td>
+                  <td><b>206</b></td><td>น.ส. กมลชนก ศรีบุญเรือง</td>
+                  <td class="num">198.00</td><td class="num">624.00</td><td class="num">1,050.00</td><td class="num">1,872.00</td>
+                  <td><span class="badge paid" data-status="Paid">ชำระแล้ว</span></td>
+                  <td><span class="badge ok">ส่งแล้ว</span></td>
+                  <td><span class="btn ghost sm">ดูบิล</span></td>
+                </tr>
+                <tr>
+                  <td><input type="checkbox" disabled title="อนุมัติแล้ว เลือกไม่ได้"></td>
+                  <td><b>207</b></td><td>นายภาณุพงศ์ เรืองฤทธิ์</td>
+                  <td class="num">126.00</td><td class="num">304.00</td><td class="num">1,050.00</td><td class="num">1,480.00</td>
+                  <td><span class="badge overdue" data-status="Overdue">เกินกำหนด</span></td>
+                  <td><span class="badge neutral">ยังไม่ได้ส่ง — ไม่มี LINE</span></td>
+                  <td><span class="btn ghost sm">ดูบิล</span></td>
+                </tr>
+                <tr>
+                  <td><input type="checkbox" disabled title="อนุมัติแล้ว เลือกไม่ได้"></td>
+                  <td><b>208</b></td><td>น.ส. ณัฐริกา บุญมาก</td>
+                  <td class="num">234.00</td><td class="num">528.00</td><td class="num">1,050.00</td><td class="num">1,812.00</td>
+                  <td><span class="badge unpaid" data-status="Unpaid">รอชำระ</span></td>
+                  <td><span class="badge ok">ส่งแล้ว</span></td>
+                  <td><span class="btn ghost sm">ดูบิล</span></td>
+                </tr>
+                <tr class="is-selected">
+                  <td><input type="checkbox" checked></td>
+                  <td><b>209</b></td><td>นายกิตติพงษ์ อินทรสุข</td>
+                  <td class="num">144.00</td><td class="num">488.00</td><td class="num">1,050.00</td><td class="num">1,682.00</td>
+                  <td><span class="badge draft" data-status="Draft">ฉบับร่าง</span></td>
+                  <td class="ui-muted">—</td>
+                  <td><span class="btn ghost sm">ดูบิล</span></td>
+                </tr>
+                <tr>
+                  <td><input type="checkbox" disabled title="อนุมัติแล้ว เลือกไม่ได้"></td>
+                  <td><b>210</b></td><td>น.ส. ชนิดาภา พูลสวัสดิ์</td>
+                  <td class="num">90.00</td><td class="num">432.00</td><td class="num">1,050.00</td><td class="num">1,572.00</td>
+                  <td><span class="badge unpaid" data-status="Unpaid">รอชำระ</span></td>
+                  <td><span class="badge ok">ส่งแล้ว</span></td>
+                  <td><span class="btn ghost sm">ดูบิล</span></td>
+                </tr>
+                <tr class="is-selected">
+                  <td><input type="checkbox" checked></td>
+                  <td><b>211</b></td><td>นายวรพล จันทร์เพ็ญ</td>
+                  <td class="num">252.00</td><td class="num">704.00</td><td class="num">1,050.00</td><td class="num">2,006.00</td>
+                  <td><span class="badge draft" data-status="Draft">ฉบับร่าง</span></td>
+                  <td class="anchor ui-muted">— <span class="badge neutral">ไม่มี LINE</span>
+                    <span class="ann" style="top:-9px;right:-9px">15</span>
+                  </td>
+                  <td><span class="btn ghost sm">ดูบิล</span></td>
+                </tr>
+                <tr class="is-selected">
+                  <td><input type="checkbox" checked></td>
+                  <td><b>214</b></td><td>น.ส. อรพรรณ สุวรรณโชติ</td>
+                  <td class="num">324.00</td><td class="num">824.00</td><td class="num">1,050.00</td><td class="num">2,198.00</td>
+                  <td><span class="badge draft" data-status="Draft">ฉบับร่าง</span></td>
+                  <td class="ui-muted">—</td>
+                  <td><span class="btn ghost sm">ดูบิล</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="pagination anchor">
+            <span class="page-link">‹</span>
+            <span class="page-link">1</span>
+            <span class="page-link active">2</span>
+            <span class="page-link">3</span>
+            <span class="page-link">4</span>
+            <span class="page-link">5</span>
+            <span class="page-link">6</span>
+            <span class="page-link">›</span>
+            <span class="page-info">แสดง 13–24 จาก 64 บิล · เลือกไว้ 3</span>
+            <span class="ann" style="top:-11px;right:-11px">16</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<ol class="annotations">
+  <li><span class="ann">1</span><b>Month picker (<code>.month-picker</code>)</b> — the period is the whole page's query, <code>?period=2026-09</code>, rendered "กันยายน 2026" and defaulting to the current calendar month in Asia/Bangkok (D-11). The arrows step one month and reload the page server-side; there is no period lock and no "closed" state, so any month can be opened at any time. Choosing a month with no bills lands on the empty state.</li>
+  <li><span class="ann">2</span><b>สร้าง/อัปเดตบิลฉบับร่าง</b> — runs generation for the selected period (<code>POST /api/bills/generate</code>, D-18). It creates a Draft for every billable room that has both readings and no bill, recalculates existing Drafts in place, and never touches an approved bill. It runs on click with no dialog (see the decision callout) and answers with annotation 4's summary notice. While it runs the button takes <code>.is-loading</code> and is disabled; a second click can therefore not start a second run, and the unique key <code>(room_id, period)</code> makes a race harmless anyway.</li>
+  <li><span class="ann">3</span><b>อนุมัติและส่งบิล (3 ห้อง)</b> — the page's one primary action and the only irreversible one. Its count mirrors the checked Draft rows live; with nothing selected it renders <code>[disabled]</code> with the hint "เลือกบิลฉบับร่างอย่างน้อย 1 ใบ". Clicking opens the D-39 bulk dialog (frame 1b). Admin only — the button is not merely hidden from Staff, the whole route is (D-36).</li>
+  <li><span class="ann">4</span><b>Generation result notice (<code>.notice.ok</code>)</b> — the verbatim D-18 summary "สร้างบิลใหม่ {a} ใบ · อัปเดต {b} ใบ · ข้าม (อนุมัติแล้ว) {c} ใบ · ยังไม่ได้จด {d} ห้อง". It is a flash rendered after the POST-Redirect-GET, so it survives the reload and disappears on the next navigation. A run that changes nothing still reports honestly ("สร้างบิลใหม่ 0 ใบ"), which is the visible proof that re-running is safe.</li>
+  <li><span class="ann">5</span><b>Unread-rooms banner (<code>.notice.warn</code>, D-23)</b> — persistent, not dismissible, and present for as long as any billable room in this period lacks a bill. Each room code is a link to Meter Reading for that room and period. It never blocks approval: the office approves the bills that exist and re-runs generation when the missing rooms are read. It disappears exactly when the count reaches 0, which is the tester's assertion for "ทุกห้องที่มีผู้เช่าได้รับบิล".</li>
+  <li><span class="ann">6</span><b>Completeness line (D-11)</b> — derived, never stored: "บิลครบทุกห้อง 64/67 · อนุมัติแล้ว 61 · ชำระแล้ว 43", where 67 is the count of billable rooms (Occupied with exactly one Active tenant, D-07) on the generation date. It replaces the period open/close state machine the system deliberately does not have.</li>
+  <li><span class="ann">7</span><b>KPI tiles (<code>.kpi-grid</code>, D-41)</b> — the three money tiles aggregate over the stored status column, <code>status IN ('Unpaid','Paid')</code>, so a Draft is not yet "billed" and an aged Unpaid bill is still counted in ยอดเรียกเก็บ; that is a deliberate aggregation, not a violation of the display rule in D-21. The fourth tile shows the Draft total separately, and is labelled so nobody adds it to the first tile by eye.</li>
+  <li><span class="ann">8</span><b>Status filter chips (<code>.chip-row</code>)</b> — client-side filters over the loaded page plus a server query string; counts are for the whole period, not the visible page. Every count is computed through the shared display-status helper (D-21), so a bill whose due date passed at midnight moves from รอชำระ to เกินกำหนด with no job and no drift. ทั้งหมด is the default and is the only chip that can be active together with a search term.</li>
+  <li><span class="ann">9</span><b>Search (<code>.search</code>)</b> — filters by room code or tenant name inside the selected period; it never crosses periods. Typing narrows the table on keyup with a 200 ms debounce; the selection is preserved while filtering, and the primary button's count keeps counting hidden-but-selected rows, so a filter can never silently shrink a batch.</li>
+  <li><span class="ann">10</span><b>Select-all-in-view</b> — selects only the selectable (Draft) rows of the current page, never all 64 bills of the period, so the count on the primary button is always exactly what will change. With some but not all Draft rows checked it renders indeterminate. Paging away clears the selection; the batch is one page, which is also what keeps the approve transaction small (D-19).</li>
+  <li><span class="ann">11</span><b>Status column</b> — one <code>.badge</code> per bill carrying <code>data-status="Draft|Unpaid|Paid|Overdue"</code> (D-02) so tests assert the English identifier while the human reads Thai. Only three of the four exist in the database; เกินกำหนด is derived at render time from <code>status='Unpaid' AND due_date &lt; CURDATE()</code> (D-21). Nothing on this page can edit a status directly.</li>
+  <li><span class="ann">12</span><b>LINE delivery column (D-30)</b> — per-bill delivery state, independent of money state: <span class="badge ok">ส่งแล้ว</span>, <span class="badge neutral">ยังไม่ได้ส่ง — ไม่มี LINE</span>, <span class="badge bad">ส่งไม่สำเร็จ</span>, and "—" for a Draft that has not been sent at all. A LINE outage can never change what this column's row is worth in baht: approval commits first, delivery happens after and outside the transaction.</li>
+  <li><span class="ann">13</span><b>Failed delivery</b> — <code>title</code> carries the reason, the timestamp and <code>attempt_count</code> ("LINE API 500 · 1 ก.ย. 2026 14:32 น. · ลองแล้ว 3 ครั้ง"). Automatic retries stop at three attempts; the Admin's manual ส่งแจ้งเตือนอีกครั้ง on Bill Detail is never capped. The word "blocked" appears nowhere: LINE reports a blocked recipient as a success, and that gap is a listed limitation (D-05 #9).</li>
+  <li><span class="ann">14</span><b>Room 205, the demo row</b> — the room code and ดูบิล both open <code>/bills/1842</code>. The whole row is a link target; <code>tr.is-selected</code> here marks the row the Admin arrived from, not a checkbox selection. Common area is 1,050.00 on every row because all 80 seeded rooms are 30.00 ตร.ม. (D-44).</li>
+  <li><span class="ann">15</span><b>A Draft whose tenant has no LINE binding</b> — flagged before approval, not after, so the office knows it will be handing this room a paper ใบแจ้งค่าใช้จ่าย. Approving it still works; the notification row is written with <code>status='skipped_no_line'</code> and appears in the result summary's ยังไม่ได้ส่ง count (frame 1c). 13 of the 67 seeded tenants deliberately have no binding (D-44).</li>
+  <li><span class="ann">16</span><b>Pagination and selection count</b> — 12 rows per page over up to 67 bills; the page info repeats the live selection count so the primary button's number is verifiable without scrolling back up. Sorting is by room code ascending and is not user-configurable in v1.</li>
+</ol>
+
+<h4>1b. Alternate state — bulk approval confirmation (D-39 dialog 2)</h4>
+
+<div class="device desktop">
+  <div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/bills?period=2026-09</span></div>
+  <div class="screen">
+    <div class="app">
+      <aside class="sidebar bd-dim">
+        <div class="brand"><b>ศุภาลัย เรสซิเดนซ์</b><span>Juristic Platform</span></div>
+        <span class="nav-item">ภาพรวม</span>
+        <span class="nav-item">ห้องพัก</span>
+        <span class="nav-item">ผู้เช่า</span>
+        <span class="nav-item">จดมิเตอร์ <span class="count">64/67</span></span>
+        <span class="nav-item active">บิลประจำเดือน <span class="count">3</span></span>
+        <span class="nav-item">รับชำระเงิน</span>
+        <span class="nav-item">ประกาศ</span>
+        <span class="nav-item">รายงาน</span>
+        <span class="nav-item">ตั้งค่า</span>
+        <span class="nav-item">ผู้ใช้งานระบบ</span>
+        <div class="user">สมหญิง รักษ์ทรัพย์ · นิติบุคคล</div>
+      </aside>
+
+      <div class="main bd-dim">
+        <div class="topbar">
+          <span class="title">บิลประจำเดือน</span>
+          <span class="month-picker"><span class="arrow">‹</span> กันยายน 2026 <span class="arrow">›</span></span>
+          <span class="actions">
+            <button class="btn">สร้าง/อัปเดตบิลฉบับร่าง</button>
+            <button class="btn primary">อนุมัติและส่งบิล (3 ห้อง)</button>
+          </span>
+        </div>
+        <div class="page">
+          <div class="chip-row">
+            <span class="chip">ทั้งหมด <span class="count">64</span></span>
+            <span class="chip active">ฉบับร่าง <span class="count">3</span></span>
+            <span class="chip">รอชำระ <span class="count">4</span></span>
+            <span class="chip">ชำระแล้ว <span class="count">43</span></span>
+            <span class="chip">เกินกำหนด <span class="count">14</span></span>
+          </div>
+          <div class="table-scroll">
+            <table class="compact">
+              <thead>
+                <tr><th style="width:34px"><input type="checkbox" checked></th><th>ห้อง</th><th>ผู้เช่า</th><th class="num">ค่าน้ำ</th><th class="num">ค่าไฟ</th><th class="num">ค่าส่วนกลาง</th><th class="num">รวม</th><th>สถานะ</th><th>การส่ง LINE</th></tr>
+              </thead>
+              <tbody>
+                <tr class="is-selected"><td><input type="checkbox" checked></td><td><b>209</b></td><td>นายกิตติพงษ์ อินทรสุข</td><td class="num">144.00</td><td class="num">488.00</td><td class="num">1,050.00</td><td class="num">1,682.00</td><td><span class="badge draft" data-status="Draft">ฉบับร่าง</span></td><td class="ui-muted">—</td></tr>
+                <tr class="is-selected"><td><input type="checkbox" checked></td><td><b>211</b></td><td>นายวรพล จันทร์เพ็ญ</td><td class="num">252.00</td><td class="num">704.00</td><td class="num">1,050.00</td><td class="num">2,006.00</td><td><span class="badge draft" data-status="Draft">ฉบับร่าง</span></td><td class="ui-muted">— <span class="badge neutral">ไม่มี LINE</span></td></tr>
+                <tr class="is-selected"><td><input type="checkbox" checked></td><td><b>214</b></td><td>น.ส. อรพรรณ สุวรรณโชติ</td><td class="num">324.00</td><td class="num">824.00</td><td class="num">1,050.00</td><td class="num">2,198.00</td><td><span class="badge draft" data-status="Draft">ฉบับร่าง</span></td><td class="ui-muted">—</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal">
+      <div class="dialog anchor">
+        <div class="dialog-title">อนุมัติและส่งบิล 3 ห้อง<span class="ann" style="top:-11px;left:-11px">17</span></div>
+        <div class="dialog-body">
+          <p><b>อนุมัติและส่งบิล 3 ห้อง ผ่าน LINE — ยกเลิกไม่ได้</b></p>
+          <div class="bd-rows anchor" style="margin-bottom:var(--ui-sp-3)">
+            <div><span class="k">ห้อง</span><span class="v">209, 211, 214</span></div>
+            <div><span class="k">รอบบิล</span><span class="v">กันยายน 2026</span></div>
+            <div><span class="k">ยอดรวมทั้งชุด</span><span class="v">5,886.00 บาท</span></div>
+            <div><span class="k">กำหนดชำระที่จะถูกล็อก</span><span class="v">11 ก.ย. 2026</span></div>
+            <div><span class="k">ส่ง LINE ได้</span><span class="v">2 ห้อง</span></div>
+            <div><span class="k">ไม่มี LINE (ต้องพิมพ์ใบแจ้งหนี้)</span><span class="v">1 ห้อง · 211</span></div>
+            <span class="ann" style="top:-11px;right:-11px">18</span>
+          </div>
+          <p class="ui-sub">หลังอนุมัติแล้ว เลขมิเตอร์ อัตรา และยอดเงินของบิลชุดนี้จะถูกล็อก แก้ไขได้เฉพาะการตีกลับเป็นฉบับร่างพร้อมระบุเหตุผล</p>
+        </div>
+        <div class="dialog-actions anchor">
+          <button class="btn">ยกเลิก</button>
+          <button class="btn primary">อนุมัติและส่ง</button>
+          <span class="ann" style="top:-11px;right:-11px">19</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<ol class="annotations" start="17">
+  <li><span class="ann">17</span><b>The shared confirmation dialog (<code>.modal</code> + <code>.dialog</code>)</b> — one component, six call sites, never the browser's native <code>confirm()</code> (D-39). The title carries the count, the body opens with the verbatim D-39 sentence "อนุมัติและส่งบิล {N} ห้อง ผ่าน LINE — ยกเลิกไม่ได้", and the primary button repeats the verb instead of saying ตกลง. Esc and the backdrop both cancel; cancelling changes nothing and leaves the selection intact.</li>
+  <li><span class="ann">18</span><b>What will actually happen, stated before it happens</b> — the rooms, the batch total, the due date that will be frozen, and the split between recipients who will get a LINE message and those who will not. The due date is the D-20 rule made visible: <code>MAX(day-of-month 5, approval 8 ก.ย. + 3 days) = 11 ก.ย. 2026</code>, so a late approval can never produce an unpayable window, and every bill in one batch shares one due date. The ไม่มี LINE line is the office's cue to print an ใบแจ้งค่าใช้จ่าย for room 211.</li>
+  <li><span class="ann">19</span><b>อนุมัติและส่ง</b> — POSTs to <code>/api/bills/approve</code>. The transaction flips all three bills Draft→Unpaid, freezes each one (readings, units, rates, area, tenant name, amounts, due date), writes one audit row and one queued notification row per bill, and returns in under five seconds (D-45 target 4). Delivery is a second round trip, so a LINE outage cannot roll back an approval. The button takes <code>.is-loading</code> on click and the dialog cannot be submitted twice; a duplicate request finds no Draft rows left and approves nothing.</li>
+</ol>
+
+<h4>1c. Alternate state — approval result and the LINE send loop (D-19)</h4>
+
+<div class="device desktop">
+  <div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/bills?period=2026-09&amp;batch=418</span></div>
+  <div class="screen">
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand"><b>ศุภาลัย เรสซิเดนซ์</b><span>Juristic Platform</span></div>
+        <span class="nav-item">ภาพรวม</span>
+        <span class="nav-item">ห้องพัก</span>
+        <span class="nav-item">ผู้เช่า</span>
+        <span class="nav-item">จดมิเตอร์ <span class="count">64/67</span></span>
+        <span class="nav-item active">บิลประจำเดือน</span>
+        <span class="nav-item">รับชำระเงิน</span>
+        <span class="nav-item">ประกาศ</span>
+        <span class="nav-item">รายงาน</span>
+        <span class="nav-item">ตั้งค่า</span>
+        <span class="nav-item">ผู้ใช้งานระบบ</span>
+        <div class="user">สมหญิง รักษ์ทรัพย์ · นิติบุคคล</div>
+      </aside>
+
+      <div class="main">
+        <div class="topbar">
+          <span class="title">ผลการอนุมัติและส่งบิล</span>
+          <span class="actions"><button class="btn">กลับไปที่รายการบิล</button></span>
+        </div>
+        <div class="page">
+          <div class="notice ok anchor">
+            <b>อนุมัติ 3 ใบ · ส่ง LINE สำเร็จ 2 · ยังไม่ได้ส่ง (ไม่มี LINE) 1 · ส่งไม่สำเร็จ 0</b>
+            บิลทั้ง 3 ใบเปลี่ยนเป็น รอชำระ แล้ว กำหนดชำระ 11 ก.ย. 2026
+            <span class="ann" style="top:-11px;left:-11px">20</span>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><span class="card-title">การส่งข้อความ LINE</span><span class="badge ok">เสร็จสิ้น</span></div>
+            <div class="anchor">
+              <div class="progress-label"><span>ส่งข้อความแล้ว 3 จาก 3 รายการ</span><span>100%</span></div>
+              <div class="progress ok"><div class="bar" style="width:100%"></div></div>
+              <span class="ann" style="top:-11px;right:-11px">21</span>
+            </div>
+            <p class="ui-sub" style="margin-top:var(--ui-sp-3)">ระบบส่งครั้งละไม่เกิน 20 รายการต่อรอบ หากปิดหน้านี้ระหว่างส่ง รายการที่เหลือจะถูกส่งโดยงานประจำวันเวลา 09:00 น. โดยอัตโนมัติ</p>
+          </div>
+
+          <div class="card anchor">
+            <div class="card-head"><span class="card-title">ห้องที่ยังไม่ได้รับข้อความ (1 ห้อง)</span></div>
+            <div class="list-item">
+              <span class="lead">211</span>
+              <span class="meta">นายวรพล จันทร์เพ็ญ · ยังไม่ได้ผูก LINE</span>
+              <span class="end">
+                <span class="badge neutral">ยังไม่ได้ส่ง — ไม่มี LINE</span>
+                <span class="btn sm">พิมพ์ใบแจ้งหนี้</span>
+                <span class="btn ghost sm">ดูบิล</span>
+              </span>
+            </div>
+            <p class="ui-sub">ผูก LINE ให้ผู้เช่าได้ที่หน้า ผู้เช่า แล้วกด ส่งแจ้งเตือนอีกครั้ง ที่หน้ารายละเอียดบิล</p>
+            <span class="ann" style="top:-11px;left:-11px">22</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<ol class="annotations" start="20">
+  <li><span class="ann">20</span><b>Result summary</b> — the verbatim D-19 string "อนุมัติ {N} ใบ · ส่ง LINE สำเร็จ {x} · ยังไม่ได้ส่ง (ไม่มี LINE) {y} · ส่งไม่สำเร็จ {z}". It is a page, not a toast, because it must survive scrolling, printing and being read out to a colleague; there is no undo anywhere in this flow (D-39), so the summary is the record of what happened.</li>
+  <li><span class="ann">21</span><b>The drain loop</b> — the page calls <code>POST /api/notifications/drain</code> repeatedly, each call pushing at most 20 queued messages and returning running counts, so no request runs longer than about twenty seconds and a dropped connection loses nothing: the queued rows survive and the 09:00 daily job would finish them anyway (D-19, D-32). While running, the bar is <code>.progress</code> in brand colour with the label "กำลังส่ง {x}/{N}"; on completion it becomes <code>.progress.ok</code>. A 67-bill batch commits in ≤ 5 s and is fully delivered within ≤ 3 minutes (D-45).</li>
+  <li><span class="ann">22</span><b>Unsent and failed rooms, listed and actionable</b> — every room the tenant will not hear from is named, with the paper fallback one click away (D-28, D-30). A ส่งไม่สำเร็จ row would appear in the same list with the error and a ส่งแจ้งเตือนอีกครั้ง button instead. Approval is never blocked by delivery: these bills are already รอชำระ and already count in the period's ยอดเรียกเก็บ.</li>
+</ol>
+
+<h4>1d. Monthly Billing — states</h4>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>State</th><th>What renders</th><th>Exact Thai copy</th><th>Behaviour and resulting state</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><b>Empty</b> (period selected, no bills)</td>
+      <td><code>.empty-state</code> replacing the table; KPI tiles render 0.00; chips render 0; the unread-rooms banner still shows if rooms are unread</td>
+      <td>"ยังไม่มีบิลในรอบนี้" + primary button "สร้างบิลฉบับร่าง"</td>
+      <td>The button runs the same generation call as สร้าง/อัปเดตบิลฉบับร่าง. If no room in the period has both readings, generation answers "สร้างบิลใหม่ 0 ใบ · อัปเดต 0 ใบ · ข้าม (อนุมัติแล้ว) 0 ใบ · ยังไม่ได้จด 67 ห้อง" and the empty state stays.</td>
+    </tr>
+    <tr>
+      <td><b>Loading</b></td>
+      <td>Eight <code>.skeleton.row</code> bars in place of the table body; KPI values render as short <code>.skeleton</code> bars; chips and toolbar stay interactive</td>
+      <td>—</td>
+      <td>Server-rendered page, so this is only visible on a slow first paint and while a chip filter re-queries. Any list page must paint in ≤ 2 s against the full 800-bill seed (D-45 target 2).</td>
+    </tr>
+    <tr>
+      <td><b>Error</b> (generation or approval failed)</td>
+      <td><code>.notice.bad</code> above the toolbar, table untouched, selection preserved</td>
+      <td>"บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง" + button "ลองอีกครั้ง"; for a partial LINE failure "ส่งไม่สำเร็จ {z} ห้อง — บิลอนุมัติแล้วและยอดเงินถูกต้อง สามารถกด ส่งแจ้งเตือนอีกครั้ง ได้ที่หน้ารายละเอียดบิล"</td>
+      <td>Never a redirect and never a lost selection (D-40). Money state and messaging state are independent: a failed send leaves the bills Unpaid and correct, and only the notification rows carry <code>status='failed'</code>.</td>
+    </tr>
+    <tr>
+      <td><b>Success</b></td>
+      <td>Generation: <code>.notice.ok</code> flash (annotation 4). Approval: the result page 1c</td>
+      <td>"สร้างบิลใหม่ {a} ใบ · อัปเดต {b} ใบ · ข้าม (อนุมัติแล้ว) {c} ใบ · ยังไม่ได้จด {d} ห้อง" · "อนุมัติ {N} ใบ · ส่ง LINE สำเร็จ {x} · ยังไม่ได้ส่ง (ไม่มี LINE) {y} · ส่งไม่สำเร็จ {z}"</td>
+      <td>No toast and no undo for approval (D-39): an undo window would force outbound LINE messages into a queue. Toasts are reserved for low-stakes confirmations elsewhere in the product.</td>
+    </tr>
+    <tr>
+      <td><b>Permission denied</b> (Staff opens <code>/bills</code>)</td>
+      <td>Full-page Thai 403, no chrome from this page, nothing of the bill list in the response body</td>
+      <td>"ไม่มีสิทธิ์เข้าถึงหน้านี้ · บัญชีของคุณเป็นเจ้าหน้าที่ กรุณาติดต่อนิติบุคคล" + button "ไปที่จดมิเตอร์"</td>
+      <td>Never a silent redirect, so the permission matrix is testable row by row (D-40). The API answers 403 with the standard JSON error envelope, and no amount appears anywhere in a Staff response body (D-36).</td>
+    </tr>
+    <tr>
+      <td><b>Nothing selectable</b> (all bills approved)</td>
+      <td>Primary button <code>[disabled]</code>; select-all checkbox disabled</td>
+      <td>Button "อนุมัติและส่งบิล" with hint "เลือกบิลฉบับร่างอย่างน้อย 1 ใบ"</td>
+      <td>Not an error state: a fully approved period is the normal end state. The completeness line reads "อนุมัติแล้ว 64" and the ฉบับร่าง chip reads 0.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h4>1e. Monthly Billing — exact Thai copy</h4>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Element</th><th>Thai copy</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>Page title / sidebar item</td><td>บิลประจำเดือน</td><td>D-02 mapping for Monthly Billing</td></tr>
+    <tr><td>Month picker</td><td>กันยายน 2026</td><td>Period key 2026-09 rendered as full Thai month + Gregorian year (D-03)</td></tr>
+    <tr><td>Secondary button</td><td>สร้าง/อัปเดตบิลฉบับร่าง</td><td>D-18; no dialog, inline result</td></tr>
+    <tr><td>Primary button</td><td>อนุมัติและส่งบิล (3 ห้อง)</td><td>Count is live; without a selection the label drops the count and the button is disabled</td></tr>
+    <tr><td>Primary button hint (disabled)</td><td>เลือกบิลฉบับร่างอย่างน้อย 1 ใบ</td><td>Validation, shown as <code>title</code> and as <code>.ui-sub</code> under the toolbar</td></tr>
+    <tr><td>Confirmation dialog title</td><td>อนุมัติและส่งบิล 3 ห้อง</td><td>D-39 dialog 2</td></tr>
+    <tr><td>Confirmation dialog body</td><td>อนุมัติและส่งบิล 3 ห้อง ผ่าน LINE — ยกเลิกไม่ได้</td><td>Verbatim D-39</td></tr>
+    <tr><td>Dialog detail rows</td><td>ห้อง · รอบบิล · ยอดรวมทั้งชุด · กำหนดชำระที่จะถูกล็อก · ส่ง LINE ได้ · ไม่มี LINE (ต้องพิมพ์ใบแจ้งหนี้)</td><td>Due date computed by the D-20 rule at the moment the dialog opens</td></tr>
+    <tr><td>Dialog footnote</td><td>หลังอนุมัติแล้ว เลขมิเตอร์ อัตรา และยอดเงินของบิลชุดนี้จะถูกล็อก แก้ไขได้เฉพาะการตีกลับเป็นฉบับร่างพร้อมระบุเหตุผล</td><td>States the D-22 freeze in the tenant-office's own words</td></tr>
+    <tr><td>Dialog buttons</td><td>ยกเลิก · อนุมัติและส่ง</td><td>Primary repeats the verb, never ตกลง (D-39)</td></tr>
+    <tr><td>Generation result</td><td>สร้างบิลใหม่ 3 ใบ · อัปเดต 0 ใบ · ข้าม (อนุมัติแล้ว) 61 ใบ · ยังไม่ได้จด 3 ห้อง</td><td>Verbatim D-18 template</td></tr>
+    <tr><td>Approval result</td><td>อนุมัติ 3 ใบ · ส่ง LINE สำเร็จ 2 · ยังไม่ได้ส่ง (ไม่มี LINE) 1 · ส่งไม่สำเร็จ 0</td><td>Verbatim D-19 template</td></tr>
+    <tr><td>Unread-rooms banner</td><td>ยังไม่ได้จดมิเตอร์ 3 ห้อง: 108, 312, 405 — ยังไม่ได้สร้างบิล</td><td>Verbatim D-23; room codes link to จดมิเตอร์</td></tr>
+    <tr><td>Completeness line</td><td>บิลครบทุกห้อง 64/67 · อนุมัติแล้ว 61 · ชำระแล้ว 43</td><td>Verbatim D-11</td></tr>
+    <tr><td>Column headers</td><td>ห้อง · ผู้เช่า · ค่าน้ำ · ค่าไฟ · ค่าส่วนกลาง · รวม · สถานะ · การส่ง LINE</td><td>PRD §19.6 plus tenant and delivery columns</td></tr>
+    <tr><td>Status badges</td><td>ฉบับร่าง · รอชำระ · ชำระแล้ว · เกินกำหนด</td><td>D-02; every badge carries <code>data-status="Draft|Unpaid|Paid|Overdue"</code></td></tr>
+    <tr><td>Delivery badges</td><td>ส่งแล้ว · ยังไม่ได้ส่ง — ไม่มี LINE · ส่งไม่สำเร็จ</td><td>Verbatim D-30; Draft rows render "—"</td></tr>
+    <tr><td>Disabled checkbox title</td><td>อนุมัติแล้ว เลือกไม่ได้</td><td>Only Draft rows are selectable</td></tr>
+    <tr><td>Filter chips</td><td>ทั้งหมด · ฉบับร่าง · รอชำระ · ชำระแล้ว · เกินกำหนด</td><td>Counts are period-wide</td></tr>
+    <tr><td>Search placeholder</td><td>ค้นหาห้องหรือชื่อผู้เช่า</td><td>Scoped to the selected period</td></tr>
+    <tr><td>Pagination info</td><td>แสดง 13–24 จาก 64 บิล · เลือกไว้ 3</td><td>—</td></tr>
+    <tr><td>Empty state</td><td>ยังไม่มีบิลในรอบนี้ + สร้างบิลฉบับร่าง</td><td>Verbatim D-40</td></tr>
+    <tr><td>Failed save</td><td>บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง + ลองอีกครั้ง</td><td>Inline, values preserved (D-40)</td></tr>
+    <tr><td>403</td><td>ไม่มีสิทธิ์เข้าถึงหน้านี้ · บัญชีของคุณเป็นเจ้าหน้าที่ กรุณาติดต่อนิติบุคคล</td><td>Verbatim D-40</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>2. Bill Detail — <code>/bills/:id</code> (room 205, bill 1842)</h3>
+
+<div class="screen-meta">
+  <span><b>Role:</b> Admin only (D-36)</span>
+  <span><b>Entry points:</b> any row on Monthly Billing · the result page 1c · Payment · Reports arrears list · the room's bill history</span>
+  <span><b>Primary action:</b> อนุมัติและส่งบิล (Draft) → ยกเลิกการชำระเงิน / ตีกลับเป็นฉบับร่าง (after approval)</span>
+  <span><b>State shown:</b> Draft, 1 ก.ย. 2026 09:40 น., before the single approval gate</span>
+</div>
+
+<div class="device desktop">
+  <div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/bills/1842</span></div>
+  <div class="screen">
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand"><b>ศุภาลัย เรสซิเดนซ์</b><span>Juristic Platform</span></div>
+        <span class="nav-item">ภาพรวม</span>
+        <span class="nav-item">ห้องพัก</span>
+        <span class="nav-item">ผู้เช่า</span>
+        <span class="nav-item">จดมิเตอร์ <span class="count">64/67</span></span>
+        <span class="nav-item active">บิลประจำเดือน</span>
+        <span class="nav-item">รับชำระเงิน</span>
+        <span class="nav-item">ประกาศ</span>
+        <span class="nav-item">รายงาน</span>
+        <span class="nav-item">ตั้งค่า</span>
+        <span class="nav-item">ผู้ใช้งานระบบ</span>
+        <div class="user">สมหญิง รักษ์ทรัพย์ · นิติบุคคล</div>
+      </aside>
+
+      <div class="main">
+        <div class="topbar">
+          <span class="btn ghost sm">‹ บิลประจำเดือน</span>
+          <span class="title">รายละเอียดบิล · ห้อง 205</span>
+          <span class="badge draft" data-status="Draft">ฉบับร่าง</span>
+          <span class="actions">
+            <span class="anchor"><button class="btn" disabled title="พิมพ์ได้เมื่ออนุมัติบิลแล้ว">พิมพ์ใบแจ้งหนี้</button>
+              <span class="ann" style="top:-4px;left:-11px">23</span>
+            </span>
+            <span class="anchor"><button class="btn primary">อนุมัติและส่งบิล</button>
+              <span class="ann" style="top:-4px;right:-11px">24</span>
+            </span>
+          </span>
+        </div>
+
+        <div class="page">
+          <div class="stepper anchor">
+            <span class="step current" data-step="1">ฉบับร่าง</span>
+            <span class="step" data-step="2">อนุมัติและส่ง</span>
+            <span class="step" data-step="3">รอชำระ</span>
+            <span class="step" data-step="4">ชำระแล้ว</span>
+            <span class="ann" style="top:-11px;left:-11px">25</span>
+          </div>
+
+          <div class="notice anchor">
+            <b>บิลฉบับร่าง — ยังไม่ได้ส่งให้ผู้เช่า</b>
+            แก้ไขเลขมิเตอร์ได้ที่หน้า จดมิเตอร์ ระบบจะคำนวณบิลใบนี้ใหม่ทันทีเมื่อบันทึก
+            <span class="ann" style="top:-11px;left:-11px">26</span>
+          </div>
+
+          <div class="bd-cols">
+            <div>
+              <div class="card">
+                <div class="card-head"><span class="card-title">รายละเอียดการคำนวณ</span><span class="ui-sub">รอบบิล กันยายน 2026</span></div>
+                <div class="table-scroll anchor">
+                  <table class="compact">
+                    <thead>
+                      <tr>
+                        <th>รายการ</th>
+                        <th class="num">เลขครั้งก่อน</th>
+                        <th class="num">เลขครั้งนี้</th>
+                        <th class="num">จำนวน</th>
+                        <th class="num">อัตรา</th>
+                        <th class="num">จำนวนเงิน</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td><span class="badge water">💧 ค่าน้ำ</span></td>
+                        <td class="num">1,250</td>
+                        <td class="num">1,260</td>
+                        <td class="num">10 หน่วย</td>
+                        <td class="num">18.00</td>
+                        <td class="num">180.00</td>
+                      </tr>
+                      <tr>
+                        <td><span class="badge elec">⚡ ค่าไฟ</span></td>
+                        <td class="num">5,280</td>
+                        <td class="num">5,350</td>
+                        <td class="num">70 หน่วย</td>
+                        <td class="num">8.00</td>
+                        <td class="num">560.00</td>
+                      </tr>
+                      <tr>
+                        <td><span class="badge fee">🏢 ค่าส่วนกลาง</span></td>
+                        <td class="num ui-muted">—</td>
+                        <td class="num ui-muted">—</td>
+                        <td class="num">30.00 ตร.ม.</td>
+                        <td class="num">35.00</td>
+                        <td class="num">1,050.00</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <span class="ann" style="top:-11px;left:-11px">27</span>
+                </div>
+                <div class="amount-total anchor"><span>ยอดรวม</span><span>1,790.00 บาท</span>
+                  <span class="ann" style="top:-2px;right:-11px">28</span>
+                </div>
+                <p class="ui-sub" style="margin-top:var(--ui-sp-2)">เลขครั้งก่อนมาจากรอบ สิงหาคม 2026 · จดมิเตอร์เมื่อ 1 ก.ย. 2026 08:41 น. โดย ประสิทธิ์ (เจ้าหน้าที่) · ทุกยอดคำนวณจากอัตราที่บันทึกไว้บนบิลใบนี้ ไม่ใช่อัตราปัจจุบัน</p>
+              </div>
+
+              <div class="card">
+                <div class="card-head"><span class="card-title">ข้อมูลบิล</span><span class="ui-sub">เลขที่บิล 1842</span></div>
+                <div class="bd-rows anchor">
+                  <div><span class="k">รอบบิล</span><span class="v">กันยายน 2026</span></div>
+                  <div><span class="k">ห้อง</span><span class="v">205 · ชั้น 2 · 30.00 ตร.ม.</span></div>
+                  <div><span class="k">สถานะ</span><span class="v"><span class="badge draft" data-status="Draft">ฉบับร่าง</span></span></div>
+                  <div><span class="k">กำหนดชำระ</span><span class="v">5 ก.ย. 2026 <span class="ui-sub">(ยืนยันเมื่ออนุมัติ)</span></span></div>
+                  <div><span class="k">อัตราที่ใช้</span><span class="v">น้ำ 18.00 · ไฟ 8.00 · ส่วนกลาง 35.00 <span class="ui-sub">(มีผลตั้งแต่ 1 ต.ค. 2025)</span></span></div>
+                  <div><span class="k">สร้างบิลเมื่อ</span><span class="v">1 ก.ย. 2026 09:12 น. · ระบบ</span></div>
+                  <span class="ann" style="top:-11px;right:-11px">29</span>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div class="card">
+                <div class="card-head"><span class="card-title">ผู้เช่า</span><span class="badge occupied">มีผู้เช่า</span></div>
+                <div class="bd-rows anchor">
+                  <div><span class="k">ชื่อ</span><span class="v">นายสมชาย ใจดี</span></div>
+                  <div><span class="k">โทร</span><span class="v">081-234-5678</span></div>
+                  <div><span class="k">เข้าอยู่</span><span class="v">1 มี.ค. 2025</span></div>
+                  <div><span class="k">LINE</span><span class="v"><span class="badge ok">ผูกแล้ว</span></span></div>
+                  <div><span class="k">ชื่อ LINE</span><span class="v">Somchai · ผูกเมื่อ 12 มี.ค. 2025</span></div>
+                  <div><span class="k">การส่งบิลใบนี้</span><span class="v"><span class="badge neutral">ยังไม่ส่ง</span></span></div>
+                  <span class="ann" style="top:-11px;left:-11px">30</span>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="card-head"><span class="card-title">ข้อความที่จะส่ง</span><span class="badge warn">โหมดทดสอบ LINE: เปิด</span></div>
+                <div class="line-chat anchor" style="width:100%">
+                  <div class="line-header"><span class="avatar">ศ</span> ศุภาลัย เรสซิเดนซ์</div>
+                  <div class="line-body">
+                    <div class="bubble oa">🔔 ค่าใช้จ่ายประจำเดือน กันยายน 2026
+ห้อง 205
+
+💧 ค่าน้ำ 10 หน่วย × 18 บาท = 180 บาท
+⚡ ค่าไฟ 70 หน่วย × 8 บาท = 560 บาท
+🏢 ค่าส่วนกลาง 30 ตร.ม. × 35 บาท = 1,050 บาท
+
+💰 ยอดรวม 1,790 บาท
+📅 กรุณาชำระภายในวันที่ 5 กันยายน 2026
+
+ชำระเงินสดที่สำนักงานนิติบุคคล เวลา 08:30–17:00 น.<span class="time">ตัวอย่าง</span></div>
+                  </div>
+                  <span class="ann" style="top:-11px;right:-11px">31</span>
+                </div>
+                <p class="ui-sub" style="margin-top:var(--ui-sp-2)">ข้อความจริงจะถูกส่งเมื่อกด อนุมัติและส่งบิล · ขณะนี้โหมดทดสอบเปิดอยู่ ข้อความจะไปที่บัญชีทดสอบของทีม</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<ol class="annotations" start="23">
+  <li><span class="ann">23</span><b>พิมพ์ใบแจ้งหนี้</b> — disabled while the bill is Draft, because an unapproved amount must never leave the office on paper; the <code>title</code> says "พิมพ์ได้เมื่ออนุมัติบิลแล้ว". Once approved it opens the A5 ใบแจ้งค่าใช้จ่าย route — the receipt layout minus the receipt number, payment date and signature line — and is the hand-over path for a tenant with no LINE binding (D-28, D-30).</li>
+  <li><span class="ann">24</span><b>อนุมัติและส่งบิล</b> — the single approval gate for this bill (D-19). Visible only while the bill is Draft, Admin only, and it opens the D-39 dialog in frame 2b rather than acting on the click. There is no separate "approve the readings" step: reviewing the readings and approving the bill are the same act.</li>
+  <li><span class="ann">25</span><b>Status stepper</b> — ฉบับร่าง → อนุมัติและส่ง → รอชำระ → ชำระแล้ว, the PRD §20 flow made literal. A bill that ages past its due date shows step 3 as เกินกำหนด in <code>--ui-overdue</code>; nothing in the stepper is clickable, it is a read-out of state, and the only backwards move in the product is Admin's ตีกลับเป็นฉบับร่าง.</li>
+  <li><span class="ann">26</span><b>Draft banner</b> — states where editing actually happens. Readings are edited on Meter Reading, not here: this screen never contains an editable amount, in Draft or otherwise. Saving a corrected reading recalculates this Draft in place immediately (D-12, D-18), so the Admin can leave, fix a digit, come back and see the new total without pressing anything on this page.</li>
+  <li><span class="ann">27</span><b>The calculation, in the PRD §10 order</b> — previous reading, current reading, units, rate, amount, for all three items. All three bill items always exist, even at 0 units and 0.00 บาท, so the shape of this table never changes and the receipt always prints three lines (D-18, D-41). The common-area row has no meter, so its reading cells render "—" and its quantity is the room area. Each amount is <code>ROUND(quantity × unit_price, 2)</code> half-up, stored rounded (D-16).</li>
+  <li><span class="ann">28</span><b>ยอดรวม 1,790.00 บาท</b> — the sum of the three already-rounded items, never a second rounding, so the printed receipt always equals the sum of its printed lines (D-16). Two decimals here and in tables; LINE messages and sentence text write "1,790 บาท" and drop the trailing .00 (D-03).</li>
+  <li><span class="ann">29</span><b>Bill metadata, including the rate snapshot</b> — the rates shown are the ones copied onto this bill's items at generation, resolved against the first day of the period month, not against the moment the button was pressed (D-17). A later rate change in Settings can never move this figure. "กำหนดชำระ 5 ก.ย. 2026 (ยืนยันเมื่ออนุมัติ)" is the verbatim D-20 Draft label: the date is provisional until approval recomputes and freezes it.</li>
+  <li><span class="ann">30</span><b>Tenant and LINE binding</b> — a snapshot of the tenant name is frozen onto the bill at approval, so a later tenancy change never rewrites an issued bill or receipt (D-22). "การส่งบิลใบนี้" is the per-bill delivery state (D-30) and reads ยังไม่ส่ง while Draft. If this card showed <span class="badge neutral">ไม่มี LINE</span> instead, approval would still be allowed and the office would print the paper bill.</li>
+  <li><span class="ann">31</span><b>Thai LINE preview (<code>.bubble.oa</code>)</b> — the exact BILL template of D-31 rendered with this bill's own values; plain text only, no Flex Message, no image, no rich menu in v1. The office reads the message before it is irreversible. The <span class="badge warn">โหมดทดสอบ LINE: เปิด</span> badge reflects the Settings switch that defaults to ON in every environment (D-34) and is turned off only for the rehearsed demo — without it on screen, a student would demo a send that quietly went to a test account. Where the previous reading came from a gap, the preview and the sent message both carry the extra line "หมายเหตุ: ยอดนี้ครอบคลุมการใช้ตั้งแต่รอบ {previous_period_th}" (D-14).</li>
+</ol>
+
+<h4>2b. Alternate state — Approve &amp; Send confirmation with the Thai message preview (D-39 dialog 1)</h4>
+
+<div class="device desktop">
+  <div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/bills/1842</span></div>
+  <div class="screen">
+    <div class="app">
+      <aside class="sidebar bd-dim">
+        <div class="brand"><b>ศุภาลัย เรสซิเดนซ์</b><span>Juristic Platform</span></div>
+        <span class="nav-item">ภาพรวม</span>
+        <span class="nav-item">ห้องพัก</span>
+        <span class="nav-item">ผู้เช่า</span>
+        <span class="nav-item">จดมิเตอร์</span>
+        <span class="nav-item active">บิลประจำเดือน</span>
+        <span class="nav-item">รับชำระเงิน</span>
+        <span class="nav-item">ประกาศ</span>
+        <span class="nav-item">รายงาน</span>
+        <span class="nav-item">ตั้งค่า</span>
+        <span class="nav-item">ผู้ใช้งานระบบ</span>
+        <div class="user">สมหญิง รักษ์ทรัพย์ · นิติบุคคล</div>
+      </aside>
+      <div class="main bd-dim">
+        <div class="topbar">
+          <span class="btn ghost sm">‹ บิลประจำเดือน</span>
+          <span class="title">รายละเอียดบิล · ห้อง 205</span>
+          <span class="badge draft" data-status="Draft">ฉบับร่าง</span>
+          <span class="actions">
+            <button class="btn" disabled>พิมพ์ใบแจ้งหนี้</button>
+            <button class="btn primary is-loading">อนุมัติและส่งบิล</button>
+          </span>
+        </div>
+        <div class="page">
+          <div class="card">
+            <div class="card-head"><span class="card-title">รายละเอียดการคำนวณ</span><span class="ui-sub">รอบบิล กันยายน 2026</span></div>
+            <div class="amount-rows">
+              <span>💧</span><span>ค่าน้ำ</span><span class="amt">180.00</span>
+              <span class="calc">1,250 → 1,260 · 10 หน่วย × 18.00</span>
+              <span>⚡</span><span>ค่าไฟ</span><span class="amt">560.00</span>
+              <span class="calc">5,280 → 5,350 · 70 หน่วย × 8.00</span>
+              <span>🏢</span><span>ค่าส่วนกลาง</span><span class="amt">1,050.00</span>
+              <span class="calc">30.00 ตร.ม. × 35.00</span>
+            </div>
+            <div class="amount-total"><span>ยอดรวม</span><span>1,790.00 บาท</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal">
+      <div class="dialog">
+        <div class="dialog-title anchor">อนุมัติและส่งบิล ห้อง 205<span class="ann" style="top:-11px;left:-11px">32</span></div>
+        <div class="dialog-body">
+          <p><b>อนุมัติและส่งบิลห้อง 205 ผ่าน LINE — ยกเลิกไม่ได้</b></p>
+          <div class="bd-rows anchor" style="margin-bottom:var(--ui-sp-3)">
+            <div><span class="k">ผู้รับ</span><span class="v">นายสมชาย ใจดี · LINE: Somchai</span></div>
+            <div><span class="k">ยอดรวม</span><span class="v">1,790.00 บาท</span></div>
+            <div><span class="k">กำหนดชำระที่จะถูกล็อก</span><span class="v">5 ก.ย. 2026</span></div>
+            <span class="ann" style="top:-11px;right:-11px">33</span>
+          </div>
+          <div class="ui-sub" style="margin-bottom:var(--ui-sp-1)">ข้อความที่จะส่ง</div>
+          <div class="line-chat anchor" style="width:100%">
+            <div class="line-header"><span class="avatar">ศ</span> ศุภาลัย เรสซิเดนซ์</div>
+            <div class="line-body">
+              <div class="bubble oa">🔔 ค่าใช้จ่ายประจำเดือน กันยายน 2026
+ห้อง 205
+
+💧 ค่าน้ำ 10 หน่วย × 18 บาท = 180 บาท
+⚡ ค่าไฟ 70 หน่วย × 8 บาท = 560 บาท
+🏢 ค่าส่วนกลาง 30 ตร.ม. × 35 บาท = 1,050 บาท
+
+💰 ยอดรวม 1,790 บาท
+📅 กรุณาชำระภายในวันที่ 5 กันยายน 2026
+
+ชำระเงินสดที่สำนักงานนิติบุคคล เวลา 08:30–17:00 น.</div>
+            </div>
+            <span class="ann" style="top:-11px;right:-11px">34</span>
+          </div>
+        </div>
+        <div class="dialog-actions anchor">
+          <button class="btn">ยกเลิก</button>
+          <button class="btn primary">อนุมัติและส่ง</button>
+          <span class="ann" style="top:-11px;right:-11px">35</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<ol class="annotations" start="32">
+  <li><span class="ann">32</span><b>Dialog title and the D-39 sentence</b> — the same shared component as the bulk dialog, with the room code in both the title and the verbatim body sentence "อนุมัติและส่งบิลห้อง 205 ผ่าน LINE — ยกเลิกไม่ได้". Behind it the page is dimmed and the trigger button holds <code>.is-loading</code>, so a second Enter press cannot reach it. Esc, the ยกเลิก button and the backdrop all cancel and change nothing.</li>
+  <li><span class="ann">33</span><b>Recipient, amount, and the due date about to be frozen</b> — three facts, because those are the three that cannot be taken back. The due date is recomputed once here by D-20's rule, <code>MAX(5 ก.ย., 1 ก.ย. + 3 days) = 5 ก.ย. 2026</code>, which is exactly the PRD §28 figure; on a live demo run the same expression correctly yields approval + 3 days, which is behaviour, not a defect (D-44).</li>
+  <li><span class="ann">34</span><b>The message preview inside the dialog</b> — the office confirms what the tenant will read, not an abstraction of it. This is the same rendered D-31 BILL template as the page behind, repeated at the point of no return; if the tenant had no LINE binding, this block would be replaced by "ผู้เช่ารายนี้ยังไม่ได้ผูก LINE — ระบบจะไม่ส่งข้อความ กรุณาพิมพ์ใบแจ้งหนี้ให้ผู้เช่า" and the approval would still be allowed (D-30).</li>
+  <li><span class="ann">35</span><b>อนุมัติและส่ง</b> — commits Draft→Unpaid, freezes readings, units, rates, area, tenant name, amounts and due date, writes the audit row and queues one notification row, then pushes the LINE message outside the transaction (D-19, D-22, D-30). Target: the tenant has the message within 30 seconds (D-45 target 3). On success the page reloads into state 2c; on a delivery failure the bill is still approved and the LINE card shows <span class="badge bad">ส่งไม่สำเร็จ</span> with ส่งแจ้งเตือนอีกครั้ง.</li>
+</ol>
+
+<h4>2c. Alternate state — approved, delivered, paid and locked (viewed 8 ก.ย. 2026)</h4>
+
+<div class="device desktop">
+  <div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/bills/1842</span></div>
+  <div class="screen">
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand"><b>ศุภาลัย เรสซิเดนซ์</b><span>Juristic Platform</span></div>
+        <span class="nav-item">ภาพรวม</span>
+        <span class="nav-item">ห้องพัก</span>
+        <span class="nav-item">ผู้เช่า</span>
+        <span class="nav-item">จดมิเตอร์ <span class="count">64/67</span></span>
+        <span class="nav-item active">บิลประจำเดือน</span>
+        <span class="nav-item">รับชำระเงิน</span>
+        <span class="nav-item">ประกาศ</span>
+        <span class="nav-item">รายงาน</span>
+        <span class="nav-item">ตั้งค่า</span>
+        <span class="nav-item">ผู้ใช้งานระบบ</span>
+        <div class="user">สมหญิง รักษ์ทรัพย์ · นิติบุคคล</div>
+      </aside>
+
+      <div class="main">
+        <div class="topbar">
+          <span class="btn ghost sm">‹ บิลประจำเดือน</span>
+          <span class="title">รายละเอียดบิล · ห้อง 205</span>
+          <span class="badge paid" data-status="Paid">ชำระแล้ว</span>
+          <span class="actions">
+            <button class="btn">พิมพ์ใบแจ้งหนี้</button>
+            <span class="anchor"><button class="btn secondary">ดูใบเสร็จ</button>
+              <span class="ann" style="top:-4px;right:-11px">36</span>
+            </span>
+          </span>
+        </div>
+
+        <div class="page">
+          <div class="stepper">
+            <span class="step done" data-step="1">ฉบับร่าง</span>
+            <span class="step done" data-step="2">อนุมัติและส่ง</span>
+            <span class="step done" data-step="3">รอชำระ</span>
+            <span class="step current" data-step="4">ชำระแล้ว</span>
+          </div>
+
+          <div class="notice ok anchor">
+            <b>อนุมัติแล้ว 1 ก.ย. 2026 14:32 น. · ส่ง LINE สำเร็จ 1 ก.ย. 2026 14:32 น.</b>
+            เลขมิเตอร์ อัตรา ขนาดห้อง ชื่อผู้เช่า ยอดเงิน และกำหนดชำระของบิลใบนี้ถูกล็อกแล้ว แก้ไขไม่ได้
+            <span class="ann" style="top:-11px;left:-11px">37</span>
+          </div>
+
+          <div class="bd-cols">
+            <div>
+              <div class="card">
+                <div class="card-head"><span class="card-title">รายละเอียดการคำนวณ</span><span class="badge neutral">🔒 ล็อกแล้ว</span></div>
+                <div class="amount-rows anchor">
+                  <span>💧</span><span>ค่าน้ำ</span><span class="amt">180.00</span>
+                  <span class="calc">1,250 → 1,260 · 10 หน่วย × 18.00</span>
+                  <span>⚡</span><span>ค่าไฟ</span><span class="amt">560.00</span>
+                  <span class="calc">5,280 → 5,350 · 70 หน่วย × 8.00</span>
+                  <span>🏢</span><span>ค่าส่วนกลาง</span><span class="amt">1,050.00</span>
+                  <span class="calc">30.00 ตร.ม. × 35.00</span>
+                  <span class="ann" style="top:-11px;left:-11px">38</span>
+                </div>
+                <div class="amount-total"><span>ยอดรวม</span><span>1,790.00 บาท</span></div>
+                <div class="bd-rows" style="margin-top:var(--ui-sp-3)">
+                  <div><span class="k">รอบบิล</span><span class="v">กันยายน 2026</span></div>
+                  <div><span class="k">กำหนดชำระ</span><span class="v">5 ก.ย. 2026</span></div>
+                  <div><span class="k">ผู้เช่า (บันทึกไว้บนบิล)</span><span class="v">นายสมชาย ใจดี</span></div>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="card-head"><span class="card-title">ประวัติการชำระเงิน</span><span class="ui-sub">1 รายการ</span></div>
+                <div class="table-scroll anchor">
+                  <table class="compact">
+                    <thead>
+                      <tr><th>วันที่</th><th class="num">จำนวนเงิน</th><th>วิธี</th><th>ผู้รับเงิน</th><th>ใบเสร็จ</th><th>สถานะ</th></tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>3 ก.ย. 2026 15:12 น.</td>
+                        <td class="num">1,790.00</td>
+                        <td>เงินสด</td>
+                        <td>สมหญิง รักษ์ทรัพย์</td>
+                        <td>REC-202609-000852</td>
+                        <td><span class="badge ok">สมบูรณ์</span></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <span class="ann" style="top:-11px;left:-11px">39</span>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="card-head"><span class="card-title">ประวัติการทำรายการ</span><span class="ui-sub">เห็นเฉพาะนิติบุคคล</span></div>
+                <ul class="timeline anchor">
+                  <li class="timeline-item"><span class="ann" style="top:-11px;left:-11px">40</span><span class="when">1 ก.ย. 2026 08:41 น.</span> · บันทึกเลขมิเตอร์ น้ำ 1,260 · ไฟ 5,350 โดย ประสิทธิ์ (เจ้าหน้าที่)</li>
+                  <li class="timeline-item"><span class="when">1 ก.ย. 2026 09:12 น.</span> · สร้างบิลฉบับร่าง ยอด 1,790.00 บาท โดย ระบบ</li>
+                  <li class="timeline-item is-key"><span class="when">1 ก.ย. 2026 14:32 น.</span> · อนุมัติและส่งบิล · ฉบับร่าง → รอชำระ · กำหนดชำระ 5 ก.ย. 2026 โดย สมหญิง รักษ์ทรัพย์</li>
+                  <li class="timeline-item"><span class="when">1 ก.ย. 2026 14:32 น.</span> · ส่ง LINE (BILL) สำเร็จ ถึง Somchai</li>
+                  <li class="timeline-item is-key"><span class="when">3 ก.ย. 2026 15:12 น.</span> · รับชำระเงินสด 1,790.00 บาท · รอชำระ → ชำระแล้ว โดย สมหญิง รักษ์ทรัพย์</li>
+                  <li class="timeline-item"><span class="when">3 ก.ย. 2026 15:12 น.</span> · ออกใบเสร็จ REC-202609-000852 · ส่ง LINE (PAID) สำเร็จ</li>
+                </ul>
+              </div>
+            </div>
+
+            <div>
+              <div class="card">
+                <div class="card-head"><span class="card-title">ผู้เช่าและการส่ง LINE</span><span class="badge ok">ส่งแล้ว</span></div>
+                <div class="bd-rows">
+                  <div><span class="k">ชื่อ</span><span class="v">นายสมชาย ใจดี</span></div>
+                  <div><span class="k">LINE</span><span class="v">Somchai · ผูกแล้ว</span></div>
+                  <div><span class="k">ส่งบิลเมื่อ</span><span class="v">1 ก.ย. 2026 14:32 น.</span></div>
+                  <div><span class="k">ส่งยืนยันการชำระเงิน</span><span class="v">3 ก.ย. 2026 15:12 น.</span></div>
+                  <div><span class="k">แจ้งเตือนอัตโนมัติ</span><span class="v"><span class="badge neutral">หยุดแล้ว (ชำระครบ)</span></span></div>
+                </div>
+                <div class="card-foot anchor">
+                  <button class="btn sm" disabled title="บิลนี้ชำระแล้ว ไม่มีข้อความแจ้งเตือนให้ส่ง">ส่งแจ้งเตือนอีกครั้ง</button>
+                  <span class="ann" style="top:-11px;left:-11px">41</span>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="card-head"><span class="card-title">การแก้ไขบิล</span></div>
+                <p class="ui-sub">บิลที่อนุมัติแล้วแก้ไขโดยตรงไม่ได้ ต้องคืนเงินสดที่เคาน์เตอร์ก่อน แล้วยกเลิกการชำระเงิน จากนั้นจึงตีกลับเป็นฉบับร่างเพื่อแก้ไขและอนุมัติใหม่</p>
+                <div class="anchor" style="display:flex;flex-direction:column;gap:var(--ui-sp-2)">
+                  <button class="btn danger block">ยกเลิกการชำระเงิน</button>
+                  <button class="btn block" disabled title="ยกเลิกการชำระเงินก่อนจึงจะตีกลับเป็นฉบับร่างได้">ตีกลับเป็นฉบับร่าง</button>
+                  <span class="ann" style="top:-11px;right:-11px">42</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<ol class="annotations" start="36">
+  <li><span class="ann">36</span><b>ดูใบเสร็จ</b> — appears only once a payment exists, and opens the A5 receipt route. The receipt renders as the original while <code>print_count = 0</code>; the พิมพ์ใบเสร็จ button there POSTs to increment the counter before <code>window.print()</code>, so every later render carries the สำเนา mark and the button reads พิมพ์สำเนา (D-27). พิมพ์ใบแจ้งหนี้ stays available for any non-Draft bill.</li>
+  <li><span class="ann">37</span><b>Approval and delivery timestamps, and the freeze</b> — one line answers the two questions the office actually asks about an approved bill: was it sent, and can I still change it. Everything the amount depends on is a snapshot from the moment of approval and no endpoint can edit it (D-22). The Thai text names the frozen fields rather than saying "locked", so nobody has to guess what is included.</li>
+  <li><span class="ann">38</span><b>The same calculation, now read-only (<code>.amount-rows</code>)</b> — identical figures to the Draft view, rendered from the bill items' own snapshots of quantity and unit price. A rate change in Settings after this date does not touch it (D-17), which is what makes an old receipt reprintable years later and what makes the monthly report explainable against one figure.</li>
+  <li><span class="ann">39</span><b>Payment history</b> — one live payment per bill (D-24, D-26), full amount only, always cash. A voided payment is never deleted: it stays in this table with <span class="badge bad">ยกเลิกแล้ว</span>, its reason and its original receipt number, and a fresh payment adds a second row with a new number. That is what voiding rather than deleting buys — the sequence is unique and monotonic, but explicitly not gapless (D-05 #10, D-27).</li>
+  <li><span class="ann">40</span><b>Audit timeline (<code>.timeline</code>, D-38)</b> — literally <code>SELECT * FROM audit_log WHERE bill_id = ? ORDER BY created_at</code>, with reading edits made while the bill was Draft carrying the same <code>bill_id</code>. Admin-only, read-only, no cross-entity join, no global audit browser in v1. The two <code>.is-key</code> dots are the money events: approval and payment. Reverts appear here with their Thai reason.</li>
+  <li><span class="ann">41</span><b>ส่งแจ้งเตือนอีกครั้ง</b> — the Admin's uncapped manual resend (D-33), the tool of last resort on the day an automatic send failed. Disabled here because the bill is paid and there is nothing to chase; on an Unpaid or Overdue bill it is enabled and pushes the current PRE_DUE or OVERDUE template. Automatic reminders are shown as หยุดแล้ว: PRE_DUE at due − 2, OVERDUE at due + 1, + 8, + 15, nothing after day 15, nothing to a Paid bill, and nothing at all for a bill whose most recent payment was voided (D-25, D-33).</li>
+  <li><span class="ann">42</span><b>The correction path (D-22)</b> — a Paid bill is corrected across the counter, not in the database: the cash goes back to the tenant first, then ยกเลิกการชำระเงิน (Admin, required Thai reason of at least 10 characters, dialog D-39 #5 "คืนเงินสด 1,790.00 บาท ให้ผู้เช่าก่อนยืนยันการยกเลิก") voids the payment and the receipt — both kept, the receipt stamped ยกเลิก — and returns the bill to Unpaid. ตีกลับเป็นฉบับร่าง is therefore disabled until then, with the reason in its <code>title</code>. On an Unpaid or Overdue bill it is enabled instead, and is refused server-side when a later bill exists for the same room: "มีบิลรอบถัดไปแล้ว ไม่สามารถแก้ไขย้อนหลังได้ — กรุณาแก้ในรอบล่าสุด" (verbatim D-22), because the next bill's previous reading is a snapshot of the value being edited. After the fix the bill is re-approved and the tenant receives BILL_CORRECTED (D-31). The system never holds a refund, a credit or a balance (D-05 #4).</li>
+</ol>
+
+<h4>2d. Bill Detail — states</h4>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>State</th><th>What renders</th><th>Exact Thai copy</th><th>Behaviour and resulting state</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><b>Empty</b> (bill id does not exist, or the room has no bill in that period)</td>
+      <td>Full-page 404 inside the app chrome; no partial bill is ever rendered</td>
+      <td>"ไม่พบบิลที่ต้องการ" + button "กลับไปที่บิลประจำเดือน"</td>
+      <td>A room with readings but no bill is not an empty Bill Detail — it has no detail route at all; the office reaches it through Monthly Billing's สร้าง/อัปเดตบิลฉบับร่าง instead (D-18, D-23).</td>
+    </tr>
+    <tr>
+      <td><b>Empty sub-state</b> (approved bill, no payment yet)</td>
+      <td>Payment history card keeps its heading and shows the shared empty component; ดูใบเสร็จ is absent, ตีกลับเป็นฉบับร่าง is enabled</td>
+      <td>"ยังไม่มีการชำระเงิน" + button "ไปที่หน้ารับชำระเงิน"</td>
+      <td>This is the normal Unpaid/Overdue state, not an error. The correction path here is the direct one: ตีกลับเป็นฉบับร่าง with a reason, no payment to void first (D-22).</td>
+    </tr>
+    <tr>
+      <td><b>Loading</b></td>
+      <td><code>.skeleton</code> bars inside the calculation and payment cards; the LINE preview card renders last</td>
+      <td>—</td>
+      <td>Server-rendered, so this is a first-paint state only. Actions during a request use <code>.btn.is-loading</code> with the button disabled — never a full-page spinner, never a lost page (D-40).</td>
+    </tr>
+    <tr>
+      <td><b>Error</b> (approve, revert or void failed)</td>
+      <td><code>.notice.bad</code> at the top of the page, the dialog stays open with the typed reason preserved</td>
+      <td>"บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง" + "ลองอีกครั้ง"; revert refused for a stale bill: "มีบิลรอบถัดไปแล้ว ไม่สามารถแก้ไขย้อนหลังได้ — กรุณาแก้ในรอบล่าสุด"</td>
+      <td>Nothing is half-applied: approval, revert, payment and void are each one transaction. A LINE failure is not a save failure — the bill stays approved and only the delivery badge turns <span class="badge bad">ส่งไม่สำเร็จ</span> (D-30).</td>
+    </tr>
+    <tr>
+      <td><b>Success</b></td>
+      <td>Approve → the page reloads into state 2c with the ok notice and the sent timestamp; revert → back to state 2a with a notice naming the reason; void → status returns to รอชำระ / เกินกำหนด and the receipt row shows ยกเลิกแล้ว</td>
+      <td>"อนุมัติและส่งบิลเรียบร้อย · ส่ง LINE สำเร็จ 1 ก.ย. 2026 14:32 น." · "ตีกลับเป็นฉบับร่างแล้ว · เหตุผล: {reason}" · "ยกเลิกการชำระเงินแล้ว · ใบเสร็จ REC-202609-000852 ถูกประทับว่า ยกเลิก"</td>
+      <td>No undo and no toast-with-undo anywhere in this flow (D-39). A voided bill additionally shows <span class="badge neutral">ระงับการแจ้งเตือนอัตโนมัติ</span> so the system never chases a tenant who paid and did nothing wrong (D-25).</td>
+    </tr>
+    <tr>
+      <td><b>Permission denied</b> (Staff opens <code>/bills/1842</code>)</td>
+      <td>Full-page Thai 403; no amount, no rate and no tenant contact detail appears anywhere in the response body</td>
+      <td>"ไม่มีสิทธิ์เข้าถึงหน้านี้ · บัญชีของคุณเป็นเจ้าหน้าที่ กรุณาติดต่อนิติบุคคล" + "ไปที่จดมิเตอร์"</td>
+      <td>Money is absent from Staff responses, not merely hidden in the navigation (D-36). The audit timeline is Admin-only even within this page (D-38).</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h4>2e. Bill Detail — exact Thai copy</h4>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Element</th><th>Thai copy</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>Page title</td><td>รายละเอียดบิล · ห้อง 205</td><td>D-02 mapping for Bill Detail</td></tr>
+    <tr><td>Back link</td><td>‹ บิลประจำเดือน</td><td>Returns to the bill's own period</td></tr>
+    <tr><td>Primary button (Draft)</td><td>อนุมัติและส่งบิล</td><td>D-02 fixed label for Approve &amp; Send</td></tr>
+    <tr><td>Secondary buttons</td><td>พิมพ์ใบแจ้งหนี้ · ดูใบเสร็จ · ส่งแจ้งเตือนอีกครั้ง</td><td>ใบแจ้งหนี้ any non-Draft bill (D-28); ใบเสร็จ only with a payment (D-27)</td></tr>
+    <tr><td>Disabled print title (Draft)</td><td>พิมพ์ได้เมื่ออนุมัติบิลแล้ว</td><td>—</td></tr>
+    <tr><td>Stepper</td><td>ฉบับร่าง → อนุมัติและส่ง → รอชำระ → ชำระแล้ว</td><td>Step 3 renders เกินกำหนด once the due date has passed (D-21)</td></tr>
+    <tr><td>Draft banner</td><td>บิลฉบับร่าง — ยังไม่ได้ส่งให้ผู้เช่า · แก้ไขเลขมิเตอร์ได้ที่หน้า จดมิเตอร์ ระบบจะคำนวณบิลใบนี้ใหม่ทันทีเมื่อบันทึก</td><td>D-12, D-18</td></tr>
+    <tr><td>Locked banner</td><td>อนุมัติแล้ว 1 ก.ย. 2026 14:32 น. · ส่ง LINE สำเร็จ 1 ก.ย. 2026 14:32 น. · เลขมิเตอร์ อัตรา ขนาดห้อง ชื่อผู้เช่า ยอดเงิน และกำหนดชำระของบิลใบนี้ถูกล็อกแล้ว แก้ไขไม่ได้</td><td>D-22 freeze list, spelled out</td></tr>
+    <tr><td>Calculation headers</td><td>รายการ · เลขครั้งก่อน · เลขครั้งนี้ · จำนวน · อัตรา · จำนวนเงิน</td><td>PRD §10 review list</td></tr>
+    <tr><td>Item labels</td><td>💧 ค่าน้ำ · ⚡ ค่าไฟ · 🏢 ค่าส่วนกลาง</td><td>All three always present, even at 0.00 (D-18)</td></tr>
+    <tr><td>Total</td><td>ยอดรวม 1,790.00 บาท</td><td>Two decimals on screen; "1,790 บาท" in LINE and sentence text (D-03)</td></tr>
+    <tr><td>Due date (Draft)</td><td>กำหนดชำระ 5 ก.ย. 2026 (ยืนยันเมื่ออนุมัติ)</td><td>Verbatim D-20</td></tr>
+    <tr><td>Gap note (when the previous reading skipped a month)</td><td>ครอบคลุมการใช้ตั้งแต่รอบ สิงหาคม 2026</td><td>Verbatim D-14; the LINE message gets the matching line</td></tr>
+    <tr><td>Reading provenance</td><td>เลขครั้งก่อนมาจากรอบ สิงหาคม 2026 · จดมิเตอร์เมื่อ 1 ก.ย. 2026 08:41 น. โดย ประสิทธิ์ (เจ้าหน้าที่)</td><td>From the reading row's snapshot fields (D-12)</td></tr>
+    <tr><td>Rate snapshot line</td><td>ทุกยอดคำนวณจากอัตราที่บันทึกไว้บนบิลใบนี้ ไม่ใช่อัตราปัจจุบัน</td><td>D-17</td></tr>
+    <tr><td>Approve dialog title</td><td>อนุมัติและส่งบิล ห้อง 205</td><td>D-39 dialog 1</td></tr>
+    <tr><td>Approve dialog body</td><td>อนุมัติและส่งบิลห้อง 205 ผ่าน LINE — ยกเลิกไม่ได้</td><td>Verbatim D-39</td></tr>
+    <tr><td>Approve dialog rows</td><td>ผู้รับ · ยอดรวม · กำหนดชำระที่จะถูกล็อก · ข้อความที่จะส่ง</td><td>Preview is the rendered D-31 BILL template</td></tr>
+    <tr><td>Approve dialog, tenant without LINE</td><td>ผู้เช่ารายนี้ยังไม่ได้ผูก LINE — ระบบจะไม่ส่งข้อความ กรุณาพิมพ์ใบแจ้งหนี้ให้ผู้เช่า</td><td>Approval still allowed (D-30)</td></tr>
+    <tr><td>Approve dialog buttons</td><td>ยกเลิก · อนุมัติและส่ง</td><td>D-39: the primary repeats the verb</td></tr>
+    <tr><td>Revert dialog title / body</td><td>ตีกลับเป็นฉบับร่าง · ตีกลับบิลห้อง 205 รอบ กันยายน 2026 เป็นฉบับร่าง — เมื่ออนุมัติใหม่ ผู้เช่าจะได้รับข้อความ "แก้ไขบิล (ยกเลิกยอดเดิม)"</td><td>D-22, D-31 template 2</td></tr>
+    <tr><td>Revert reason field</td><td>Label "เหตุผล" + <span class="badge bad">จำเป็น</span> · placeholder "เช่น จดเลขมิเตอร์น้ำผิด 1,206 เป็น 1,260"</td><td>Written to <code>audit_log.reason</code> with before/after JSON (D-38)</td></tr>
+    <tr><td>Revert validation</td><td>กรุณาระบุเหตุผลอย่างน้อย 10 ตัวอักษร</td><td>Primary button stays disabled until it passes; server re-validates</td></tr>
+    <tr><td>Revert refused (later bill exists)</td><td>มีบิลรอบถัดไปแล้ว ไม่สามารถแก้ไขย้อนหลังได้ — กรุณาแก้ในรอบล่าสุด</td><td>Verbatim D-22; also the button's disabled <code>title</code></td></tr>
+    <tr><td>Revert blocked by payment</td><td>ยกเลิกการชำระเงินก่อนจึงจะตีกลับเป็นฉบับร่างได้</td><td>Disabled <code>title</code> on a Paid bill (D-22)</td></tr>
+    <tr><td>Void dialog title / body</td><td>ยกเลิกการชำระเงิน · คืนเงินสด 1,790.00 บาท ให้ผู้เช่าก่อนยืนยันการยกเลิก · ใบเสร็จ REC-202609-000852 จะถูกประทับว่า ยกเลิก และบิลจะกลับเป็น รอชำระ</td><td>First sentence verbatim D-39 dialog 5</td></tr>
+    <tr><td>Void reason + validation</td><td>เหตุผล (จำเป็น) · กรุณาระบุเหตุผลอย่างน้อย 10 ตัวอักษร</td><td>Primary <code>.btn.danger</code> "ยกเลิกการชำระเงิน" enables only when valid (D-25)</td></tr>
+    <tr><td>Correction help text</td><td>บิลที่อนุมัติแล้วแก้ไขโดยตรงไม่ได้ ต้องคืนเงินสดที่เคาน์เตอร์ก่อน แล้วยกเลิกการชำระเงิน จากนั้นจึงตีกลับเป็นฉบับร่างเพื่อแก้ไขและอนุมัติใหม่</td><td>The D-22 chain in one sentence</td></tr>
+    <tr><td>Delivery badges</td><td>ส่งแล้ว · ยังไม่ส่ง · ยังไม่ได้ส่ง — ไม่มี LINE · ส่งไม่สำเร็จ · ระงับการแจ้งเตือนอัตโนมัติ · หยุดแล้ว (ชำระครบ)</td><td>D-25, D-30</td></tr>
+    <tr><td>Resend disabled title</td><td>บิลนี้ชำระแล้ว ไม่มีข้อความแจ้งเตือนให้ส่ง</td><td>Enabled and uncapped on an Unpaid or Overdue bill (D-33)</td></tr>
+    <tr><td>Test-mode badge</td><td>โหมดทดสอบ LINE: เปิด · ข้อความจริงจะถูกส่งเมื่อกด อนุมัติและส่งบิล · ขณะนี้โหมดทดสอบเปิดอยู่ ข้อความจะไปที่บัญชีทดสอบของทีม</td><td>Defaults ON in every environment (D-34)</td></tr>
+    <tr><td>Payment history headers</td><td>วันที่ · จำนวนเงิน · วิธี · ผู้รับเงิน · ใบเสร็จ · สถานะ</td><td>Voided rows keep their receipt number and show ยกเลิกแล้ว (D-25, D-27)</td></tr>
+    <tr><td>Timeline card</td><td>ประวัติการทำรายการ · เห็นเฉพาะนิติบุคคล</td><td>D-38, Admin only</td></tr>
+    <tr><td>404 / 403</td><td>ไม่พบบิลที่ต้องการ · ไม่มีสิทธิ์เข้าถึงหน้านี้ · บัญชีของคุณเป็นเจ้าหน้าที่ กรุณาติดต่อนิติบุคคล</td><td>D-40</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="callout note">
+  <div class="title">Assumptions recorded by these two screens</div>
+  <ul>
+    <li>Fictional tenant names, phone numbers and LINE display names throughout; the demo seed carries the same shape (D-44). Room 205's tenant is นายสมชาย ใจดี in every document of this set.</li>
+    <li>Bill id 1842 and batch id 418 are illustrative identifiers, not seeded values. The only seeded identifiers that must reproduce are room 205, the arithmetic 10/70/180/560/1,050/1,790 and the receipt number REC-202609-000852 (D-44).</li>
+    <li>All rooms are 30.00 ตร.ม., so ค่าส่วนกลาง is 1,050.00 on every row of the list; that is the seed, not a rendering shortcut, and it is why PRD §19's 35 ตร.ม. example row is not reproduced anywhere (D-44).</li>
+    <li>Office hours "08:30–17:00 น." and the apartment name come from Settings and are placeholders in the message template, never literals in code (D-31).</li>
+    <li>Twelve rows per page and a 200 ms search debounce are design choices, not decisions from the log; they may change without contradicting anything binding.</li>
+    <li>The Monthly Billing surface targets desktop Chrome and Edge at 1280 px and above and is not required to be usable below 768 px (D-45); the container query in the design system still degrades it to a single column with the bottom tab bar rather than breaking it.</li>
+  </ul>
+</div>
+</section>

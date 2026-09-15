@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Documentation Home · Juristic Platform</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Thai:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ---------- Document design tokens (NOT the product UI; product UI lives under .screen) ---------- */
+:root{
+  --bg:#f6f7f9; --surface:#ffffff; --surface-2:#f0f2f5; --border:#e2e5ea; --border-strong:#c9ced6;
+  --text:#1b2129; --text-2:#3f4753; --muted:#6b7280; --link:#0b5fd7;
+  --accent:#0b5fd7; --accent-soft:#e7efff;
+  --ok:#137a3a; --ok-soft:#e3f5e9; --warn:#9a5b00; --warn-soft:#fff3dc; --bad:#b42318; --bad-soft:#fdecea; --info:#0b6b8f; --info-soft:#e2f3fa;
+  --water:#0b7fab; --water-soft:#e0f2fa; --elec:#c27400; --elec-soft:#fff1d6; --fee:#6b4fbb; --fee-soft:#ece7fa;
+  --draft:#6b7280; --unpaid:#c27400; --paid:#137a3a; --overdue:#b42318;
+  --radius:10px; --radius-sm:6px;
+  --shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.08);
+  --font:"Inter","Noto Sans Thai",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Sarabun",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --toc-w:260px; --content-w:1080px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1318; --surface:#161b22; --surface-2:#1e252e; --border:#2a323d; --border-strong:#3b4552;
+    --text:#e6e9ee; --text-2:#c3c9d2; --muted:#8b94a1; --link:#6ea3ff;
+    --accent:#6ea3ff; --accent-soft:#17263f;
+    --ok:#4fd07f; --ok-soft:#10301c; --warn:#f2b447; --warn-soft:#332507; --bad:#ff7b6b; --bad-soft:#3a1512; --info:#5cc3ea; --info-soft:#0e2a35;
+    --water:#4fb8e0; --water-soft:#0e2a35; --elec:#f0a93a; --elec-soft:#332507; --fee:#a992ee; --fee-soft:#231c3d;
+    --draft:#8b94a1; --unpaid:#f0a93a; --paid:#4fd07f; --overdue:#ff7b6b;
+    --shadow:0 1px 2px rgba(0,0,0,.4);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f1318; --surface:#161b22; --surface-2:#1e252e; --border:#2a323d; --border-strong:#3b4552;
+  --text:#e6e9ee; --text-2:#c3c9d2; --muted:#8b94a1; --link:#6ea3ff;
+  --accent:#6ea3ff; --accent-soft:#17263f;
+  --ok:#4fd07f; --ok-soft:#10301c; --warn:#f2b447; --warn-soft:#332507; --bad:#ff7b6b; --bad-soft:#3a1512; --info:#5cc3ea; --info-soft:#0e2a35;
+  --water:#4fb8e0; --water-soft:#0e2a35; --elec:#f0a93a; --elec-soft:#332507; --fee:#a992ee; --fee-soft:#231c3d;
+  --draft:#8b94a1; --unpaid:#f0a93a; --paid:#4fd07f; --overdue:#ff7b6b;
+  --shadow:0 1px 2px rgba(0,0,0,.4);
+}
+
+/* ---------- Base ---------- */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+a{color:var(--link);text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{line-height:1.25;font-weight:600;color:var(--text);margin:0}
+h1{font-size:30px;letter-spacing:-.01em}
+h2{font-size:22px;margin-top:56px;padding-top:16px;border-top:1px solid var(--border)}
+h2:first-child{margin-top:0;border-top:0;padding-top:0}
+h3{font-size:17px;margin-top:32px}
+h4{font-size:15px;margin-top:20px;color:var(--text-2)}
+p{margin:10px 0}
+ul,ol{padding-left:22px;margin:8px 0}
+li{margin:3px 0}
+hr{border:0;border-top:1px solid var(--border);margin:32px 0}
+small,.muted{color:var(--muted)}
+strong{font-weight:600}
+code{font-family:var(--mono);font-size:.88em;background:var(--surface-2);border:1px solid var(--border);border-radius:4px;padding:1px 5px}
+pre{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 16px;overflow-x:auto;font-family:var(--mono);font-size:13px;line-height:1.5}
+pre code{background:none;border:0;padding:0;font-size:inherit}
+blockquote{margin:12px 0;padding:8px 16px;border-left:3px solid var(--border-strong);color:var(--text-2)}
+img,svg{max-width:100%}
+details{border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 14px;margin:10px 0;background:var(--surface)}
+summary{cursor:pointer;font-weight:500}
+
+/* ---------- Layout ---------- */
+.doc-header{background:var(--surface);border-bottom:1px solid var(--border);padding:22px 32px}
+.doc-header .crumbs{font-size:13px;color:var(--muted);margin-bottom:6px}
+.doc-header .meta{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:13px;color:var(--muted);margin-top:8px}
+.doc-header .meta b{color:var(--text-2);font-weight:500}
+.layout{display:grid;grid-template-columns:var(--toc-w) minmax(0,1fr);gap:0;max-width:calc(var(--toc-w) + var(--content-w) + 64px);margin:0 auto}
+.toc{position:sticky;top:0;align-self:start;max-height:100vh;overflow-y:auto;padding:24px 16px 40px 24px;font-size:13px;border-right:1px solid var(--border)}
+.toc .toc-title{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+.toc ul{list-style:none;padding:0;margin:0}
+.toc ul ul{padding-left:12px}
+.toc li{margin:0}
+.toc a{display:block;padding:4px 8px;border-radius:4px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.toc a:hover{background:var(--surface-2);text-decoration:none}
+.toc a.active{color:var(--accent);background:var(--accent-soft)}
+.content{padding:32px 32px 96px;min-width:0}
+@media (max-width:960px){.layout{grid-template-columns:1fr}.toc{position:static;max-height:none;border-right:0;border-bottom:1px solid var(--border)}.content{padding:24px 16px 64px}.doc-header{padding:18px 16px}}
+
+/* ---------- Components ---------- */
+table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden}
+th,td{padding:8px 12px;border-bottom:1px solid var(--border);vertical-align:top;text-align:left}
+th{background:var(--surface-2);font-weight:600;font-size:13px;color:var(--text-2)}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even) td{background:color-mix(in srgb,var(--surface-2) 45%,transparent)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.table-wrap{overflow-x:auto;margin:14px 0}
+.table-wrap table{margin:0}
+.callout{border:1px solid var(--border);border-left:4px solid var(--accent);background:var(--surface);border-radius:var(--radius-sm);padding:12px 16px;margin:16px 0}
+.callout .title{font-weight:600;margin-bottom:4px;font-size:14px}
+.callout.note{border-left-color:var(--info);background:var(--info-soft)}
+.callout.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout.bad{border-left-color:var(--bad);background:var(--bad-soft)}
+.callout.ok{border-left-color:var(--ok);background:var(--ok-soft)}
+.callout.decision{border-left-color:var(--fee);background:var(--fee-soft)}
+.badge{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600;line-height:1.5;border:1px solid transparent;white-space:nowrap}
+.badge.draft{background:var(--surface-2);color:var(--draft);border-color:var(--border-strong)}
+.badge.unpaid{background:var(--elec-soft);color:var(--unpaid)}
+.badge.paid{background:var(--ok-soft);color:var(--paid)}
+.badge.overdue{background:var(--bad-soft);color:var(--overdue)}
+.badge.ok{background:var(--ok-soft);color:var(--ok)}
+.badge.warn{background:var(--warn-soft);color:var(--warn)}
+.badge.bad{background:var(--bad-soft);color:var(--bad)}
+.badge.info{background:var(--info-soft);color:var(--info)}
+.badge.neutral{background:var(--surface-2);color:var(--text-2);border-color:var(--border)}
+.badge.water{background:var(--water-soft);color:var(--water)}
+.badge.elec{background:var(--elec-soft);color:var(--elec)}
+.badge.fee{background:var(--fee-soft);color:var(--fee)}
+.badge.p0{background:var(--bad-soft);color:var(--bad)} .badge.p1{background:var(--warn-soft);color:var(--warn)} .badge.p2{background:var(--surface-2);color:var(--text-2)}
+.kv{display:grid;grid-template-columns:max-content 1fr;gap:6px 18px;margin:12px 0;font-size:14px}
+.kv dt{color:var(--muted);font-weight:500}
+.kv dd{margin:0}
+.grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));margin:16px 0}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.card h3,.card h4{margin-top:0}
+.diagram{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin:16px 0;overflow-x:auto}
+.diagram .caption{font-size:13px;color:var(--muted);margin-top:8px;text-align:center}
+pre.mermaid{background:transparent;border:0;padding:0;text-align:center;font-family:var(--font);font-size:14px}
+.tree{font-family:var(--mono);font-size:13px;line-height:1.55;white-space:pre}
+.tree .c{color:var(--muted)}
+.steps{counter-reset:step;list-style:none;padding:0;margin:14px 0}
+.steps li{position:relative;padding-left:40px;margin:10px 0}
+.steps li::before{counter-increment:step;content:counter(step);position:absolute;left:0;top:1px;width:26px;height:26px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-weight:600;font-size:13px;display:flex;align-items:center;justify-content:center}
+.formula{font-family:var(--mono);background:var(--surface-2);border:1px dashed var(--border-strong);border-radius:var(--radius-sm);padding:10px 14px;margin:10px 0;font-size:14px}
+.tag-row{display:flex;flex-wrap:wrap;gap:6px}
+.checklist{list-style:none;padding-left:0}
+.checklist li{padding-left:26px;position:relative}
+.checklist li::before{content:"";position:absolute;left:2px;top:7px;width:14px;height:14px;border:1.5px solid var(--border-strong);border-radius:3px}
+
+/* ---------- Device frames for UI mockups (mockup content itself is styled by tokens.css under .screen) ---------- */
+.device{margin:20px auto;background:var(--surface);border:1px solid var(--border);box-shadow:0 8px 30px rgba(16,24,40,.12);overflow:hidden}
+.device.phone{width:390px;max-width:100%;border-radius:36px;border:8px solid #1b1f24;background:#1b1f24}
+.device.phone .screen{border-radius:28px;min-height:760px;background:#fff;overflow:hidden}
+.device.desktop{width:100%;max-width:1200px;border-radius:10px}
+.device.desktop .chrome{height:34px;background:var(--surface-2);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;padding:0 12px}
+.device.desktop .chrome i{width:11px;height:11px;border-radius:50%;background:#d1d5db;display:inline-block}
+.device.desktop .chrome i:nth-child(1){background:#ff5f57}.device.desktop .chrome i:nth-child(2){background:#febc2e}.device.desktop .chrome i:nth-child(3){background:#28c840}
+.device.desktop .chrome .url{margin-left:10px;flex:1;height:20px;border-radius:5px;background:var(--surface);border:1px solid var(--border);font-size:11px;color:var(--muted);padding:0 8px;line-height:20px;font-family:var(--mono)}
+.device.desktop .screen{min-height:720px;background:#fff;overflow:hidden}
+.device.print{width:100%;max-width:420px;border-radius:4px;background:#fff}
+.device.print .screen{background:#fff;padding:0}
+.screen{color:#1b2129;font-family:"Noto Sans Thai","Inter",sans-serif;font-size:14px;line-height:1.45;text-align:left}
+.annotations{counter-reset:ann;margin:12px 0 28px}
+.annotations li{margin:6px 0}
+.ann{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;font-size:11px;font-weight:700;margin-right:6px;vertical-align:middle;font-family:var(--font)}
+.screen .ann{position:absolute;box-shadow:0 0 0 2px #fff}
+.screen-meta{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:var(--muted);margin:6px 0 10px}
+.screen-meta b{color:var(--text-2);font-weight:500}
+
+/* ---------- Print ---------- */
+@media print{
+  body{background:#fff;color:#000;font-size:12px}
+  .toc{display:none}
+  .layout{display:block;max-width:none}
+  .content{padding:0}
+  .doc-header{padding:0 0 12px;border-bottom:1px solid #000}
+  h2{break-before:page}
+  h2:first-child{break-before:auto}
+  .device,.card,.callout,.diagram{break-inside:avoid;box-shadow:none}
+  a{color:#000}
+}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+</head>
+<body>
+<header class="doc-header">
+  <div class="crumbs">Juristic Platform · Documentation</div>
+  <h1>Documentation Home</h1>
+  <div class="meta"><span><b>Owner:</b> Documentation team</span><span><b>Date:</b> 2026-09-06</span><span><b>Status:</b> v1.0</span><span><b>Version:</b> 1.0</span></div>
+</header>
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="Table of contents"><div class="toc-title">Contents</div></nav>
+  <main class="content" id="content">
+<section id="the-project">
+<h2>The project</h2>
+
+<p>This is the entry point to the documentation set for a one-semester capstone project. Four documents,
+one PRD and this page describe a single web application completely enough to build it, design it, test it and
+defend it. Everything below is written in English; everything the product itself says to a user is written in
+Thai, because the users are Thai.</p>
+
+<h3>Official project titles</h3>
+<div class="kv">
+<dt>ภาษาไทย</dt><dd>การพัฒนาเว็บแอปพลิเคชันสำหรับจัดการค่าสาธารณูปโภคและค่าส่วนกลางของอพาร์ตเมนต์ พร้อมระบบแจ้งเตือนผ่าน LINE Official Account</dd>
+<dt>English</dt><dd>Development of a Web-Based Apartment Utility and Common Area Fee Management System with LINE Official Account Notifications</dd>
+<dt>Product name</dt><dd><b>Juristic Platform</b> — the single English product name, used in the repository, the code, the login page and every document title (D-01).</dd>
+</div>
+
+<div class="callout warn"><div class="title">One name only</div>
+<p>The short name <b>UtilityHub</b> at the top of the PRD is superseded by <i>Juristic platform</i> at the bottom
+of the same PRD and is deleted by <a href="01-product-decisions.html#d-01">D-01</a>. It must not appear in any
+document, screen, message or filename. The tenant, incidentally, sees neither name: the receipt letterhead
+carries only the apartment's own identity, and LINE messages are signed
+<code>— นิติบุคคล {apartment_name}</code>.</p></div>
+
+<h3>What the product does</h3>
+
+<p>Juristic Platform lets the juristic person of one apartment building bill each room, every month, for the
+three charges a tenancy actually generates — water, electricity and the common area fee — and for nothing else:
+it charges no rent and holds no lease data. Staff walk the building with a phone and type each room's water and
+electricity meter readings; the system subtracts last month's reading to get the units used, prices them at the
+rate in force for that period, and calculates the common area fee from the room's floor area multiplied by the
+rate per square metre. The three amounts become one monthly bill that the juristic person reviews and approves,
+after which the bill is delivered to the tenant through the apartment's LINE Official Account. When the tenant
+brings cash to the office, the counter confirms receipt in one action: the bill flips to
+<span class="badge paid">Paid</span>, a numbered receipt is issued and printed on A5 paper, and a confirmation
+message goes back out on LINE. Automatic reminders go out before the due date and after it, announcements are
+broadcast to selected floors, and a dashboard plus four reports show what was billed, what was collected, who is
+in arrears, and how much water and electricity each room has used over the past twelve months.</p>
+
+<h3>Facts that bind every document</h3>
+<div class="kv">
+<dt>Users</dt><dd>Admin / นิติบุคคล and Staff / เจ้าหน้าที่ on the web app; tenants on LINE only — no tenant login, no mobile app.</dd>
+<dt>Charges</dt><dd>Water, electricity, common area fee. Never rent.</dd>
+<dt>Payment</dt><dd>Cash at the office counter, recorded by Admin. No gateway, no card, no transfer, no slip, no QR.</dd>
+<dt>Bill statuses</dt><dd><span class="badge draft">Draft</span> <span class="badge unpaid">Unpaid</span> <span class="badge paid">Paid</span> <span class="badge overdue">Overdue</span></dd>
+<dt>Money &amp; time</dt><dd>THB; <code>1,790.00</code> in tables and on the receipt, <code>1,790 บาท</code> in Thai sentences, <code>฿1,790</code> only in these documents. Asia/Bangkok, Gregorian years (2026), never Buddhist Era.</dd>
+<dt>Team size</dt><dd>3–4 students, one semester, fourteen weeks, eight milestones (M0–M8).</dd>
+</div>
+
+<div class="callout bad"><div class="title">Absolutely out of scope — PRD §24, restated by D-05</div>
+<p>No rent, no lease contracts, no mobile application, no payment gateway, no credit or debit cards, no online
+banking, no slip upload, no QR payment, no IoT or automatic meter reading, no AI and no machine learning.
+A proposal that needs one of these is a scope change, not a feature request, and the PRD has to be reopened
+before any document can accept it.</p></div>
+</section>
+
+<section id="team">
+<h2>The documentation team</h2>
+
+<p>Four roles, four owners, four documents. Each owner is the only person who edits their document; anyone who
+needs it changed raises the change with the owner. Where two documents disagree, the precedence order is
+<b>PRD → product decisions → engineering spec / UI design / test plan</b>, and the losing document is corrected
+rather than worked around.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th style="width:22%">Role</th><th style="width:24%">Owns</th><th>Answers the question</th><th style="width:16%">Document</th></tr></thead>
+<tbody>
+<tr><td><b>Lead of Product</b></td>
+<td>Scope, the decision log <code>D-01</code>…<code>D-47</code>, the out-of-scope boundary, actors and permissions, the glossary</td>
+<td>"What is this product supposed to do, and what did we decide when the PRD was silent?"</td>
+<td><a href="01-product-decisions.html">01</a></td></tr>
+<tr><td><b>Principal Software Engineer</b></td>
+<td>Architecture (ADR-001), the data model, the API contract, the billing engine, LINE integration, the milestone plan</td>
+<td>"How is it built, and what exactly must the code do to be correct?"</td>
+<td><a href="02-engineering-spec.html">02</a></td></tr>
+<tr><td><b>Senior Product Designer</b></td>
+<td>Every screen, every control, every state, all Thai copy, the LINE message design, accessibility, print layouts</td>
+<td>"What does the user see, what can they press, and what does it say?"</td>
+<td><a href="03-ui-design.html">03</a></td></tr>
+<tr><td><b>Senior QA Engineer</b></td>
+<td>Test strategy, the executable test cases, the seven end-to-end scenarios, traceability, entry and exit criteria</td>
+<td>"Is it right, and can we prove nothing in the specification is untested?"</td>
+<td><a href="04-test-plan.html">04</a></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout note"><div class="title">On the role titles</div>
+<p>The titles describe the responsibility each author carried while writing, not a job the students hold. In a
+3–4 person team one person routinely wears two of these hats; what must not happen is two people editing one
+document, or a document changing without its owner knowing.</p></div>
+</section>
+
+<section id="documents">
+<h2>The document set</h2>
+
+<div class="grid">
+
+<div class="card">
+<h3><a href="01-product-decisions.html">01 · Product Decisions &amp; Scope</a></h3>
+<p class="muted">Lead of Product · <span class="badge ok">v1.0</span></p>
+<p>The product contract. It answers every question the PRD leaves open, as 47 numbered decisions
+(<code>D-01</code>…<code>D-47</code>) that every other document cites instead of re-arguing. Read it before
+proposing any change to behaviour, because the argument is always with a decision, never with a screen. It also
+carries the <a href="01-product-decisions.html#operating-procedures">Operating Procedures</a> — the eight
+step-by-step office procedures the other three documents rely on.</p>
+<p><b>Sections:</b> Purpose &amp; how to read · Product summary · Scope · Actors &amp; roles · End-to-end business
+flow · Decision log · Assumptions · Deferred items · <b>Operating Procedures</b> · Glossary · Demo scenario</p>
+</div>
+
+<div class="card">
+<h3><a href="02-engineering-spec.html">02 · Engineering Specification</a></h3>
+<p class="muted">Principal Software Engineer · <span class="badge ok">v1.0</span></p>
+<p>The build contract. Stack and architecture decisions with their rejected alternatives, eighteen tables with
+runnable DDL, every route and error code, the billing arithmetic with worked examples, the LINE integration, and
+a fourteen-week plan in eight milestones. Requirement ids <code>FR-01</code>…<code>FR-48</code> and
+<code>NFR-01</code>…<code>NFR-26</code> originate here. Its
+<a href="02-engineering-spec.html#runbook">Operations Runbook</a> is where deploying, the LINE webhook and token,
+a lost Admin account, backups, the daily job and the demo-day check are written down.</p>
+<p><b>Sections:</b> Introduction · Architecture Decisions · 1 System Overview &amp; Requirements · 2 Data Model
+&amp; Database · 3 API Specification · 4 Billing Engine &amp; Business Rules · 5 LINE Official Account Integration
+&amp; Notifications · 6 Project Structure, Environment &amp; Implementation Plan · <b>Operations Runbook</b> ·
+Appendix</p>
+</div>
+
+<div class="card">
+<h3><a href="03-ui-design.html">03 · UI Design Specification</a></h3>
+<p class="muted">Senior Product Designer · <span class="badge ok">v1.0</span></p>
+<p>The interface contract. Every PRD page drawn at its real width as live HTML using the product's own tokens,
+annotated control by control, with its empty, loading, error, success and permission-denied states. All Thai
+copy is given verbatim so engineering types strings rather than composing them.</p>
+<p><b>Sections:</b> About this document · Design Foundations &amp; User Flows · Login &amp; Dashboard · Rooms &amp;
+Tenants · Meter Reading (Staff, mobile) · Monthly Billing &amp; Bill Detail · Payment &amp; Receipt ·
+Announcements, Reports &amp; Settings · LINE Official Account Messages (Tenant) · Appendix</p>
+</div>
+
+<div class="card">
+<h3><a href="04-test-plan.html">04 · Test Plan</a></h3>
+<p class="muted">Senior QA Engineer · <span class="badge ok">v1.0</span></p>
+<p>The proof. A four-tier strategy, 284 executable test cases with exact expected values, seven end-to-end
+browser scenarios, and a traceability matrix showing that every requirement and every decision has at least one
+case behind it. <code>TC-…</code> and <code>E2E-…</code> ids originate here.</p>
+<p><b>Sections:</b> 1 Introduction · 2 Test Strategy · 3 Authentication, Users, Roles &amp; Settings · 4 Rooms,
+Tenants &amp; Meter Readings · 5 Billing Calculation &amp; Bill Lifecycle · 6 Payments, Receipts, LINE
+Notifications, Announcements &amp; Reports · 7 End-to-End Scenarios · 8 Traceability Matrix · 9 Appendix</p>
+</div>
+
+<div class="card">
+<h3><a href="PRD.md">PRD (Thai, source of scope)</a></h3>
+<p class="muted">Project owner · <span class="badge neutral">source document</span></p>
+<p>The original Thai requirements document and the highest authority in the set. Nothing in the four documents
+widens its scope; §24 (exclusions) and §28 (the demo scenario) are treated as absolute. It is Markdown, not
+HTML — open it in any text editor or Markdown viewer.</p>
+<p><b>Key sections:</b> §1 concept · §4 users · §6–§9 calculations · §16–§17 dashboard and reports · §18 the 30
+functions · §19 the twelve pages · §20 statuses · §21–§22 data · §24 out of scope · §25–§26 flows · §28 demo
+scenario</p>
+</div>
+
+<div class="card">
+<h3><a href="_shared/tokens.css">docs/_shared/tokens.css</a></h3>
+<p class="muted">Senior Product Designer · <span class="badge neutral">stylesheet, not prose</span></p>
+<p>The product design system as a real stylesheet — the palette, the type scale, the spacing steps, the badge
+colours and every component class the mockups use, all scoped under <code>.screen</code>. It is the source of
+record for all three of its homes: it is inlined into <a href="03-ui-design.html">03 · UI Design</a> so that
+document renders its own mockups offline, and it is <b>copied verbatim to <code>public/css/app.css</code> in
+milestone M0</b> — a file copy, never a port. A divergence between the two is a defect in the app, and the fix is
+to copy the file again (<a href="02-engineering-spec.html#structure-and-plan">02 · §6</a>).</p>
+</div>
+
+</div>
+</section>
+
+<section id="reading-order">
+<h2>Suggested reading order</h2>
+
+<p>The four documents total several hundred printed pages. Nobody reads them front to back. Pick the path that
+matches why you opened this page.</p>
+
+<h3>A new team member, day one — about two hours</h3>
+<ol class="steps">
+<li>This page, in full — the product, the vocabulary and the one demo scenario every document uses.</li>
+<li><a href="01-product-decisions.html#product-summary">01 · Product summary</a>, <a href="01-product-decisions.html#scope">Scope</a>, <a href="01-product-decisions.html#actors">Actors &amp; roles</a> and <a href="01-product-decisions.html#flow">End-to-end business flow</a>. Skim the decision log; do not try to read all 47.</li>
+<li><a href="02-engineering-spec.html#adr">02 · Architecture Decisions</a> — the stack, the runtime and why each choice beat its alternative.</li>
+<li><a href="03-ui-design.html#foundations">03 · Design Foundations &amp; User Flows</a> — the site map, the six user flows and the component inventory. Now you can picture the app.</li>
+<li><a href="04-test-plan.html#strategy">04 · §2 Test Strategy</a> — the tiers, the seed fixture and what "done" means before a push.</li>
+<li>Skim the <a href="PRD.md">PRD</a> §18–§20 last, to see how far the four documents moved past it.</li>
+</ol>
+
+<h3>A professor or examiner — about twenty minutes</h3>
+<ol class="steps">
+<li>The <a href="#demo">demo scenario</a> below — the whole product in nine steps and one number.</li>
+<li><a href="01-product-decisions.html#scope">01 · Scope</a>, then the out-of-scope list. This is where the project's boundaries are defended.</li>
+<li><a href="03-ui-design.html#line-messages">03 · LINE Official Account Messages</a> — what the tenant actually receives, which is the part of the system a grader can judge without a login.</li>
+<li><a href="01-product-decisions.html#operating-procedures">01 · Operating Procedures</a> — the office's own eight procedures: the monthly cycle and its due-date rule, the cash counter with its refusals and voids, move-in and move-out, and the twelve things v1 deliberately will not do, each with the workaround. This is the section that shows the product was designed for a real front desk.</li>
+<li><a href="04-test-plan.html#e2e">04 · §7.1 E2E-01</a> — the complete PRD §28 demo as an executable script, and <a href="04-test-plan.html#traceability">§8 Traceability</a> for the coverage argument.</li>
+<li><a href="02-engineering-spec.html#structure-and-plan">02 · §6</a> — the eight milestones, the team split and the risk register.</li>
+</ol>
+
+<h3>A developer starting milestone M1 — rooms, tenants, settings, rates, seed</h3>
+<ol class="steps">
+<li><a href="02-engineering-spec.html#adr">02 · Architecture Decisions</a> in full — naming, folder layout, API conventions and the five <code>ENG</code> corrections. Non-negotiable.</li>
+<li><a href="02-engineering-spec.html#data-model">02 · §2 Data Model</a>, specifically <code>rooms</code>, <code>tenants</code>, <code>rates</code>, <code>settings</code>, <code>counters</code>, <code>audit_log</code>, plus §2.7 the seed slice.</li>
+<li>The decisions those tables encode: <a href="01-product-decisions.html#d-06">D-06</a> baselines, <a href="01-product-decisions.html#d-07">D-07</a> vacant rooms, <a href="01-product-decisions.html#d-09">D-09</a> area changes, <a href="01-product-decisions.html#d-10">D-10</a> one Active tenant per room, <a href="01-product-decisions.html#d-17">D-17</a> effective-dated rates, <a href="01-product-decisions.html#d-44">D-44</a> seed data, <a href="01-product-decisions.html#d-46">D-46</a> users, <a href="01-product-decisions.html#d-47">D-47</a> room records.</li>
+<li><a href="03-ui-design.html#rooms-tenants">03 · Rooms &amp; Tenants</a> — eleven annotated frames and every Thai string you will type.</li>
+<li><a href="04-test-plan.html#tc-rooms-readings">04 · §4.1–§4.5</a> and <a href="04-test-plan.html#tc-auth-settings">§3.7–§3.11</a> — the cases that must be green before M1 closes.</li>
+<li><a href="02-engineering-spec.html#structure-and-plan">02 · §6.4.3</a>, the <b>M1</b> task list — the checklist you actually work through, and its exit criterion: 80 rooms listed by floor, room 205 at <code>30.00 ตร.ม.</code>, Settings showing <code>18.00 / 8.00 / 35.00</code> and due day <code>5</code>.</li>
+<li><a href="02-engineering-spec.html#runbook-deploy">02 · Operations Runbook — deploy</a> once, before you push anything anyone else will see: the environment variables (including <code>SEED_ADMIN_PASSWORD</code>, which is never committed), the seed command, and the webhook re-verification that follows <em>every</em> deploy.</li>
+</ol>
+
+<div class="callout note"><div class="title">Whichever path you take</div>
+<p>Read <a href="01-product-decisions.html#d-11">D-11</a> (a billing period is the billing month) and
+<a href="01-product-decisions.html#d-21">D-21</a> (three stored statuses, four displayed) early. They are
+load-bearing for almost everything else, and misreading either one produces work that has to be thrown away.</p></div>
+</section>
+
+<section id="demo">
+<h2>The demo scenario at a glance</h2>
+
+<p>PRD §28 fixes one worked example, and every document uses the same one. Room <b>205</b>, floor area
+<b>30 sqm</b>, billing period <b>2026-09</b>. If a change makes this bill anything other than
+<b>1,790.00 THB</b>, the change is wrong, whatever else it improves.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th style="width:22%">Charge</th><th style="width:26%">Basis</th><th>Calculation</th><th class="num" style="width:15%">Amount (THB)</th></tr></thead>
+<tbody>
+<tr><td><span class="badge water">Water</span></td><td>Meter 1,250 → 1,260</td><td>10 units × 18.00 THB/unit</td><td class="num">180.00</td></tr>
+<tr><td><span class="badge elec">Electricity</span></td><td>Meter 5,280 → 5,350</td><td>70 units × 8.00 THB/unit</td><td class="num">560.00</td></tr>
+<tr><td><span class="badge fee">Common area</span></td><td>Room area 30 sqm</td><td>30 × 35.00 THB/sqm</td><td class="num">1,050.00</td></tr>
+<tr><td colspan="3"><b>Total</b></td><td class="num"><b>1,790.00</b></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="kv">
+<dt>Room</dt><dd>205 · 30 sqm · Occupied</dd>
+<dt>Period</dt><dd>2026-09, displayed <b>กันยายน 2026</b></dd>
+<dt>Due date</dt><dd>5 Sep 2026 (<span class="badge unpaid">Unpaid</span> after Approve &amp; Send)</dd>
+<dt>Paid on</dt><dd>3 Sep 2026, cash at the office counter (<span class="badge paid">Paid</span>)</dd>
+<dt>Receipt</dt><dd><code>REC-202609-000852</code>, printed on A5</dd>
+<dt>Tenant sees</dt><dd>Two LINE messages: the bill at approval, the payment confirmation at the counter</dd>
+</div>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart TD
+  A["1. Meter Reading"] --> B["2. Calculate water and electricity"]
+  B --> C["3. Calculate common area fee"]
+  C --> D["4. Generate Bill"]
+  D --> E["5. Admin Approval"]
+  E --> F["6. LINE Notification"]
+  F --> G["7. Cash Payment"]
+  G --> H["8. Receipt"]
+  H --> I["9. Dashboard and Reports"]
+</pre>
+<div class="caption">The presentation flow of PRD §26 — nine steps, the order the demo is walked in front of the examiners.</div>
+</div>
+
+<div class="callout ok"><div class="title">Which figures may be asserted on</div>
+<p>Only three groups are reproducible expected values: the room-205 arithmetic above; the seeded room counts
+80 / 67 / 13 with the common-area total 70,350.00 (67 × 30 × 35); and the 54 LINE-linked tenants of
+<a href="01-product-decisions.html#d-44">D-44</a>. Every other amount, chart series and tenant name in the
+documents is illustrative scenery. PRD §16's water total 18,500 and electricity total 62,500 are not
+reproducible at the stated rates and are never used as expected values.</p></div>
+</section>
+
+<section id="conventions">
+<h2>Document conventions</h2>
+
+<h3>Language</h3>
+<p>Documentation prose is English. Product UI copy — labels, buttons, badges, validation messages, LINE
+messages, the receipt — is Thai, verbatim, because the users are Thai. The English page identifiers the PRD uses
+survive in routes, filenames, payloads and test hooks: <b>Login, Dashboard, Rooms, Tenants, Meter Reading,
+Monthly Billing, Bill Detail, Payment, Receipt, Announcements, Reports, Settings</b>. The two never mix inside
+one string: the Monthly Billing page is <b>บิลประจำเดือน</b> on screen and <code>/bills</code> in every sentence
+that names a route.</p>
+
+<h3>Bill statuses</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th style="width:14%">Status</th><th style="width:20%">On screen</th><th>Means</th><th style="width:26%">Reached by</th></tr></thead>
+<tbody>
+<tr><td><span class="badge draft">Draft</span></td><td>แบบร่าง</td><td>Generated from readings, not yet reviewed. Invisible to the tenant.</td><td>Bill generation for the period</td></tr>
+<tr><td><span class="badge unpaid">Unpaid</span></td><td>ยังไม่ชำระ</td><td>Approved, sent on LINE, awaiting cash. The due date is frozen at this moment.</td><td>Approve &amp; Send</td></tr>
+<tr><td><span class="badge paid">Paid</span></td><td>ชำระแล้ว</td><td>Cash received at the counter; a numbered receipt exists.</td><td>ยืนยันรับเงินสด</td></tr>
+<tr><td><span class="badge overdue">Overdue</span></td><td>เกินกำหนด</td><td>Past the due date and still unpaid. Derived for display, not a fourth stored value.</td><td>The clock passing the due date</td></tr>
+</tbody>
+</table>
+</div>
+<p>The legal flows are <b>Draft → Unpaid → Paid</b> and <b>Draft → Unpaid → Overdue → Paid</b>. Anything else is
+an illegal transition and the test plan has a case for it.</p>
+
+<h3>Identifier schemes</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th style="width:18%">Id</th><th style="width:26%">Introduced in</th><th>What it identifies</th></tr></thead>
+<tbody>
+<tr><td><code>D-01</code>…<code>D-47</code></td><td><a href="01-product-decisions.html#decision-log">01 · Decision log</a></td><td>A binding product decision. Cited, never restated. Ids are stable for the life of the project and are never reused or renumbered.</td></tr>
+<tr><td><code>FR-01</code>…<code>FR-48</code><br><code>NFR-01</code>…<code>NFR-26</code></td><td><a href="02-engineering-spec.html#overview">02 · §1.5–§1.6</a></td><td>A functional or non-functional requirement, each with one testable acceptance sentence.</td></tr>
+<tr><td><code>ADR §x</code>, <code>A-x</code>, <code>ENG-1</code>…<code>ENG-5</code></td><td><a href="02-engineering-spec.html#adr">02 · Architecture Decisions</a></td><td>The architecture record, and the five mechanism corrections it makes to the decision log while preserving the decided policy.</td></tr>
+<tr><td><code>TC-AUTH-nnn</code>, <code>TC-ROOM-nnn</code>, <code>TC-BILL-nnn</code>, <code>TC-PAY-nnn</code></td><td><a href="04-test-plan.html#tc-auth-settings">04 · §3–§6</a></td><td>One executable test case. The prefix names the section; the four number sequences are independent.</td></tr>
+<tr><td><code>E2E-01</code>…<code>E2E-07</code></td><td><a href="04-test-plan.html#e2e">04 · §7</a></td><td>An end-to-end browser scenario crossing screens or roles. <code>E2E-01</code> is the PRD §28 demo and may never go red.</td></tr>
+<tr><td><code>P0</code> <code>P1</code> <code>P2</code></td><td><a href="04-test-plan.html#strategy">04 · §2.8</a></td><td>Test priority. <span class="badge p0">P0</span> demo-critical or money-touching, <span class="badge p1">P1</span> a documented rule, <span class="badge p2">P2</span> boundary and copy detail.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Formats</h3>
+<div class="kv">
+<dt>Currency</dt><dd><code>1,790.00</code> in tables, on Bill Detail and on the receipt · <code>1,790 บาท</code> in Thai sentences and LINE messages · <code>฿1,790</code> only inside this documentation set.</dd>
+<dt>Dates</dt><dd>Gregorian, never Buddhist Era: <code>3 ก.ย. 2026</code> in lists, <code>3 กันยายน 2026</code> in LINE and on the receipt, <code>2026-09-03</code> in payloads.</dd>
+<dt>Times</dt><dd><code>14:30 น.</code>, timezone Asia/Bangkok everywhere, including the database connection.</dd>
+<dt>Periods</dt><dd><code>2026-09</code> in code and payloads, <b>กันยายน 2026</b> on screen.</dd>
+<dt>Areas</dt><dd><code>30.00 ตร.ม.</code> on screen; "sqm" in English prose.</dd>
+</div>
+
+<h3>Opening these files</h3>
+<p>The four documents are self-contained static HTML: no server, no build step, no dependencies to install.
+Double-click a file, or from this directory run <code>open 01-product-decisions.html</code> on macOS
+(<code>xdg-open</code> on Linux, <code>start</code> on Windows). Each page builds its own table of contents in
+the left rail from its headings, highlights the section you are reading, and follows your system's light or dark
+theme. All five documents live in the same folder, so the links on this page work from disk with no web server.
+The PRD is Markdown: open <code>PRD.md</code> in a text editor or any Markdown viewer.
+<code>_shared/tokens.css</code> is a stylesheet — read it in an editor; it is already inlined into 03, so nothing
+needs it to be loaded to view a mockup.</p>
+
+<div class="callout warn"><div class="title">Diagrams need an internet connection</div>
+<p>Every diagram in this set is Mermaid source inside <code>&lt;pre class="mermaid"&gt;</code>, rendered in the
+browser by <code>mermaid@11</code> loaded from the jsdelivr CDN, and the fonts come from Google Fonts the same
+way. Offline, the pages still open and every word is readable, but each diagram shows as its raw text and the
+typography falls back to a system font. Before presenting from a room with unreliable Wi-Fi, open each document
+once while connected so the browser caches both, or print to PDF in advance — the print stylesheet is part of
+the template and already drops the table of contents and avoids breaking a diagram across pages.</p></div>
+
+<h3>Printing</h3>
+<p>Every document prints with the sidebar removed and each <code>h2</code> starting a new page; cards, callouts,
+tables and diagrams are kept off page breaks. Print to PDF for the defence hand-out rather than printing this
+page from a browser at the last minute.</p>
+</section>
+
+<section id="assumptions">
+<h2>Assumptions recorded by this page</h2>
+
+<p>This page introduces no product behaviour. It summarises the five documents and the one stylesheet beside it, and the following
+choices belong to it alone. Each is cheap to reverse and none binds engineering, design or QA.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th style="width:8%">#</th><th style="width:34%">Assumption</th><th>Basis, and what happens if it is wrong</th></tr></thead>
+<tbody>
+<tr><td>IX-1</td><td>The four role titles describe writing responsibility, not student job titles.</td><td>The team is 3–4 people, so one person may own two documents. Wrong only if the team formally assigns titles; the ownership column still holds.</td></tr>
+<tr><td>IX-2</td><td>The five documents stay in one flat directory, so every link here is a bare relative filename; the one exception is the design system at <code>_shared/tokens.css</code>.</td><td>Matches the current layout. Moving a document into a subfolder breaks the links on this page and nowhere else.</td></tr>
+<tr><td>IX-3</td><td>The three reading orders are advisory and are not part of any document's precedence.</td><td>They are a convenience for a reader with limited time. Nothing downstream cites them.</td></tr>
+<tr><td>IX-4</td><td>The English product summary is a translation of PRD §29 for this documentation set; the Thai wording the team speaks at the defence stays exactly as the PRD writes it.</td><td>Consistent with <a href="01-product-decisions.html#product-summary">01 · Product summary</a>. Wrong only if the team wants the spoken script rewritten, which is a PRD change.</td></tr>
+<tr><td>IX-5</td><td>Test-case and requirement counts quoted here (284 cases, seven E2E scenarios, FR-01…FR-49, D-01…D-47) are the figures the owning documents state on 2026-09-07.</td><td>They are a snapshot for orientation, not a contract. If a document grows, its own count is authoritative and this page is stale, not the document.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout note"><div class="title">Keeping this page true</div>
+<p>Update it when a document is added or renamed, when a section list changes, or when a decision changes a fact
+quoted above — the product name, the statuses, the formats or the demo numbers. Everything else on this page is
+navigation and can be left alone.</p></div>
+</section>
+  </main>
+</div>
+<script>
+(function(){
+  // Build TOC from h2/h3 in #content
+  var content=document.getElementById('content'), toc=document.getElementById('toc');
+  var heads=content.querySelectorAll('h2, h3'), root=document.createElement('ul'), cur=null, used={};
+  heads.forEach(function(h){
+    if(!h.id){var s=h.textContent.trim().toLowerCase().replace(/[^\w฀-๿]+/g,'-').replace(/^-+|-+$/g,'').slice(0,60)||'sec';var b=s,i=2;while(used[s]||document.getElementById(s)){s=b+'-'+(i++)}h.id=s}
+    used[h.id]=1;
+    var li=document.createElement('li'),a=document.createElement('a');a.href='#'+h.id;a.textContent=h.textContent;li.appendChild(a);
+    if(h.tagName==='H2'){root.appendChild(li);cur=li}
+    else{if(!cur){root.appendChild(li);return}var ul=cur.querySelector(':scope > ul');if(!ul){ul=document.createElement('ul');cur.appendChild(ul)}ul.appendChild(li)}
+  });
+  toc.appendChild(root);
+  var links=toc.querySelectorAll('a');
+  if('IntersectionObserver' in window){
+    var map={};links.forEach(function(a){map[a.getAttribute('href').slice(1)]=a});
+    var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){links.forEach(function(l){l.classList.remove('active')});var a=map[e.target.id];if(a)a.classList.add('active')}})},{rootMargin:'0px 0px -75% 0px'});
+    heads.forEach(function(h){io.observe(h)});
+  }
+  // Mermaid
+  var dark=document.documentElement.getAttribute('data-theme')==='dark'||(!document.documentElement.getAttribute('data-theme')&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);
+  if(window.mermaid){mermaid.initialize({startOnLoad:true,theme:dark?'dark':'neutral',securityLevel:'loose',flowchart:{curve:'basis',htmlLabels:true},er:{useMaxWidth:true},sequence:{useMaxWidth:true},gantt:{useMaxWidth:true}})}
+})();
+</script>
+</body>
+</html>

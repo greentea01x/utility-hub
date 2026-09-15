@@ -1,0 +1,1026 @@
+<section id="tc-billing">
+<h2>Billing Calculation &amp; Bill Lifecycle</h2>
+
+<p>Sixty-nine executable test cases covering everything that turns two meter numbers into an amount a tenant owes, and everything that happens to that amount afterwards: generation and its idempotency, the three line-item calculations with every edge case the engineering specification names, the <span class="badge draft">Draft</span> → <span class="badge unpaid">Unpaid</span> → <span class="badge paid">Paid</span> state machine and its illegal transitions, the single approval gate and what it freezes, the two sanctioned correction paths, the derived <span class="badge overdue">Overdue</span> state with its date boundaries, and the Dashboard and report figures that must reconcile on screen.</p>
+
+<p>Every amount, status, error code and Thai message below is quoted from the engineering specification and the UI design; nothing is invented. Where a case checks money it states the arithmetic in full, so a grader can verify the expected value on paper without running the system.</p>
+
+<div class="callout note">
+<div class="title">Standing fixture — assumed by every case unless the case overrides it</div>
+<dl class="kv">
+<dt>Database</dt><dd><code>db/schema.sql</code> + <code>db/seed.sql</code> rebuilt from empty (D-44, NFR-23). 80 rooms across 5 floors, all <strong>30.00 ตร.ม.</strong>; 67 <code>Occupied</code>, 13 <code>Vacant</code>; 67 Active tenants of which exactly 54 carry a LINE binding.</dd>
+<dt>Rates</dt><dd>น้ำ <strong>18.00</strong> บาท/หน่วย, ไฟ <strong>8.00</strong> บาท/หน่วย, ส่วนกลาง <strong>35.00</strong> บาท/ตร.ม., all effective from the first day of the earliest history period. <code>settings.due_day = 5</code>.</dd>
+<dt>Demo room</dt><dd>Room <code>205</code> = <code>room_id 41</code>, area 30.00 ตร.ม., tenant นางสาวอารยา ศรีสุวรรณ. Its current-period bill is left <code>Draft</code> in the seed so the demo approves it live. API examples use <code>bill 118</code>, <code>payment 96</code>, <code>receipt 96</code>.</dd>
+<dt>Clock</dt><dd>The test harness pins the container clock to <strong>Asia/Bangkok</strong> and the current period to <code>2026-09</code>, so the PRD §28 calendar (approve 1 ก.ย. 2026, due 5 ก.ย. 2026, pay 3 ก.ย. 2026, <code>REC-202609-000852</code>) reproduces literally. Against an unpinned clock D-44 applies: the <em>arithmetic</em> reproduces, the calendar does not.</dd>
+<dt>Sessions</dt><dd><code>admin</code> (นิติบุคคล, role <code>admin</code>) and <code>staff</code> (เจ้าหน้าที่, role <code>staff</code>). "Unauthenticated" means no session cookie. Every <code>POST</code> outside the three machine routes carries a valid <code>_csrf</code> / <code>X-CSRF-Token</code>.</dd>
+<dt>LINE</dt><dd><code>settings.line_test_mode</code> is ON (D-34), so delivery assertions are made against <code>notifications</code> rows, never against a real inbox.</dd>
+</dl>
+</div>
+
+<h3 id="tc-billing-legend">Reading these tables</h3>
+
+<div class="grid">
+<div class="card">
+<h4>Priority</h4>
+<p><span class="badge p0">P0</span> demo-critical or touches money — a red P0 blocks the defence.<br>
+<span class="badge p1">P1</span> a documented rule that a grader may probe.<br>
+<span class="badge p2">P2</span> boundary and formatting detail.</p>
+</div>
+<div class="card">
+<h4>Type</h4>
+<p><strong>unit</strong> — a pure helper or one SQL expression, no HTTP.<br>
+<strong>API</strong> — one request/response pair, asserted on status, <code>code</code> and payload.<br>
+<strong>UI</strong> — rendered Thai copy, badge and state on one screen.<br>
+<strong>e2e</strong> — a multi-screen path ending in a database assertion.</p>
+</div>
+<div class="card">
+<h4>Traces to</h4>
+<p><code>FR-xx</code> is the functional requirement of engineering specification §1.5; <code>D-xx</code> is the product decision it derives from. A case with no trace would be a case with no authority and does not appear here.</p>
+</div>
+</div>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart LR
+  G["Generation run"] --> D["Draft · ฉบับร่าง"]
+  D -->|"อนุมัติและส่งบิล, Admin only"| U["Unpaid · รอชำระ"]
+  U -->|"past due date, display only"| O["Overdue · เกินกำหนด"]
+  U -->|"ยืนยันรับเงินสด, Admin only"| P["Paid · ชำระแล้ว"]
+  O -->|"ยืนยันรับเงินสด"| P
+  U -->|"ตีกลับเป็นฉบับร่าง, reason 10 chars"| D
+  O -->|"ตีกลับเป็นฉบับร่าง"| D
+  P -->|"ยกเลิกการชำระเงิน, reason 10 chars"| U
+</pre>
+<div class="caption">The only legal transitions. <code>bills.status</code> stores three values; <code>Overdue</code> is derived by one helper from <code>Unpaid</code> plus a past due date and is never written (D-21). Every arrow that is missing from this figure is a test case in §4 below.</div>
+</div>
+
+<h3 id="tc-billing-generation">1. Bill generation per period and idempotency</h3>
+
+<p>One idempotent pass over a period. <code>uq_bills(room_id, period)</code> is the idempotency key of the entire run: a run creates a Draft bill for every billable room that has both readings and no bill, recalculates every existing Draft in place keeping its <code>id</code>, and never issues a statement against a bill whose stored status is <code>Unpaid</code> or <code>Paid</code>.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th></tr></thead>
+<tbody>
+
+<tr>
+<td><strong>TC-BILL-001</strong></td>
+<td>First generation run creates one Draft bill per billable room, each with exactly three items</td>
+<td>API</td>
+<td><span class="badge p0">P0</span></td>
+<td>Fresh seed, period <code>2026-09</code>, no bills for the period. 64 of the 67 billable rooms have both readings saved; rooms 108, 312 and 405 have none. Admin session.</td>
+<td><ol><li><code>POST /api/bills/generate</code> with the Admin session and CSRF header.</li><li>Read the response body.</li><li><code>SELECT status, COUNT(*) FROM bills WHERE period='2026-09' GROUP BY status</code>.</li><li><code>SELECT bill_id, COUNT(*) FROM bill_items GROUP BY bill_id</code> for the new bills.</li></ol></td>
+<td><code>{"period": "2026-09"}</code></td>
+<td><code>200</code> with <code>{"data":{"period":"2026-09","created":64,"updated":0,"skipped":0,"unread":3,"missing_rooms":["108","312","405"]}}</code>. 64 rows with <code>status='Draft'</code>, none with any other status. Every one of the 64 bills has exactly 3 <code>bill_items</code> — <code>water</code>, <code>electric</code>, <code>common</code>. Room 205's bill totals <code>1790.00</code>.</td>
+<td>FR-17, FR-42, D-18, D-07, D-23, D-41</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-002</strong></td>
+<td>Generation result sentence renders verbatim on Monthly Billing</td>
+<td>UI</td>
+<td><span class="badge p0">P0</span></td>
+<td>State of TC-BILL-001, Admin on <code>/bills?period=2026-09</code>.</td>
+<td><ol><li>Press <strong>สร้าง/อัปเดตบิลฉบับร่าง</strong>.</li><li>Read the inline <code>.notice.ok</code> and the warn callout.</li><li>Read the completeness line.</li></ol></td>
+<td>Period <code>2026-09</code>; unread rooms 108, 312, 405.</td>
+<td>No confirmation dialog appears (generation is not one of D-39's six call sites). The notice reads exactly <code>สร้างบิลใหม่ 64 ใบ · อัปเดต 0 ใบ · ข้าม (อนุมัติแล้ว) 0 ใบ · ยังไม่ได้จด 3 ห้อง</code>. A persistent warn callout reads <code>ยังไม่ได้จดมิเตอร์ 3 ห้อง: 108, 312, 405 — ยังไม่ได้สร้างบิล</code>, each room code linking to จดมิเตอร์. Completeness line reads <code>บิลครบทุกห้อง 64/67 · อนุมัติแล้ว 0 · ชำระแล้ว 0</code>.</td>
+<td>FR-17, FR-42, D-18, D-23, D-11, D-39</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-003</strong></td>
+<td>An immediate second run is idempotent — no second bill, no changed id</td>
+<td>API</td>
+<td><span class="badge p0">P0</span></td>
+<td>State of TC-BILL-001. Nothing edited in between.</td>
+<td><ol><li>Record <code>SELECT id, total FROM bills WHERE period='2026-09' ORDER BY id</code>.</li><li><code>POST /api/bills/generate</code> again with the same body.</li><li>Re-read the same query and compare.</li></ol></td>
+<td><code>{"period": "2026-09"}</code>, issued twice within one second.</td>
+<td><code>200</code> with <code>created: 0, updated: 64, skipped: 0, unread: 3</code> — <em>not</em> an error. <code>COUNT(*) FROM bills WHERE period='2026-09'</code> is still 64; every <code>id</code> and every <code>total</code> is byte-identical to step 1. Result sentence: <code>สร้างบิลใหม่ 0 ใบ · อัปเดต 64 ใบ · ข้าม (อนุมัติแล้ว) 0 ใบ · ยังไม่ได้จด 3 ห้อง</code>.</td>
+<td>FR-17, D-18, NFR-15</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-004</strong></td>
+<td>Saving a corrected reading recalculates that room's Draft bill in place, on save</td>
+<td>API</td>
+<td><span class="badge p1">P1</span></td>
+<td>Room 205's <code>2026-09</code> bill exists and is <code>Draft</code> with total <code>1790.00</code>.</td>
+<td><ol><li><code>POST /api/readings</code> correcting water to 1,256.</li><li>Read <code>bill_recalculated</code> in the response.</li><li><code>SELECT amount FROM bill_items WHERE bill_id=118 AND item_type='water'</code> and <code>SELECT total FROM bills WHERE id=118</code>.</li></ol></td>
+<td><code>{"period":"2026-09","room_id":41,"water":{"current_reading":1256},"electric":{"current_reading":5350}}</code></td>
+<td><code>200</code>; <code>water.units</code> is <code>6</code> (<code>1,256 − 1,250 = 6</code>) and <code>bill_recalculated</code> is <code>true</code>. The water item becomes <code>ROUND(6 × 18.00, 2) = 108.00</code>; the bill total becomes <code>108.00 + 560.00 + 1,050.00 = 1,718.00</code>, written as <code>SUM(bill_items.amount)</code>. The bill <code>id</code> is unchanged, the status is still <code>Draft</code>. No amount appears in the readings response body.</td>
+<td>FR-10, FR-12, FR-17, D-18, D-12, D-36</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-005</strong></td>
+<td>A re-run never touches an approved bill</td>
+<td>API</td>
+<td><span class="badge p0">P0</span></td>
+<td>All 64 bills of <code>2026-09</code> approved (status <code>Unpaid</code>); rooms 108, 312, 405 still unread.</td>
+<td><ol><li>Record <code>total</code>, <code>due_date</code>, <code>approved_at</code> and every item amount for bill 118.</li><li>Change the seed rate for water to a different value effective before the period, so a recalculation would visibly move money.</li><li><code>POST /api/bills/generate</code> for <code>2026-09</code>.</li><li>Re-read the recorded columns.</li></ol></td>
+<td><code>{"period": "2026-09"}</code></td>
+<td><code>200</code> with <code>created: 0, updated: 0, skipped: 64, unread: 3</code>. Every recorded column is unchanged — <code>1790.00</code>, <code>2026-09-05</code>, water item still <code>18.00 / 180.00</code>. The query log shows no <code>UPDATE</code> and no <code>INSERT</code> against those bills; the guard is <code>AND status = 'Draft'</code> on every statement, not a skipped branch.</td>
+<td>FR-17, FR-18, D-18, D-22, D-17</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-006</strong></td>
+<td>Rooms read late are created at the period's rates, and <code>unread</code> reaches 0</td>
+<td>API</td>
+<td><span class="badge p1">P1</span></td>
+<td>State of TC-BILL-005 (64 approved, 3 unread).</td>
+<td><ol><li>Save both readings for rooms 108, 312 and 405 for <code>2026-09</code>.</li><li><code>POST /api/bills/generate</code> for <code>2026-09</code>.</li><li>Inspect one new bill's item unit prices.</li></ol></td>
+<td>Period <code>2026-09</code>; a water rate row of <code>18.50</code> with <code>effective_from = 2026-10-01</code> exists.</td>
+<td><code>200</code> with <code>created: 3, updated: 0, skipped: 64, unread: 0, missing_rooms: []</code>. The three new bills are <code>Draft</code> and carry <code>unit_price</code> <code>18.00 / 8.00 / 35.00</code> — the rows resolved at the period first day <code>2026-09-01</code>, never <code>18.50</code>. The Monthly Billing warn callout disappears and the completeness line reads <code>บิลครบทุกห้อง 67/67</code>.</td>
+<td>FR-17, FR-08, FR-42, D-18, D-17, D-23</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-007</strong></td>
+<td>A room with only one utility saved is counted <code>unread</code> and gets no bill and no placeholder</td>
+<td>API</td>
+<td><span class="badge p1">P1</span></td>
+<td>Room 108 is billable. Only its water reading for <code>2026-09</code> is saved.</td>
+<td><ol><li><code>POST /api/readings</code> for room 108 with water only.</li><li><code>POST /api/bills/generate</code> for <code>2026-09</code>.</li><li><code>SELECT * FROM bills WHERE room_id = (room 108) AND period='2026-09'</code>.</li></ol></td>
+<td>Room 108 water current 415, no electricity value.</td>
+<td>The readings response carries <code>"complete": false</code> and the counter does not increment for room 108. Generation counts room 108 in <code>unread</code> and lists <code>"108"</code> in <code>missing_rooms</code>. The <code>bills</code> query returns <strong>zero rows</strong> — no zero-total bill, no placeholder, no partial bill with one item.</td>
+<td>FR-11, FR-17, FR-42, D-23, D-15</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-008</strong></td>
+<td>Two simultaneous generation runs produce exactly one bill per room</td>
+<td>API</td>
+<td><span class="badge p1">P1</span></td>
+<td>Period <code>2026-09</code> with readings complete for 64 rooms and no bills yet. Two Admin sessions.</td>
+<td><ol><li>Fire <code>POST /api/bills/generate</code> from both sessions concurrently.</li><li>Wait for both responses.</li><li><code>SELECT room_id, COUNT(*) FROM bills WHERE period='2026-09' GROUP BY room_id HAVING COUNT(*) &gt; 1</code>.</li></ol></td>
+<td>Two identical bodies <code>{"period": "2026-09"}</code> dispatched in the same millisecond.</td>
+<td>Both calls return <code>200</code>. The <code>HAVING</code> query returns <strong>zero rows</strong>. The two responses' <code>created</code> counts sum to 64 with the remainder appearing in <code>updated</code> — a room created between one run's <code>SELECT … FOR UPDATE</code> and its <code>INSERT</code> raises <code>ER_DUP_ENTRY</code> on <code>uq_bills(room_id, period)</code>, is re-read, and is counted as <code>updated</code>. No 500 reaches the client.</td>
+<td>FR-17, D-18, D-26, NFR-14, NFR-15</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-009</strong></td>
+<td>A missing rate aborts the whole run before any write</td>
+<td>API</td>
+<td><span class="badge p1">P1</span></td>
+<td>Every <code>rates</code> row for <code>common</code> has <code>effective_from &gt; 2026-09-01</code>. Period <code>2026-09</code> has readings but no bills.</td>
+<td><ol><li><code>POST /api/bills/generate</code> for <code>2026-09</code>.</li><li>Read status, <code>code</code> and <code>message</code>.</li><li><code>SELECT COUNT(*) FROM bills WHERE period='2026-09'</code>.</li></ol></td>
+<td><code>{"period": "2026-09"}</code>; water and electricity rates resolvable, common not.</td>
+<td><code>422</code> with <code>{"error":{"code":"RATE_NOT_FOUND","message":"ยังไม่ได้ตั้งค่าอัตราสำหรับรอบบิลนี้ กรุณาตั้งค่าที่หน้าตั้งค่า"}}</code>. The bill count is <strong>0</strong> — the three rates are resolved once, before the room loop, so nothing is half-generated and no utility is ever priced at zero.</td>
+<td>FR-17, FR-09, D-17, D-18</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-010</strong></td>
+<td>A malformed period is refused at the boundary</td>
+<td>API</td>
+<td><span class="badge p2">P2</span></td>
+<td>Admin session.</td>
+<td><ol><li><code>POST /api/bills/generate</code> with <code>2026-9</code>.</li><li>Repeat with <code>2026-13</code>.</li><li>Repeat with <code>2026-00</code> and with the field absent.</li></ol></td>
+<td><code>{"period":"2026-9"}</code>, <code>{"period":"2026-13"}</code>, <code>{"period":"2026-00"}</code>, <code>{}</code>.</td>
+<td>The first three return <code>422</code> <code>{"error":{"code":"PERIOD_INVALID","message":"รูปแบบรอบบิลไม่ถูกต้อง"}}</code> — <code>zod</code> against <code>^\d{4}-(0[1-9]|1[0-2])$</code> — and write nothing. An absent <code>period</code> defaults to the current calendar month in Asia/Bangkok, <code>DATE_FORMAT(CURDATE(),'%Y-%m')</code>.</td>
+<td>FR-17, D-11, D-03</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-011</strong></td>
+<td>Staff may run generation, and the response carries no amount anywhere</td>
+<td>API</td>
+<td><span class="badge p1">P1</span></td>
+<td>Staff session. Period <code>2026-09</code> with 64 rooms read.</td>
+<td><ol><li><code>POST /api/bills/generate</code> as <code>staff</code>.</li><li>Assert the status code.</li><li>Grep the entire response body for a decimal amount and for the strings <code>total</code>, <code>unit_price</code>, <code>amount</code>.</li></ol></td>
+<td><code>{"period": "2026-09"}</code>, Staff session cookie.</td>
+<td><code>200</code> — ส่งให้นิติตรวจสอบ is a Staff action. The body contains only <code>period</code>, <code>created</code>, <code>updated</code>, <code>skipped</code>, <code>unread</code> and <code>missing_rooms</code> (room codes as strings). The grep finds <strong>no</strong> amount, rate or total. Bills are created identically to an Admin run.</td>
+<td>FR-17, FR-02, D-18, D-36</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-012</strong></td>
+<td>An unauthenticated generation call is refused</td>
+<td>API</td>
+<td><span class="badge p2">P2</span></td>
+<td>No session cookie.</td>
+<td><ol><li><code>POST /api/bills/generate</code> with no cookie.</li><li>Repeat with a valid cookie but no <code>X-CSRF-Token</code>.</li><li>Assert no bill row was written.</li></ol></td>
+<td><code>{"period": "2026-09"}</code></td>
+<td>Step 1 returns <code>401</code> <code>{"error":{"code":"UNAUTHENTICATED", …}}</code> — a JSON caller learns it has lost its session from the envelope, not from a redirect. Step 2 returns <code>403</code> <code>CSRF_INVALID</code>, the token compared with <code>crypto.timingSafeEqual</code>. <code>COUNT(*) FROM bills WHERE period='2026-09'</code> is unchanged in both cases.</td>
+<td>FR-02, D-37, NFR-11</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<h3 id="tc-billing-calculation">2. Water, electricity and common-area calculation</h3>
+
+<p>The three formulas and their five documented edge cases. Rounding is half-up, applied <strong>once</strong>, at the item; the bill total is the SQL <code>SUM</code> of already-rounded rows, so the printed total always equals the sum of the printed lines.</p>
+
+<div class="formula">
+units = current_reading − previous_reading &nbsp;·&nbsp; units (meter replaced) = (old_final − previous_reading) + (current_reading − new_start)<br>
+amount_water = ROUND(units_water × rate_water, 2) &nbsp;·&nbsp; amount_electric = ROUND(units_electric × rate_electric, 2) &nbsp;·&nbsp; amount_common = ROUND(area_sqm × rate_common, 2)<br>
+bills.total = SUM(bill_items.amount) &nbsp;— no second rounding, no rounding to whole baht, no satang suppression
+</div>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th></tr></thead>
+<tbody>
+
+<tr>
+<td><strong>TC-BILL-013</strong></td>
+<td>Water line — the PRD §28 demo arithmetic</td>
+<td>unit</td>
+<td><span class="badge p0">P0</span></td>
+<td>Rate <code>water = 18.00</code> resolved at <code>2026-09-01</code>. Reading row for room 41, period <code>2026-09</code>.</td>
+<td><ol><li>Save water previous 1,250 / current 1,260.</li><li>Run the generation item write.</li><li>Read the <code>water</code> row of <code>bill_items</code>.</li></ol></td>
+<td>previous 1,250 · current 1,260 · rate 18.00</td>
+<td><code>quantity = 10</code> (<code>1,260 − 1,250 = 10</code>), <code>unit_price = 18.00</code>, <code>amount = ROUND(10 × 18.00, 2) = 180.00</code>. The multiplication happens in SQL inside the <code>INSERT</code>; no JavaScript multiplies money on this path. Rendered <code>180.00</code> in tables and on the receipt.</td>
+<td>FR-12, FR-14, D-16, D-17</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-014</strong></td>
+<td>Electricity line — the PRD §28 demo arithmetic</td>
+<td>unit</td>
+<td><span class="badge p0">P0</span></td>
+<td>Rate <code>electric = 8.00</code> resolved at <code>2026-09-01</code>.</td>
+<td><ol><li>Save electricity previous 5,280 / current 5,350.</li><li>Run the generation item write.</li><li>Read the <code>electric</code> row of <code>bill_items</code>.</li></ol></td>
+<td>previous 5,280 · current 5,350 · rate 8.00</td>
+<td><code>quantity = 70</code> (<code>5,350 − 5,280 = 70</code>), <code>unit_price = 8.00</code>, <code>amount = ROUND(70 × 8.00, 2) = 560.00</code>. The rate is <em>copied onto the item</em>; the row is never joined live to <code>rates</code> by any later screen.</td>
+<td>FR-13, FR-15, D-16, D-17</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-015</strong></td>
+<td>Common-area line is priced from the bill's own area snapshot</td>
+<td>unit</td>
+<td><span class="badge p0">P0</span></td>
+<td>Room 205 area <code>30.00</code> ตร.ม.; rate <code>common = 35.00</code>.</td>
+<td><ol><li>Generate the bill.</li><li>Read the <code>common</code> row of <code>bill_items</code>.</li><li>Read <code>bills.room_area_sqm</code>.</li></ol></td>
+<td>area 30.00 · rate 35.00</td>
+<td><code>quantity = 30.00</code>, <code>unit_price = 35.00</code>, <code>amount = ROUND(30.00 × 35.00, 2) = 1,050.00</code>. <code>previous_reading</code>, <code>current_reading</code> and <code>previous_period</code> are all <code>NULL</code> on this row. <code>quantity</code> is taken from <code>bills.room_area_sqm</code>, not from <code>rooms.area_sqm</code>.</td>
+<td>FR-16, FR-06, D-09, D-16</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-016</strong></td>
+<td>The bill total is the SQL sum of the three rounded items, with no second rounding</td>
+<td>unit</td>
+<td><span class="badge p0">P0</span></td>
+<td>Items of TC-BILL-013 … 015 written for bill 118.</td>
+<td><ol><li>Run the total refresh statement.</li><li>Read <code>bills.total</code>.</li><li>Assert the printed total equals the sum of the printed lines.</li><li>Grep the schema for <code>FLOAT</code> and <code>DOUBLE</code>.</li></ol></td>
+<td>items 180.00 · 560.00 · 1,050.00</td>
+<td><code>bills.total = 1790.00</code> — <code>180.00 + 560.00 + 1,050.00 = 1,790.00</code>. Displayed <code>1,790.00</code> in tables, on Bill Detail and on the receipt; <code>1,790 บาท</code> in LINE and sentence text. The grep finds no <code>FLOAT</code> and no <code>DOUBLE</code>; <code>mysql2</code> returns <code>DECIMAL</code> as a string with <code>decimalNumbers</code> off.</td>
+<td>FR-17, D-16, D-03, NFR-13</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-017</strong></td>
+<td>Bill Detail renders exactly three items, all from snapshots</td>
+<td>API</td>
+<td><span class="badge p0">P0</span></td>
+<td>Bill 118 approved, room 205, period <code>2026-09</code>. Admin session.</td>
+<td><ol><li><code>GET /bills/118</code>.</li><li>Assert the item array length and each field.</li><li>Change <code>rooms.area_sqm</code> to 32.00 and <code>rates</code> water to 20.00, then reload.</li></ol></td>
+<td>Bill 118, tenant อารยา ศรีสุวรรณ, due <code>2026-09-05</code>.</td>
+<td>Three items in order <code>water</code>, <code>electric</code>, <code>common</code>: <code>10.00 × 18.00 = 180.00</code> (prev 1250, curr 1260, prev period <code>2026-08</code>); <code>70.00 × 8.00 = 560.00</code> (prev 5280, curr 5350); <code>30.00 × 35.00 = 1050.00</code> (all three reading fields <code>null</code>). <code>total "1790.00"</code>, <code>status "Unpaid"</code>, <code>display_status "Unpaid"</code>. After step 3 the reload is byte-identical — the line reads <code>ทุกยอดคำนวณจากอัตราที่บันทึกไว้บนบิลใบนี้ ไม่ใช่อัตราปัจจุบัน</code>.</td>
+<td>FR-06, FR-14, FR-15, FR-16, D-09, D-17, D-41</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-018</strong></td>
+<td>Half-up rounding is applied once, at the item, and never chained</td>
+<td>unit</td>
+<td><span class="badge p1">P1</span></td>
+<td>Two rooms with non-uniform areas and a satang-carrying rate.</td>
+<td><ol><li>Price <code>30.25 × 35.55</code>.</li><li>Price <code>30.23 × 35.15</code>.</li><li>Price <code>65 × 8.50</code>.</li><li>Assert no intermediate rounding step exists in the SQL.</li></ol></td>
+<td>quantity/unit_price pairs <code>30.25 / 35.55</code>, <code>30.23 / 35.15</code>, <code>65 / 8.50</code>.</td>
+<td><code>30.25 × 35.55 = 1,075.3875 → 1,075.39</code> (half-up). <code>30.23 × 35.15 = 1,062.5845 → 1,062.58</code> — one <code>ROUND</code> at the item; rounding to three decimals first would wrongly give <code>1,062.59</code>, and that value failing the assertion is the point of this case. <code>65 × 8.50 = 552.50</code> exactly — satang are carried, never suppressed.</td>
+<td>FR-14, FR-16, D-16, NFR-13</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-019</strong></td>
+<td>Edge case A — the first reading of a room resolves to its baselines</td>
+<td>API</td>
+<td><span class="badge p0">P0</span></td>
+<td>Room 108, 30.00 ตร.ม., created with <code>baseline_water = 400</code>, <code>baseline_electric = 1,000</code>, <code>baseline_date = 2026-08-15</code>. No <code>meter_readings</code> row in any period.</td>
+<td><ol><li><code>POST /api/readings</code> for room 108, period <code>2026-09</code>.</li><li>Read <code>previous_reading</code>, <code>previous_period</code>, <code>units</code> and <code>flag</code>.</li><li><code>POST /api/bills/generate</code> and read the three items and the total.</li><li>Reopen the Rooms form for room 108.</li></ol></td>
+<td>water current 415 · electric current 1,120 · rates 18.00 / 8.00 / 35.00</td>
+<td>Water: previous <code>400</code>, <code>previous_period "baseline"</code>, <code>415 − 400 = 15</code> หน่วย → <code>15 × 18.00 = 270.00</code>. Electricity: previous <code>1,000</code>, <code>previous_period "baseline"</code>, <code>1,120 − 1,000 = 120</code> หน่วย → <code>120 × 8.00 = 960.00</code>. Common <code>30.00 × 35.00 = 1,050.00</code>. Total <code>270.00 + 960.00 + 1,050.00 = 2,280.00</code>. No synthetic <code>meter_readings</code> row was written for the baseline. <code>flag</code> is <code>null</code> on both utilities — <code>ใช้สูงผิดปกติ</code> needs a previous-period usage of ≥ 10 units and a baseline-sourced room has none. The baseline fields are now read-only; editing them returns <code>422 BASELINE_LOCKED</code>.</td>
+<td>FR-13, FR-41, FR-44, D-06, D-14, D-13</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-020</strong></td>
+<td>Edge case B — a rolled dial is entered as a meter replacement</td>
+<td>API</td>
+<td><span class="badge p0">P0</span></td>
+<td>Room 210, 30.00 ตร.ม. Water reading for <code>2026-08</code> is 9,980; the 4-digit dial rolled past 9,999 and the meter was replaced on 2 ก.ย. 2026. Electricity previous 3,100.</td>
+<td><ol><li>Tick <strong>เปลี่ยนมิเตอร์ในรอบนี้</strong> and <code>POST /api/readings</code> with the replacement fields.</li><li>Read <code>water.units</code>.</li><li>Generate and read the three items and the total.</li><li>Save the <code>2026-10</code> water reading and read its <code>previous_reading</code>.</li><li>Read <code>audit_log</code> for the room.</li></ol></td>
+<td><code>{"period":"2026-09","room_id":(210),"water":{"current_reading":15,"meter_replaced":true,"old_final":9999,"new_start":0,"replace_reason":"มิเตอร์น้ำชำรุด เปลี่ยนใหม่ 2 ก.ย. 2026"},"electric":{"current_reading":3180}}</code></td>
+<td>Validation passes: <code>old_final ≥ previous_reading</code> (9,999 ≥ 9,980) and <code>current_reading ≥ new_start</code> (15 ≥ 0). <code>units = (9,999 − 9,980) + (15 − 0) = 19 + 15 = 34</code> หน่วย → <code>34 × 18.00 = 612.00</code>. Electricity <code>3,180 − 3,100 = 80</code> → <code>80 × 8.00 = 640.00</code>. Common <code>1,050.00</code>. Total <code>612.00 + 640.00 + 1,050.00 = 2,302.00</code>. In step 4 the next period's previous reading is <strong>15</strong>, the new dial's number, not 9,999. One <code>METER_REPLACEMENT</code> audit row carries the reason and the entering user. No automatic rollover detection exists anywhere.</td>
+<td>FR-33, FR-12, FR-39, D-13, D-38</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-021</strong></td>
+<td>A current reading below the previous is refused when the replacement box is off</td>
+<td>API</td>
+<td><span class="badge p0">P0</span></td>
+<td>Room 210, previous water 9,980, <code>meter_replaced</code> false. Try both Staff and Admin sessions.</td>
+<td><ol><li><code>POST /api/readings</code> with water current 15.</li><li>Repeat with current 1,240 against previous 1,250 on room 205.</li><li>Repeat with <code>1260.5</code> and with <code>-1</code>.</li><li>Assert no reading row changed.</li></ol></td>
+<td>current 15 vs previous 9,980 · current 1,240 vs previous 1,250 · <code>1260.5</code> · <code>-1</code></td>
+<td>Steps 1–2: <code>422</code> <code>{"error":{"code":"READING_BELOW_PREVIOUS","message":"เลขมิเตอร์ปัจจุบันน้อยกว่าเดือนก่อน (9,980) กรุณาตรวจสอบ"}}</code>, the previous value interpolated per room, for <strong>every</strong> role. Step 3: <code>422 VALIDATION_FAILED</code> — readings are whole and non-negative, rejected at the <code>zod</code> boundary. No path can write a negative unit; <code>CHECK (units &gt;= 0)</code> holds regardless and a 500 from it would be a defect. The form re-renders inline with the typed value preserved and a <code>ลองอีกครั้ง</code> action — never a redirect, never a full page reload on the phone.</td>
+<td>FR-10, FR-12, FR-48, D-13, D-16, D-40</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-022</strong></td>
+<td>An inconsistent meter replacement is refused</td>
+<td>API</td>
+<td><span class="badge p1">P1</span></td>
+<td>Room 210, previous water 9,980, replacement box ticked.</td>
+<td><ol><li>Post <code>old_final = 9,970</code> (below previous), <code>new_start = 0</code>, <code>current = 15</code>.</li><li>Post <code>old_final = 9,999</code>, <code>new_start = 20</code>, <code>current = 15</code> (current below new_start).</li><li>Post a valid pair with <code>replace_reason</code> empty.</li></ol></td>
+<td>9,970 / 0 / 15 &nbsp;·&nbsp; 9,999 / 20 / 15 &nbsp;·&nbsp; 9,999 / 0 / 15 with no reason</td>
+<td>Steps 1 and 2: <code>422</code> <code>{"error":{"code":"REPLACEMENT_INVALID","message":"เลขมิเตอร์ที่กรอกไม่สอดคล้องกับการเปลี่ยนมิเตอร์ กรุณาตรวจสอบ"}}</code>. Step 3: <code>422 VALIDATION_FAILED</code> — <code>replace_reason</code> is required. Nothing is written in any of the three; both validations exist precisely to keep <code>units ≥ 0</code>.</td>
+<td>FR-33, D-13, D-16</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-023</strong></td>
+<td>A meter replacement must not move money</td>
+<td>API</td>
+<td><span class="badge p1">P1</span></td>
+<td>Room 205, previous water 1,250, period <code>2026-09</code>, bill still <code>Draft</code>.</td>
+<td><ol><li>Post the replacement branch: the old dial was read out at 1,258 and the new dial reads 2.</li><li>Read <code>water.units</code>.</li><li>Generate and read the water item and the total.</li></ol></td>
+<td><code>"water": {"current_reading":2,"meter_replaced":true,"old_final":1258,"new_start":0,"replace_reason":"มิเตอร์น้ำชำรุด เปลี่ยนใหม่วันที่ 1 ก.ย. 2026"}</code>, <code>"electric": {"current_reading":5350}</code></td>
+<td><code>units = (1,258 − 1,250) + (2 − 0) = 8 + 2 = 10</code> หน่วย → <code>10 × 18.00 = 180.00</code>. Electricity <code>560.00</code>, common <code>1,050.00</code>, total <strong><code>1,790.00</code></strong> — identical to the ordinary demo bill. A physical meter swap changes the provenance of the number, never the amount owed.</td>
+<td>FR-33, FR-14, D-13, D-16</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-024</strong></td>
+<td>Edge case C — a vacant room produces no bill and no common-area fee</td>
+<td>API</td>
+<td><span class="badge p0">P0</span></td>
+<td>Room 409, 30.00 ตร.ม., <code>status = 'Vacant'</code>, no Active tenant. Period <code>2026-09</code>.</td>
+<td><ol><li>Record a voluntary reading through the <strong>ห้องว่าง</strong> filter.</li><li><code>POST /api/bills/generate</code> for <code>2026-09</code>.</li><li><code>SELECT * FROM bills WHERE room_id = (409)</code>.</li><li>Read the run's <code>unread</code> count and the reading counter denominator.</li><li>Attempt a single-room generation for room 409.</li></ol></td>
+<td>water 800 → 806, electric 2,000 → 2,004.</td>
+<td>No bill row exists for room 409 in any period while it is vacant — <strong>no zero-total bill and no owner invoice</strong>. The room is absent from <code>billableRooms()</code>, so it is not counted in <code>unread</code>, never appears in the D-23 warn banner, and is outside the <code>X/Y</code> reading denominator (still <code>/67</code>). The reading row survives and renders with the badge <code>ไม่ออกบิล</code>. Step 5 returns <code>422</code> <code>{"error":{"code":"ROOM_NOT_BILLABLE","message":"ห้องนี้ไม่มีผู้เช่า จึงไม่ออกบิล"}}</code>. Room 409 still counts in <code>ห้องทั้งหมด</code> and <code>ห้องว่าง</code> and in none of the money tiles.</td>
+<td>FR-16, FR-17, FR-28, D-07, D-15, D-23</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-025</strong></td>
+<td>A re-let room takes the vacant-period reading as its previous, with nothing billed twice</td>
+<td>API</td>
+<td><span class="badge p1">P1</span></td>
+<td>State of TC-BILL-024: room 409 has a <code>2026-09</code> reading of 806 / 2,004 and no bill. A new Active tenant is created for room 409 on 1 ต.ค. 2026, setting <code>rooms.status='Occupied'</code>.</td>
+<td><ol><li>Save the <code>2026-10</code> readings for room 409.</li><li>Read <code>previous_reading</code> and <code>previous_period</code>.</li><li>Generate <code>2026-10</code> and read the bill.</li><li>Assert the room's baselines were never edited.</li></ol></td>
+<td>water 806 → 812, electric 2,004 → 2,060.</td>
+<td>Previous water <code>806</code>, previous electricity <code>2,004</code>, <code>previous_period = "2026-09"</code> for both — the D-14 lookup does not filter on tenancy. Water <code>812 − 806 = 6 → 6 × 18.00 = 108.00</code>; electricity <code>2,060 − 2,004 = 56 → 56 × 8.00 = 448.00</code>; common <code>1,050.00</code>; total <code>108.00 + 448.00 + 1,050.00 = 1,606.00</code>. <code>rooms.baseline_water</code> and <code>baseline_electric</code> are untouched, and no consumption is billed twice.</td>
+<td>FR-13, FR-26, FR-41, D-06, D-07, D-14</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-026</strong></td>
+<td>Edge case D — a mid-period move bills the whole period to the tenant Active on the generation date</td>
+<td>e2e</td>
+<td><span class="badge p0">P0</span></td>
+<td>Room 312, 30.00 ตร.ม. Outgoing tenant leaves 12 ก.ย. 2026; a new tenant moves in 16 ก.ย. 2026. Water previous 2,402, electricity previous 7,205.</td>
+<td><ol><li>12 ก.ย. — record the final reading for both utilities, period <code>2026-09</code>.</li><li>12 ก.ย. — run generation for <code>2026-09</code>.</li><li>Approve and send; take cash; check the receipt.</li><li>Run <strong>สิ้นสุดสัญญาเช่า</strong>.</li><li>16 ก.ย. — create the new Active tenant.</li><li>In October, read and generate <code>2026-10</code>.</li></ol></td>
+<td><code>2026-09</code>: water 2,402 → 2,410, electricity 7,205 → 7,300. <code>2026-10</code>: water 2,410 → 2,417, electricity 7,300 → 7,362.</td>
+<td><strong>2026-09, outgoing tenant:</strong> <code>2,410 − 2,402 = 8 → 8 × 18.00 = 144.00</code>; <code>7,300 − 7,205 = 95 → 95 × 8.00 = 760.00</code>; common <code>30.00 × 35.00 = 1,050.00</code>; total <code>144.00 + 760.00 + 1,050.00 = 1,954.00</code>. <strong>2026-10, incoming tenant:</strong> <code>2,417 − 2,410 = 7 → 126.00</code>; <code>7,362 − 7,300 = 62 → 496.00</code>; common <code>1,050.00</code>; total <code>126.00 + 496.00 + 1,050.00 = 1,672.00</code>. <strong>Nothing is prorated</strong> and no charge is split: the incoming tenant pays a full common-area fee and the 12–16 ก.ย. vacant window. Step 4 sets the tenant <code>Inactive</code>, stamps <code>move_out_date = 2026-09-12</code>, clears the LINE binding and sets the room <code>Vacant</code> in one transaction audited as <code>TENANCY_END</code>. The <code>ครอบคลุมการใช้ตั้งแต่รอบ …</code> note does <strong>not</strong> render on the October bill — its previous period is the immediately preceding month.</td>
+<td>FR-16, FR-17, FR-36, FR-39, D-08, D-10, D-14</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-027</strong></td>
+<td>End of tenancy is refused until the covering bill is Paid</td>
+<td>API</td>
+<td><span class="badge p1">P1</span></td>
+<td>Room 312's <code>2026-09</code> bill exists and is <code>Unpaid</code>; both final readings are saved.</td>
+<td><ol><li><code>POST /tenants/:id/end-tenancy</code> with a valid reason.</li><li>Delete one of the two final readings and retry.</li><li>Take the cash so the bill becomes <code>Paid</code>, then retry.</li></ol></td>
+<td>reason <code>"ย้ายออกตามกำหนดสัญญา"</code> (≥ 10 characters).</td>
+<td>Steps 1 and 2 return <code>422 TENANCY_END_BLOCKED</code> and change nothing — the gate requires (a) a final reading for both utilities and (b) the bill covering it in state <code>Paid</code>. Step 3 succeeds with <code>303</code> and one <code>TENANCY_END</code> audit row. Without this gate the departing tenant's last month would be skipped by the run (the room would be <code>Vacant</code> on the generation date) and silently charged to the next tenant.</td>
+<td>FR-36, D-08, D-10, D-39</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-028</strong></td>
+<td>The coverage note fires only when a month was skipped</td>
+<td>UI</td>
+<td><span class="badge p1">P1</span></td>
+<td>Room A has readings for <code>2026-07</code> and <code>2026-09</code> but none for <code>2026-08</code>. Room 205 has <code>2026-08</code> and <code>2026-09</code>.</td>
+<td><ol><li>Generate <code>2026-09</code> and open Bill Detail for room A.</li><li>Open Bill Detail for room 205.</li><li>Open the BILL LINE message body for both.</li><li>Open the room's reading history.</li></ol></td>
+<td>Room A previous period <code>2026-07</code>; room 205 previous period <code>2026-08</code>.</td>
+<td>Room A's Bill Detail shows <code>ครอบคลุมการใช้ตั้งแต่รอบ กรกฎาคม 2026</code> and the BILL message appends the same sentence. Room 205 shows the provenance line <code>เลขครั้งก่อนมาจากรอบ สิงหาคม 2026</code> and <strong>no</strong> coverage note. Units are never split or back-dated across the skipped month and <strong>no bill is created for <code>2026-08</code></strong>. The reading history renders <code>2026-08</code> as a gap, never as a zero row.</td>
+<td>FR-26, FR-30, D-14, D-31</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<h3 id="tc-billing-rates">3. Rate resolution and rate change</h3>
+
+<p><code>rates</code> is append-only and effective-dated. Resolution is keyed to the <em>period</em>, never to the moment Generate was pressed, so a late second run cannot put two electricity rates in one month and an approved bill can never be disturbed by a later rate row.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th></tr></thead>
+<tbody>
+
+<tr>
+<td><strong>TC-BILL-029</strong></td>
+<td>Rate resolution takes the greatest <code>effective_from</code> at or before the period first day</td>
+<td>unit</td>
+<td><span class="badge p0">P0</span></td>
+<td>Three <code>electric</code> rows: 7.50 from <code>2025-01-01</code>, 8.00 from <code>2026-01-01</code>, 8.50 from <code>2026-10-01</code>.</td>
+<td><ol><li>Resolve <code>('electric', '2026-09-01')</code>.</li><li>Resolve <code>('electric', '2026-10-01')</code>.</li><li>Resolve <code>('electric', '2024-12-01')</code>.</li></ol></td>
+<td>period first days <code>2026-09-01</code>, <code>2026-10-01</code>, <code>2024-12-01</code>.</td>
+<td>Step 1 returns <code>8.00</code> — <code>2026-10-01 &gt; 2026-09-01</code>, so the newer row is not eligible. Step 2 returns <code>8.50</code>. Step 3 returns no row, which the caller turns into <code>422 RATE_NOT_FOUND</code> for the whole run.</td>
+<td>FR-08, D-17</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-030</strong></td>
+<td>Edge case E — a rate change between periods, with the earlier bill untouched</td>
+<td>API</td>
+<td><span class="badge p0">P0</span></td>
+<td>Room 205's <code>2026-09</code> bill is approved at <code>1,790.00</code> with the electricity item priced at <code>8.00</code>.</td>
+<td><ol><li><code>POST /settings/rates</code> inserting electricity 8.50 effective <code>2026-10-01</code>.</li><li>Assert the existing 8.00 row is untouched.</li><li>Save the <code>2026-10</code> readings and generate.</li><li>Read the <code>2026-10</code> items and total.</li><li>Re-read the <code>2026-09</code> bill.</li></ol></td>
+<td><code>utility_type=electric&amp;unit_price=8.50&amp;effective_from=2026-10-01</code>. Room 205 <code>2026-10</code>: water 1,260 → 1,272, electricity 5,350 → 5,415.</td>
+<td>Step 1 <code>INSERT</code>s a row and issues no <code>UPDATE</code>; the 8.00 row still reads 8.00. <strong>2026-10 bill:</strong> <code>1,272 − 1,260 = 12 → 12 × 18.00 = 216.00</code>; <code>5,415 − 5,350 = 65 → 65 × 8.50 = 552.50</code>; common <code>1,050.00</code>; total <code>216.00 + 552.50 + 1,050.00 = 1,818.50</code>. The receipt for this bill prints the satang branch of the Thai amount in words: <code>หนึ่งพันแปดร้อยสิบแปดบาทห้าสิบสตางค์</code>. Step 5: the <code>2026-09</code> bill is still <code>1,790.00</code> with <code>unit_price 8.00</code> on its electricity item.</td>
+<td>FR-08, FR-15, FR-24, D-17, D-27</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-031</strong></td>
+<td>Re-running an earlier period after a rate change still prices at the old rate</td>
+<td>API</td>
+<td><span class="badge p1">P1</span></td>
+<td>State of TC-BILL-030 step 1. Three rooms of <code>2026-09</code> are still <code>Draft</code> because they were read late.</td>
+<td><ol><li><code>POST /api/bills/generate</code> for <code>2026-09</code>.</li><li>Read the <code>unit_price</code> of the electricity item on each recalculated Draft.</li><li>Compare with an approved bill of the same period.</li></ol></td>
+<td><code>{"period":"2026-09"}</code> issued after the 8.50 row exists.</td>
+<td>Every recalculated Draft carries <code>unit_price = 8.00</code>, identical to the bills approved earlier in the month. Three rooms read late in the same month therefore <strong>cannot</strong> carry a second rate. The response reports <code>updated: 3</code> and <code>skipped: 64</code>.</td>
+<td>FR-08, FR-17, D-17, D-18</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-032</strong></td>
+<td>A back-dated rate offers a Draft recalculation and never disturbs approved bills</td>
+<td>e2e</td>
+<td><span class="badge p1">P1</span></td>
+<td>Period <code>2026-09</code> has 3 <code>Draft</code> bills and 64 approved. Room X's Draft carries 70 electricity units.</td>
+<td><ol><li><code>POST /settings/rates</code> inserting electricity 8.50 effective <code>2026-09-01</code>.</li><li>Read the Settings notice.</li><li>Press <strong>คำนวณบิลฉบับร่างใหม่</strong>.</li><li>Read room X's Draft item and an approved bill's item.</li></ol></td>
+<td><code>utility_type=electric&amp;unit_price=8.50&amp;effective_from=2026-09-01</code>.</td>
+<td>Settings shows <code>มีบิลฉบับร่าง 3 ใบในรอบนี้ ยังใช้อัตราเดิมอยู่</code> with a <strong>คำนวณบิลฉบับร่างใหม่</strong> button that calls <code>POST /api/bills/generate</code> for the period — no endpoint of its own. After step 3 room X's electricity item reads <code>70 × 8.50 = 595.00</code>; every approved bill's electricity item still reads <code>70 × 8.00 = 560.00</code> and every approved total is unchanged.</td>
+<td>FR-09, FR-17, D-17, D-18, D-22</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-033</strong></td>
+<td>A second rate for the same utility and date is refused by the database</td>
+<td>API</td>
+<td><span class="badge p2">P2</span></td>
+<td>A <code>water</code> row with <code>effective_from = 2026-10-01</code> already exists.</td>
+<td><ol><li><code>POST /settings/rates</code> with water, a different price and the same date.</li><li>Read the response and the row count.</li><li>Post the same utility with a different date.</li></ol></td>
+<td><code>utility_type=water&amp;unit_price=19.00&amp;effective_from=2026-10-01</code>, then <code>effective_from=2026-11-01</code>.</td>
+<td>Step 1 returns <code>409 RATE_DUPLICATE</code> from <code>uq_rates(utility_type, effective_from)</code>; the row count is unchanged and the original price stands. Step 3 succeeds — history is append-only and complete, so rate changes remain auditable.</td>
+<td>FR-07, FR-08, FR-09, D-17</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<h3 id="tc-billing-state">4. The bill state machine and its illegal transitions</h3>
+
+<p><code>bills.status</code> stores exactly <code>Draft</code>, <code>Unpaid</code>, <code>Paid</code>. Every transition is a conditional <code>UPDATE … WHERE id = ? AND status = ?</code>, so the guard survives a double-click, a forgotten handler check and a hand-typed statement. There is no <code>Cancelled</code>, no <code>Void</code> and no fifth status.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th></tr></thead>
+<tbody>
+
+<tr>
+<td><strong>TC-BILL-034</strong></td>
+<td>Happy path — the whole PRD §28 lifecycle</td>
+<td>e2e</td>
+<td><span class="badge p0">P0</span></td>
+<td>Fresh seed, clock pinned to 1 ก.ย. 2026. Room 205's <code>2026-09</code> bill is <code>Draft</code> at <code>1,790.00</code>. Admin session.</td>
+<td><ol><li>Open <code>/bills/118</code> and read the stepper and the Draft banner.</li><li>Press <strong>อนุมัติและส่งบิล</strong>, confirm the dialog.</li><li>Advance the clock to 3 ก.ย. 2026, open <code>/payments?q=205</code>.</li><li>Press <strong>ยืนยันรับเงินสด</strong> and confirm.</li><li>Read the receipt and the bill's audit timeline.</li></ol></td>
+<td>Bill 118, room 205, total <code>1,790.00</code>, due day 5.</td>
+<td>Status track <code>ฉบับร่าง</code> → <code>รอชำระ</code> → <code>ชำระแล้ว</code>, i.e. <code>Draft → Unpaid → Paid</code>. Due date frozen at <code>2026-09-05</code> = <code>MAX(2026-09-05, 2026-09-01 + 3 = 2026-09-04)</code>. Confirm dialog body reads <code>อนุมัติและส่งบิลห้อง 205 ผ่าน LINE — ยกเลิกไม่ได้</code>; the payment dialog reads <code>ยืนยันรับเงินสด 1,790 บาท · ห้อง 205 · รอบ กันยายน 2026 และออกใบเสร็จ</code>. One <code>payments</code> row of exactly <code>1790.00</code> with <code>method='cash'</code>, receipt <code>REC-202609-000852</code>, redirect <code>303</code> → <code>/receipts/96</code>. Timeline carries <code>BILL_APPROVE</code> and <code>PAYMENT_CONFIRM</code> as the two key events. NFR-07: confirm to printable receipt on screen in ≤ 5 s.</td>
+<td>FR-18, FR-22, FR-23, FR-24, FR-39, D-19, D-20, D-24, D-26</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-035</strong></td>
+<td><code>Overdue</code> is derived and never stored</td>
+<td>API</td>
+<td><span class="badge p0">P0</span></td>
+<td>Bill 118 <code>Unpaid</code> with <code>due_date = 2026-09-05</code>. Clock at 8 ก.ย. 2026.</td>
+<td><ol><li><code>SELECT DISTINCT status FROM bills</code>.</li><li><code>GET /bills/118</code> and read <code>status</code> and <code>display_status</code>.</li><li>Read the badge on <code>/bills?period=2026-09</code> and its <code>data-status</code> attribute.</li><li>Filter the list by <code>?status=Overdue</code>.</li></ol></td>
+<td>due <code>2026-09-05</code>, today 8 ก.ย. 2026.</td>
+<td>Step 1 returns only <code>Draft</code>, <code>Unpaid</code>, <code>Paid</code> — <code>Overdue</code> appears in no row of the table, ever. Step 2: <code>"status": "Unpaid"</code>, <code>"display_status": "Overdue"</code>, produced by <code>CASE WHEN status='Unpaid' AND due_date &lt; CURDATE() THEN 'Overdue' ELSE status END</code>. Step 3: the badge reads <code>เกินกำหนด</code> and carries <code>data-status="Overdue"</code>. Step 4 returns the same bill. No late fee, interest or penalty is added — the total is still <code>1,790.00</code>.</td>
+<td>FR-23, FR-28, D-21, D-02, D-05</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-036</strong></td>
+<td>An overdue bill is paid normally and the display follows</td>
+<td>API</td>
+<td><span class="badge p0">P0</span></td>
+<td>Bill 118 <code>Unpaid</code>, due <code>2026-09-05</code>, clock at 20 ก.ย. 2026 (displaying <code>เกินกำหนด</code>).</td>
+<td><ol><li><code>POST /payments</code> for bill 118.</li><li>Read the bill's stored and display status.</li><li>Read the payment amount and the receipt.</li></ol></td>
+<td><code>bill_id=118&amp;expected_total=1790.00</code></td>
+<td><code>303</code> → the receipt. <code>UPDATE bills SET status='Paid' WHERE id=118 AND status='Unpaid'</code> affects one row; <code>Overdue</code> is never written and is never a <code>WHERE</code> value. Stored status <code>Paid</code>, display <code>ชำระแล้ว</code>. The payment amount is exactly <code>1790.00</code>, copied from <code>bills.total</code> in SQL — not the amount posted, and not increased by any late charge.</td>
+<td>FR-22, FR-23, D-21, D-24, D-05</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-037</strong></td>
+<td>Illegal <code>Draft → Paid</code> — a Draft bill cannot be paid</td>
+<td>API</td>
+<td><span class="badge p0">P0</span></td>
+<td>Bill 118 is <code>Draft</code> (never approved). Admin session.</td>
+<td><ol><li><code>POST /payments</code> for bill 118.</li><li>Assert the status and code.</li><li><code>SELECT COUNT(*) FROM payments WHERE bill_id=118</code> and <code>SELECT status FROM bills WHERE id=118</code>.</li><li>Search room 205 on <code>/payments</code>.</li></ol></td>
+<td><code>bill_id=118&amp;expected_total=1790.00</code></td>
+<td><code>422 BILL_NOT_PAYABLE</code>. Zero <code>payments</code> rows, zero receipts, no counter consumed; the bill is still <code>Draft</code>. On the Payment screen a Draft bill is not listed among the room's unsettled bills at all, so the API guard is the second line, not the only one.</td>
+<td>FR-22, FR-23, D-24, D-26</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-038</strong></td>
+<td>Illegal <code>Paid → Paid</code> — a double confirm produces one payment and one receipt</td>
+<td>API</td>
+<td><span class="badge p0">P0</span></td>
+<td>Bill 118 <code>Unpaid</code>, total <code>1,790.00</code>. Two Admin sessions at two counters.</td>
+<td><ol><li>Fire <code>POST /payments</code> for bill 118 twice concurrently.</li><li>Read both responses.</li><li>Count payments, receipts and receipt numbers for bill 118.</li></ol></td>
+<td>Two identical bodies <code>bill_id=118&amp;expected_total=1790.00</code>.</td>
+<td>Exactly one call returns <code>303</code>; the other returns <code>409</code> <code>{"error":{"code":"BILL_ALREADY_PAID","message":"บิลนี้ถูกชำระไปแล้ว"}}</code>. One <code>payments</code> row, one <code>receipts</code> row, one number <code>REC-202609-000852</code>. Two guards hold independently: the conditional <code>UPDATE … WHERE status='Unpaid'</code> and <code>UNIQUE(active_bill_id)</code>. The disabled button and spinner are a courtesy, never the guarantee. The Payment screen shows <code>บิลนี้ถูกชำระไปแล้ว · ดูใบเสร็จ</code>.</td>
+<td>FR-22, FR-24, D-24, D-26, NFR-14, NFR-15</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-039</strong></td>
+<td>Illegal revert — a Paid bill and a Draft bill both refuse <code>ตีกลับเป็นฉบับร่าง</code></td>
+<td>API</td>
+<td><span class="badge p1">P1</span></td>
+<td>Bill 118 is <code>Paid</code>. Bill 119 (another room, same period) is <code>Draft</code>.</td>
+<td><ol><li><code>POST /bills/118/revert</code> with a 12-character Thai reason.</li><li><code>POST /bills/119/revert</code> with the same reason.</li><li>Read both bills' statuses.</li><li>Read the disabled button's <code>title</code> on <code>/bills/118</code>.</li></ol></td>
+<td><code>reason=แก้ไขเลขมิเตอร์ผิด</code></td>
+<td>Both return <code>409</code> <code>{"error":{"code":"BILL_NOT_REVERTABLE","message":"บิลนี้ไม่อยู่ในสถานะรอชำระ จึงตีกลับเป็นฉบับร่างไม่ได้"}}</code> — the <code>UPDATE … WHERE id=? AND status='Unpaid'</code> affects 0 rows, which is also where the double-clicked revert lands. Neither status changes. On screen the button is disabled with <code>ยกเลิกการชำระเงินก่อนจึงจะตีกลับเป็นฉบับร่างได้</code>, and the correction help text reads <code>บิลที่อนุมัติแล้วแก้ไขโดยตรงไม่ได้ ต้องคืนเงินสดที่เคาน์เตอร์ก่อน แล้วยกเลิกการชำระเงิน จากนั้นจึงตีกลับเป็นฉบับร่างเพื่อแก้ไขและอนุมัติใหม่</code>.</td>
+<td>FR-34, D-22, D-25, D-40</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-040</strong></td>
+<td>Illegal <code>Unpaid → Unpaid</code> — a second approval changes nothing and queues nothing</td>
+<td>API</td>
+<td><span class="badge p1">P1</span></td>
+<td>Bill 118 already approved, <code>due_date = 2026-09-05</code>, one <code>BILL</code> notification row exists.</td>
+<td><ol><li>Record <code>approved_at</code>, <code>due_date</code> and the notification count.</li><li><code>POST /api/bills/approve</code> with <code>{"bill_ids":[118]}</code>.</li><li>Compare the recorded values.</li></ol></td>
+<td><code>{"bill_ids": [118]}</code>, resubmitted the next day (2 ก.ย. 2026).</td>
+<td><code>200</code> — not an error — with <code>{"approved":0,"already_approved":1,"not_found":0,"queued":0,"skipped_no_line":0}</code>. <code>approved_at</code> and <code>due_date</code> are unchanged: a second approval on 2 ก.ย. must <strong>not</strong> re-derive the due date to <code>2026-09-05</code> or later. The notification count is still 1 — no duplicate message, guaranteed by the conditional <code>UPDATE</code> and by <code>uq_notifications(dedupe_key)</code>.</td>
+<td>FR-18, FR-19, FR-32, D-19, D-20, D-30, NFR-15</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-041</strong></td>
+<td>The display-status helper produces all four values and only those</td>
+<td>unit</td>
+<td><span class="badge p1">P1</span></td>
+<td><code>lib/billStatus.js</code> and the SQL <code>CASE</code> expression, exercised side by side.</td>
+<td><ol><li>Evaluate both for each row of the test data.</li><li>Assert the SQL and the JS agree on every row.</li><li>Assert every rendered status element carries <code>data-status</code>.</li></ol></td>
+<td><code>Draft</code>/any date · <code>Unpaid</code>+due 2026-09-05 on 2026-09-05 · <code>Unpaid</code>+due 2026-09-05 on 2026-09-06 · <code>Paid</code>+due 2026-09-05 on 2026-09-30.</td>
+<td>Results in order: <code>Draft</code> (ฉบับร่าง), <code>Unpaid</code> (รอชำระ), <code>Overdue</code> (เกินกำหนด), <code>Paid</code> (ชำระแล้ว). SQL and JS agree on all four. A <code>Paid</code> bill never displays as <code>Overdue</code> however far past its due date. Every badge carries <code>data-status="Draft|Unpaid|Paid|Overdue"</code>, and status is conveyed by the Thai text, never by colour alone.</td>
+<td>FR-23, FR-28, D-21, D-02, NFR-20, NFR-25</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<h3 id="tc-billing-approval">5. Approve &amp; Send — preconditions and immutability</h3>
+
+<p>One gate. Reviewing the readings and approving the bill are the same act; there is no separate reading-approval step and no submitted state. Everything upstream of approval stays editable; everything downstream is frozen, and the guard is a <code>WHERE</code> clause on every statement rather than a disabled button.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th></tr></thead>
+<tbody>
+
+<tr>
+<td><strong>TC-BILL-042</strong></td>
+<td>Approval freezes the bill, sets the due date and queues exactly one message, in one transaction</td>
+<td>API</td>
+<td><span class="badge p0">P0</span></td>
+<td>Bill 118 <code>Draft</code>, three items, total <code>1,790.00</code>. Clock 1 ก.ย. 2026. Tenant's LINE binding present. Admin session.</td>
+<td><ol><li><code>POST /api/bills/approve</code>.</li><li>Read the response.</li><li>Read <code>bills</code>, <code>audit_log</code> and <code>notifications</code> for bill 118.</li><li>Call <code>POST /api/notifications/drain</code> until <code>remaining</code> is 0.</li></ol></td>
+<td><code>{"bill_ids": [118]}</code></td>
+<td><code>200</code> <code>{"data":{"approved":1,"already_approved":0,"not_found":0,"queued":1,"skipped_no_line":0,"bills":[{"id":118,"room_code":"205","status":"Unpaid","due_date":"2026-09-05","notification":"queued"}]}}</code>. In one transaction: status <code>Unpaid</code>, <code>approved_by</code> and <code>approved_at</code> set, <code>due_date = 2026-09-05</code>, one <code>BILL_APPROVE</code> audit row with before/after JSON and <code>bill_id</code>, one <code>notifications</code> row of type <code>BILL</code> with <code>status='queued'</code>. The push happens only <strong>after</strong> commit. Drain returns <code>{"sent":1,"failed":0,"skipped_no_line":0,"remaining":0,"lock":"acquired"}</code>. NFR-05: delivered in ≤ 30 s.</td>
+<td>FR-18, FR-19, FR-32, FR-39, D-19, D-20, D-22, D-30, D-38</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-043</strong></td>
+<td>The due-date rule, including the late-approval and month-end branches</td>
+<td>unit</td>
+<td><span class="badge p0">P0</span></td>
+<td>The approval <code>UPDATE</code>'s <code>GREATEST(LEAST(…), DATE_ADD(CURDATE(), INTERVAL 3 DAY))</code> expression, evaluated directly.</td>
+<td><ol><li>Evaluate each row of the test data.</li><li>Assert the frozen value.</li><li>Assert no per-bill due-date field exists on any form or endpoint.</li><li>Assert every bill in one batch approved the same day shares one date.</li></ol></td>
+<td>(period, due_day, approval date): <code>2026-09, 5, 1 ก.ย. 2026</code> · <code>2026-09, 5, 4 ก.ย. 2026</code> · <code>2026-09, 5, 20 ก.ย. 2026</code> · <code>2026-02, 28, 26 ก.พ. 2026</code>.</td>
+<td>Frozen due dates in order: <code>2026-09-05</code> (MAX of 09-05 and 09-04 — the PRD §28 value); <code>2026-09-07</code> (MAX of 09-05 and 09-07); <code>2026-09-23</code>; <code>2026-03-01</code> (MAX of 02-28 and 03-01). The three-day floor guarantees no unpayable window and guarantees the D−2 reminder can never be scheduled in the past. <code>due_day</code> is <code>CHECK</code>-constrained 1–28 so the <code>LEAST(…, LAST_DAY(…))</code> clamp can never bite; it is written anyway. No endpoint accepts a due date.</td>
+<td>FR-18, D-20, D-33</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-044</strong></td>
+<td>Staff cannot approve, and no amount reaches a Staff response body</td>
+<td>API</td>
+<td><span class="badge p0">P0</span></td>
+<td>Bill 118 <code>Draft</code>. Staff session.</td>
+<td><ol><li><code>POST /api/bills/approve</code> as <code>staff</code>.</li><li><code>GET /bills</code> and <code>GET /bills/118</code> as <code>staff</code>.</li><li>Grep every response body for a decimal amount, a rate and a total.</li><li>Assert the bill is untouched.</li><li>Repeat step 1 with no session.</li></ol></td>
+<td><code>{"bill_ids": [118]}</code>, Staff session cookie; then no cookie.</td>
+<td>Step 1: <code>403</code> with the standard JSON error envelope. Step 2: a full-page Thai 403 reading <code>ไม่มีสิทธิ์เข้าถึงหน้านี้ · บัญชีของคุณเป็นเจ้าหน้าที่ กรุณาติดต่อนิติบุคคล</code> with a <code>กลับไปหน้าจดมิเตอร์</code> button — never a silent redirect, so the permission matrix is testable row by row. Step 3 finds no amount, no rate, no total and no tenant contact detail: money is absent from the queries that serve Staff, not hidden in the template. Bill 118 is still <code>Draft</code>. Step 5 returns <code>401 UNAUTHENTICATED</code>.</td>
+<td>FR-02, FR-18, D-36, D-40</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-045</strong></td>
+<td>Approved readings are frozen for every role, Admin included</td>
+<td>API</td>
+<td><span class="badge p0">P0</span></td>
+<td>Bill 118 <code>Unpaid</code>; its <code>2026-09</code> readings for room 205 exist.</td>
+<td><ol><li><code>POST /api/readings</code> for room 41, period <code>2026-09</code>, as Admin.</li><li>Repeat as Staff.</li><li>Read the readings row and the bill.</li><li>Open <code>/readings?period=2026-09</code> and inspect room 205's card.</li><li>Attempt a meter-replacement edit for the same period.</li></ol></td>
+<td><code>{"period":"2026-09","room_id":41,"water":{"current_reading":1300},"electric":{"current_reading":5400}}</code></td>
+<td>Both roles receive <code>422</code> <code>{"error":{"code":"READING_FROZEN","message":"บิลอนุมัติแล้ว แก้ไขไม่ได้"}}</code>. The stored readings are still 1,260 / 5,350, the items still <code>180.00 / 560.00 / 1,050.00</code> and the total still <code>1,790.00</code>. The reading form renders the fields read-only with the same Thai sentence — the frozen state is shown, not hidden. The meter-replacement fields and reason are frozen on the same rule. The only way back is a revert.</td>
+<td>FR-10, FR-11, FR-33, D-12, D-13, D-22</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-046</strong></td>
+<td>Changing a room's area never rewrites a bill already approved</td>
+<td>API</td>
+<td><span class="badge p1">P1</span></td>
+<td>Bill 118 approved with <code>room_area_sqm = 30.00</code> and a common item of <code>1,050.00</code>. Admin session.</td>
+<td><ol><li><code>POST /rooms/41</code> changing the area to 32.00.</li><li>Read <code>audit_log</code>.</li><li>Re-read bill 118's common item and total.</li><li>Generate a later period for room 205 and read its common item.</li></ol></td>
+<td>area <code>30.00 → 32.00</code>; common rate <code>35.00</code>.</td>
+<td>The area change succeeds and writes a <code>ROOM_AREA_CHANGE</code> audit row. Bill 118 still prints <code>30.00 × 35.00 = 1,050.00</code> and totals <code>1,790.00</code> — the printed factors and the printed result agree, because the item is priced from <code>bills.room_area_sqm</code>, never from <code>rooms.area_sqm</code>. The next period's bill uses <code>32.00 × 35.00 = 1,120.00</code>. A <code>Draft</code> bill recalculated after the change also keeps <code>30.00</code>, because the three snapshot columns are written once, at create.</td>
+<td>FR-06, FR-16, FR-39, D-09, D-18, D-38</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-047</strong></td>
+<td>Batch approval — mixed, empty, unknown and oversized selections</td>
+<td>API</td>
+<td><span class="badge p1">P1</span></td>
+<td>Period <code>2026-09</code>: bills 118 and 119 are <code>Draft</code>, bill 120 is already <code>Unpaid</code>, id 9999 does not exist.</td>
+<td><ol><li>Approve <code>[118, 119, 120, 9999]</code>.</li><li>Approve <code>[]</code>.</li><li>Approve <code>[9999]</code>.</li><li>Approve an array of 201 ids.</li><li>Read the Monthly Billing result page.</li></ol></td>
+<td><code>{"bill_ids":[118,119,120,9999]}</code>, <code>{"bill_ids":[]}</code>, <code>{"bill_ids":[9999]}</code>, 201 valid ids.</td>
+<td>Step 1: <code>200</code> with <code>approved: 2, already_approved: 1, not_found: 1</code> — a mixed batch is never an error; bill 120 is left untouched with its original <code>due_date</code>. Steps 2 and 3: <code>409</code> — an empty body and a batch of entirely unknown ids are the only two approve failures. Step 4: <code>422 VALIDATION_FAILED</code>; the array holds 1–200 ids. Step 5 renders the verbatim D-19 summary <code>อนุมัติ 2 ใบ · ส่ง LINE สำเร็จ {x} · ยังไม่ได้ส่ง (ไม่มี LINE) {y} · ส่งไม่สำเร็จ {z}</code> as a page, not a toast, with no undo. NFR-06: a 67-bill batch commits in ≤ 5 s.</td>
+<td>FR-18, FR-19, D-19, D-39</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-048</strong></td>
+<td>A tenant without a LINE binding never blocks approval</td>
+<td>API</td>
+<td><span class="badge p1">P1</span></td>
+<td>Room 211's tenant นายวรพล จันทร์เพ็ญ has no <code>line_user_id</code>. Its <code>2026-09</code> bill is <code>Draft</code>.</td>
+<td><ol><li>Approve that bill.</li><li>Read the response and the notification row.</li><li>Read the Monthly Billing delivery badge and the result page.</li><li>Open <code>พิมพ์ใบแจ้งหนี้</code> for the bill.</li></ol></td>
+<td>One <code>bill_ids</code> array containing room 211's bill id.</td>
+<td><code>200</code> with <code>approved: 1, queued: 0, skipped_no_line: 1</code>. The bill is <code>Unpaid</code>, counted in the period's ยอดเรียกเก็บ, and its money is correct. The notification row carries <code>status='skipped_no_line'</code> and is never pushed, so it can never be part of the drain denominator. The badge reads <code>ยังไม่ได้ส่ง — ไม่มี LINE</code>; the result page lists the room with <strong>พิมพ์ใบแจ้งหนี้</strong> one click away and the hint <code>ผูก LINE ให้ผู้เช่าได้ที่หน้า ผู้เช่า แล้วกด ส่งแจ้งเตือนอีกครั้ง ที่หน้ารายละเอียดบิล</code>. The A5 ใบแจ้งค่าใช้จ่าย carries the letterhead, ห้อง, ชื่อผู้เช่า, รอบบิล, กำหนดชำระ and the three line items — and no receipt number, no payment date, no ผู้รับเงิน and no signature line.</td>
+<td>FR-19, FR-32, FR-38, D-19, D-28, D-30</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-049</strong></td>
+<td>Unread rooms never block approval</td>
+<td>API</td>
+<td><span class="badge p1">P1</span></td>
+<td>Period <code>2026-09</code>: 64 Draft bills, rooms 108, 312, 405 unread.</td>
+<td><ol><li>Select all 64 Draft rows and approve.</li><li>Read the result and the warn callout.</li><li>Read the completeness line.</li></ol></td>
+<td>64 <code>bill_ids</code>.</td>
+<td><code>200</code> with <code>approved: 64</code>. The unread-rooms callout is a warn, not a block: it still reads <code>ยังไม่ได้จดมิเตอร์ 3 ห้อง: 108, 312, 405 — ยังไม่ได้สร้างบิล</code> with the sub-line <code>อนุมัติบิลที่มีอยู่ได้ตามปกติ เมื่อจดมิเตอร์ครบแล้วให้กด สร้าง/อัปเดตบิลฉบับร่าง อีกครั้ง</code>. The completeness line reads <code>บิลครบทุกห้อง 64/67 · อนุมัติแล้ว 64 · ชำระแล้ว 0</code>; <code>billable − billed</code> must reach 0 for the period to be complete, and that single figure drives both the banner and the line so the two can never disagree.</td>
+<td>FR-18, FR-42, D-11, D-23</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<h3 id="tc-billing-corrections">6. Corrections after approval</h3>
+
+<p>One reversible path covers both cases and keeps exactly three stored statuses. An <code>Unpaid</code> or <code>Overdue</code> bill is reverted to <code>Draft</code>; a <code>Paid</code> bill is a counter transaction — the cash goes back across the counter <em>first</em>, then the payment is voided, then the bill is reverted. The system never holds a credit, a refund or a balance.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th></tr></thead>
+<tbody>
+
+<tr>
+<td><strong>TC-BILL-050</strong></td>
+<td>Revert, correct, re-approve — the tenant receives <code>BILL_CORRECTED</code></td>
+<td>e2e</td>
+<td><span class="badge p0">P0</span></td>
+<td>Bill 118 <code>Unpaid</code> at <code>1,790.00</code>; the water reading was typed as 1,260 when the dial said 1,206. No later bill exists for room 205.</td>
+<td><ol><li>On <code>/bills/118</code> press <strong>ตีกลับเป็นฉบับร่าง</strong>, type the reason, confirm.</li><li>Assert the bill and the readings.</li><li>Correct the water reading to 1,206 on <code>/readings</code>.</li><li>Re-approve bill 118 and drain.</li><li>Read the notification rows and the audit timeline.</li></ol></td>
+<td>reason <code>จดเลขมิเตอร์น้ำผิด 1,260 เป็น 1,206</code>; corrected water current 1,206.</td>
+<td>Status returns to <code>Draft</code> with <code>approved_by</code> and <code>approved_at</code> cleared; the readings unfreeze; a <code>BILL_REVERT</code> audit row carries the reason and before/after JSON. The flash reads <code>ตีกลับเป็นฉบับร่างแล้ว · เหตุผล: จดเลขมิเตอร์น้ำผิด 1,260 เป็น 1,206</code>. The corrected bill: water <code>1,206 − 1,250</code> would be negative, so the tester uses previous 1,200 for this fixture — with previous 1,200 the water line is <code>1,206 − 1,200 = 6 → 6 × 18.00 = 108.00</code> and the total becomes <code>108.00 + 560.00 + 1,050.00 = 1,718.00</code>. Re-approval sends type <code>BILL_CORRECTED</code>, the BILL body prefixed <code>🔄 แก้ไขบิล (ยกเลิกยอดเดิม)</code>. Its <code>dedupe_key</code> differs from the original by <code>type</code>, so a same-day correction is not swallowed by the earlier <code>BILL</code> row. The bill keeps its <code>id</code>, so the timeline is one indexed query on <code>(bill_id, created_at)</code>.</td>
+<td>FR-34, FR-18, FR-19, FR-39, D-22, D-31, D-38</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-051</strong></td>
+<td>Only a room's most recent bill may be reverted</td>
+<td>API</td>
+<td><span class="badge p1">P1</span></td>
+<td>Room 205 has an <code>Unpaid</code> bill for <code>2026-08</code> and any bill for <code>2026-09</code>.</td>
+<td><ol><li><code>POST /bills/:id/revert</code> on the <code>2026-08</code> bill with a valid reason.</li><li>Read the status, code and Thai message.</li><li>Read the button's disabled <code>title</code> on Bill Detail.</li><li>Assert the refusal is server-side by posting directly, bypassing the disabled button.</li></ol></td>
+<td>reason <code>ตรวจพบเลขมิเตอร์ผิดพลาด</code>; the <code>2026-08</code> bill id.</td>
+<td><code>422</code> <code>{"error":{"code":"REVERT_NOT_NEWEST","message":"มีบิลรอบถัดไปแล้ว ไม่สามารถแก้ไขย้อนหลังได้ — กรุณาแก้ในรอบล่าสุด"}}</code>. The guard is <code>SELECT 1 FROM bills WHERE room_id = ? AND period &gt; ? LIMIT 1</code> inside the transaction, so step 4 is refused identically. The restriction is not a convenience: a later bill's <code>previous_reading</code> is a snapshot of the value about to be edited, so an older edit would leave the chain stale. The disabled button carries the same sentence as its <code>title</code>.</td>
+<td>FR-34, D-22, D-12</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-052</strong></td>
+<td>Revert and void both require a Thai reason of at least ten characters</td>
+<td>API</td>
+<td><span class="badge p1">P1</span></td>
+<td>Bill 118 <code>Unpaid</code> and newest; payment 96 live on another <code>Paid</code> bill.</td>
+<td><ol><li>Revert with a 3-character reason.</li><li>Revert with an empty reason.</li><li>Void payment 96 with a 9-character reason.</li><li>Watch the dialog's primary button while typing.</li></ol></td>
+<td>reasons <code>"ผิด"</code>, <code>""</code>, a 9-character string.</td>
+<td>All three return <code>422</code> <code>{"error":{"code":"REASON_TOO_SHORT","message":"กรุณาระบุเหตุผลอย่างน้อย 10 ตัวอักษร"}}</code> and change nothing. In the shared confirmation dialog the primary button stays <code>disabled</code> until a reason of at least 10 characters is typed, and the server re-validates — the dialog is the courtesy, the service check is the guarantee. The dialog is never the browser's <code>confirm()</code> and the primary button repeats the verb, never <code>ตกลง</code>.</td>
+<td>FR-34, FR-35, FR-46, D-22, D-25, D-39</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-053</strong></td>
+<td>Voiding a payment keeps the receipt, returns the bill to Unpaid and sends nothing</td>
+<td>e2e</td>
+<td><span class="badge p0">P0</span></td>
+<td>Bill 118 <code>Paid</code>, payment 96 live, receipt <code>REC-202609-000852</code>. The cash has already gone back across the counter. Clock 20 ก.ย. 2026, so the due date has passed.</td>
+<td><ol><li>Press <strong>ยกเลิกการชำระเงิน</strong>, read the dialog, type the reason, confirm.</li><li>Read <code>payments</code>, <code>receipts</code> and <code>bills</code>.</li><li>Read the receipt view and the bill's badges.</li><li>Count outbound notification rows created by the void.</li></ol></td>
+<td>reason <code>รับเงินผิดห้อง คืนเงินสดแล้ว</code>; total <code>1,790.00</code>.</td>
+<td>The dialog body reads <code>คืนเงินสด 1,790.00 บาท ให้ผู้เช่าก่อนยืนยันการยกเลิก · ใบเสร็จ REC-202609-000852 จะถูกประทับว่า ยกเลิก และบิลจะกลับเป็น รอชำระ</code>. After confirm: <code>payments.voided_at</code>, <code>voided_by</code> and <code>void_reason</code> set — <strong>nothing is deleted</strong>; <code>receipts.voided_at</code> set and the number <code>000852</code> stays taken; <code>bills.status = 'Unpaid'</code>, displaying as <code>เกินกำหนด</code> because the due date has passed. <code>payments.active_bill_id</code> becomes <code>NULL</code>, freeing the <code>UNIQUE</code> slot. The receipt is stamped <code>ยกเลิก</code> in red across the header on screen and in print. <strong>Zero</strong> notification rows are created by the void. The bill shows <code>ระงับการแจ้งเตือนอัตโนมัติ</code> and one <code>PAYMENT_VOID</code> audit row exists.</td>
+<td>FR-35, FR-23, FR-24, FR-39, D-25, D-26, D-27, D-33</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-054</strong></td>
+<td>Re-payment after a void issues a new receipt number; the old one stays taken</td>
+<td>API</td>
+<td><span class="badge p1">P1</span></td>
+<td>State of TC-BILL-053: bill 118 <code>Unpaid</code>, payment 96 voided, receipt <code>REC-202609-000852</code> voided.</td>
+<td><ol><li><code>POST /payments</code> for bill 118 again.</li><li>Read the new receipt number.</li><li>Count payments and receipts for bill 118.</li><li>Open the room's payment history and the room-history report.</li></ol></td>
+<td><code>bill_id=118&amp;expected_total=1790.00</code>; the counter currently at 852.</td>
+<td>The second payment succeeds — <code>UNIQUE(active_bill_id)</code> permits repeated <code>NULL</code>s, so any number of voided payments coexist with at most one live payment. A <strong>new</strong> number is allocated, <code>REC-202609-000853</code>; <code>000852</code> is never reused. Two <code>payments</code> rows and two <code>receipts</code> rows exist for bill 118; the voided one still renders with <code>ยกเลิกแล้ว</code>, its reason and its original number. The room-history report joins the most recent payment, voided or not, so the evidence that money was taken and returned never vanishes. Receipt numbers are unique and monotonic but explicitly <strong>not gapless</strong>.</td>
+<td>FR-24, FR-25, FR-35, D-25, D-26, D-27, D-42</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-055</strong></td>
+<td>Void error mapping — unknown id, already voided, and the bill-scoped lookup</td>
+<td>API</td>
+<td><span class="badge p1">P1</span></td>
+<td>Payment 96 already voided. Bill 119 has no live payment.</td>
+<td><ol><li><code>POST /payments/424242/void</code> with a valid reason.</li><li><code>POST /payments/96/void</code> again.</li><li>From Bill Detail on bill 119, resolve the payment id to void.</li></ol></td>
+<td>reason <code>รับเงินผิดห้อง คืนเงินสดแล้ว</code>.</td>
+<td>Step 1: <code>404 NOT_FOUND</code> with <code>ไม่พบข้อมูลที่ต้องการ</code>. Step 2: <code>409</code> <code>{"error":{"code":"PAYMENT_ALREADY_VOIDED","message":"การชำระเงินนี้ถูกยกเลิกไปแล้ว"}}</code> — the double-click case; <code>voided_at</code> keeps its original timestamp. Step 3: <code>409</code> <code>{"error":{"code":"PAYMENT_NOT_FOUND","message":"ไม่พบการชำระเงินที่ยังใช้งานอยู่สำหรับบิลนี้"}}</code> — <code>PAYMENT_NOT_FOUND</code> is raised by the bill-scoped lookup only, never by <code>POST /payments/:id/void</code>.</td>
+<td>FR-35, D-25, D-26</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-056</strong></td>
+<td>A stale Payment screen produces a 409, never a wrong receipt</td>
+<td>API</td>
+<td><span class="badge p1">P1</span></td>
+<td>The cashier has <code>/payments?q=205</code> open showing <code>ยอดที่ต้องชำระ 1,790.00 บาท</code>. Meanwhile Admin reverts bill 118, corrects a reading and re-approves it at <code>1,810.00</code>.</td>
+<td><ol><li>Press <strong>ยืนยันรับเงินสด</strong> on the stale screen.</li><li>Read the response and the Thai copy.</li><li>Assert no payment and no receipt number were written.</li><li>Repeat after a reload.</li><li>Repeat while the bill sits in <code>Draft</code> mid-correction.</li></ol></td>
+<td><code>bill_id=118&amp;expected_total=1790.00</code> against a bill whose total is now <code>1810.00</code>.</td>
+<td>Step 1: <code>409 BILL_TOTAL_CHANGED</code>. Zero payments, zero receipts, no counter consumed — <code>expected_total</code> is a staleness check only; the stored amount is always copied from <code>bills.total</code> in SQL and can never disagree with its bill. Step 4 succeeds at <code>1,810.00</code>. Step 5 shows <code>บิลนี้ถูกตีกลับเป็นฉบับร่าง ไม่สามารถรับชำระได้</code> as a <code>.notice.bad</code> and removes the row from the list; no payment is written. The <code>รับเงิน</code>/<code>เงินทอน</code> calculator is screen-only and is never submitted, stored, printed or sent.</td>
+<td>FR-22, FR-34, D-24, D-22, D-40</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<h3 id="tc-billing-overdue">7. Overdue derivation, date boundaries and the daily job</h3>
+
+<p>The <code>Unpaid → Overdue</code> transition is instantaneous at 00:00 Asia/Bangkok on the day after the due date: no job, no drift, nothing to fail. The 09:00 job sends reminders and <strong>never writes a bill status</strong>. At most four automatic messages reach a bill in its entire life.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th></tr></thead>
+<tbody>
+
+<tr>
+<td><strong>TC-BILL-057</strong></td>
+<td>The overdue boundary is midnight Asia/Bangkok on the day after the due date</td>
+<td>unit</td>
+<td><span class="badge p0">P0</span></td>
+<td>Bill 118 <code>Unpaid</code>, <code>due_date = 2026-09-05</code>.</td>
+<td><ol><li>Evaluate the display helper at 2026-09-04 23:59 น.</li><li>At 2026-09-05 00:00 น.</li><li>At 2026-09-05 23:59 น.</li><li>At 2026-09-06 00:00 น.</li><li>Assert no job or timer participates in the transition.</li></ol></td>
+<td>Clock pinned to each of the four instants, timezone Asia/Bangkok.</td>
+<td>Steps 1–3 return <code>Unpaid</code> / <code>รอชำระ</code> — the due date itself is <strong>not</strong> overdue, because the predicate is <code>due_date &lt; CURDATE()</code>, strictly less. Step 4 returns <code>Overdue</code> / <code>เกินกำหนด</code>. The total is unchanged at <code>1,790.00</code> in all four: no late fee, interest or penalty. No scheduled job runs at any of these instants, and nothing is written to the database by the transition.</td>
+<td>FR-23, D-21, D-03, D-05</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-058</strong></td>
+<td>The boundary follows Bangkok, not UTC</td>
+<td>API</td>
+<td><span class="badge p1">P1</span></td>
+<td>Bill 118 <code>Unpaid</code>, due <code>2026-09-05</code>. The database session and the app both run Asia/Bangkok.</td>
+<td><ol><li>Pin the clock to 2026-09-05 18:00 UTC (2026-09-06 01:00 in Bangkok).</li><li><code>GET /bills/118</code> and read <code>display_status</code>.</li><li>Compare the SQL <code>CASE</code> and the JS helper.</li><li>Grep the client bundle for date arithmetic.</li></ol></td>
+<td>UTC instant <code>2026-09-05T18:00:00Z</code>.</td>
+<td><code>display_status</code> is <code>Overdue</code> — the Bangkok calendar day is already the 6th. The SQL <code>CURDATE()</code> and <code>todayBangkok()</code> agree; a UTC-based comparison would still say <code>Unpaid</code> and failing that assertion is the point. No UTC value ever reaches a user, dates render as <code>5 ก.ย. 2026</code> in lists and <code>5 กันยายน 2026</code> in LINE and on the receipt, times as <code>14:30 น.</code>, and no date arithmetic happens in the browser.</td>
+<td>FR-23, D-03, D-21, NFR-21</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-059</strong></td>
+<td>The daily job queues <code>PRE_DUE</code> at due − 2 and on no other day</td>
+<td>API</td>
+<td><span class="badge p0">P0</span></td>
+<td>Bill 118 <code>Unpaid</code>, due <code>2026-09-05</code>, tenant LINE-linked. Job token configured.</td>
+<td><ol><li>Run the job at 09:00 on 2 ก.ย.</li><li>Run at 09:00 on 3 ก.ย.</li><li>Run at 09:00 on 4 ก.ย. and on 5 ก.ย.</li><li>Read the <code>notifications</code> rows for bill 118 after each run.</li></ol></td>
+<td><code>POST /internal/jobs/daily</code> with a valid <code>X-Job-Token</code>, once per pinned date.</td>
+<td>Only the 3 ก.ย. run queues a row, of type <code>PRE_DUE</code>, because <code>DATEDIFF(due_date, CURDATE()) = 2</code>. The 2, 4 and 5 ก.ย. runs queue nothing for this bill — in particular <strong>nothing is sent on the due date itself</strong>. Every run returns <code>200</code> with its counts. A wrong or missing <code>X-Job-Token</code> returns <code>401</code> with an empty body, and the login rate limiter never applies to this route.</td>
+<td>FR-20, FR-37, D-32, D-33, NFR-12</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-060</strong></td>
+<td>The daily job queues <code>OVERDUE</code> on days 1, 8 and 15 only</td>
+<td>API</td>
+<td><span class="badge p0">P0</span></td>
+<td>Bill 118 <code>Unpaid</code>, due <code>2026-09-05</code>, never paid.</td>
+<td><ol><li>Run the job at 09:00 on each date from 6 ก.ย. to 22 ก.ย.</li><li>Record every <code>notifications</code> row created for bill 118.</li><li>Assert the bill's stored status after the whole sequence.</li></ol></td>
+<td>Seventeen consecutive pinned dates; <code>DATEDIFF(CURDATE(), due_date)</code> running 1 … 17.</td>
+<td>Exactly three <code>OVERDUE</code> rows, created on <strong>6 ก.ย.</strong>, <strong>13 ก.ย.</strong> and <strong>20 ก.ย.</strong> (days 1, 8 and 15). The other fourteen runs create nothing for this bill; nothing at all is automatic after day 15. With the earlier <code>BILL</code> and <code>PRE_DUE</code> rows the bill has received <strong>at most four automatic messages in its entire life</strong>. <code>bills.status</code> is still <code>Unpaid</code> throughout — the job never writes a bill status — and the amount is still <code>1,790.00</code>.</td>
+<td>FR-21, FR-23, FR-37, D-21, D-33</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-061</strong></td>
+<td>A second scheduled run on the same date is a no-op that still returns 200</td>
+<td>API</td>
+<td><span class="badge p1">P1</span></td>
+<td>The 09:00 run for 3 ก.ย. 2026 has already completed.</td>
+<td><ol><li>Call <code>POST /internal/jobs/daily</code> again the same day.</li><li>Read the body.</li><li>Count <code>job_runs</code> rows for the date and <code>notifications</code> rows created.</li></ol></td>
+<td>Same token, same calendar date.</td>
+<td><code>200</code> with <code>{"data":{"job":"daily","run_date":"2026-09-03","already_ran":true,"pre_due":0,"overdue":0,"retried":0,"sent":0,"failed":0,"skipped_no_line":0}}</code> — <strong>not</strong> an error, because a retrying scheduler must not see one. Exactly one <code>job_runs</code> row for the date, guarded by <code>uq_job_runs(job_name, run_date)</code>. No second message is queued or sent.</td>
+<td>FR-37, D-32, NFR-15, NFR-22</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-062</strong></td>
+<td>The manual trigger bypasses the daily guard but not the dedupe key</td>
+<td>API</td>
+<td><span class="badge p1">P1</span></td>
+<td>The 09:00 <code>daily</code> run for 3 ก.ย. 2026 already queued and sent one <code>PRE_DUE</code> for bill 118. Admin on Settings at 14:00.</td>
+<td><ol><li>Press <strong>รันงานแจ้งเตือนตอนนี้</strong>.</li><li>Read the flash.</li><li>Count <code>job_runs</code> rows and <code>notifications</code> rows for bill 118 on that date.</li></ol></td>
+<td><code>POST /settings/run-daily-job</code>, Admin session.</td>
+<td>The run executes the identical code body with <code>job_name = 'daily_manual'</code> and <strong>skips the <code>job_runs</code> guard entirely</strong>, so a 14:00 demo still works after the 09:00 cron. The flash reads <code>ส่งแจ้งเตือนก่อนครบกำหนด {a} ราย · เลยกำหนด {b} ราย · ส่งซ้ำที่ล้มเหลว {c} ราย</code>. Bill 118 still has exactly one <code>PRE_DUE</code> row for 3 ก.ย.: the generated <code>dedupe_key</code> <code>PRE_DUE:118:0:37:2026-09-03</code> is rejected by <code>uq_notifications(dedupe_key)</code>, so the tenant is not messaged twice. Two <code>job_runs</code> rows exist for the date, one <code>daily</code> and one <code>daily_manual</code>.</td>
+<td>FR-37, FR-32, D-32, D-30, ENG-3</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-063</strong></td>
+<td>Paid bills and voided-payment bills are excluded from the chase</td>
+<td>API</td>
+<td><span class="badge p1">P1</span></td>
+<td>Bill A is <code>Paid</code>. Bill B is <code>Unpaid</code> with a voided payment. Bill C is plainly <code>Unpaid</code>. All three have due date <code>2026-09-05</code> and linked tenants.</td>
+<td><ol><li>Run the job on 6, 13 and 20 ก.ย.</li><li>Read the <code>notifications</code> rows per bill.</li><li>Read bill B's badge on Bill Detail.</li><li>Press <strong>ส่งแจ้งเตือนอีกครั้ง</strong> on bill B four times.</li><li>Force three consecutive push failures on bill C and run the job again.</li></ol></td>
+<td>Three bills, three pinned dates.</td>
+<td>Bill A receives nothing — the eligibility predicate is <code>status = 'Unpaid'</code>. Bill B receives nothing: <code>NOT EXISTS (SELECT 1 FROM payments p WHERE p.bill_id = b.id AND p.voided_at IS NOT NULL)</code> suppresses it, and it displays the badge <code>ระงับการแจ้งเตือนอัตโนมัติ</code> — the system never chases a tenant who paid and did nothing wrong. Bill C receives three <code>OVERDUE</code> rows. Step 4: the Admin's <code>POST /bills/:id/notify</code> is uncapped and works on bill B all four times. Step 5: automatic retries stop at <code>attempt_count = 3</code> and the job then leaves it alone; the manual button still works.</td>
+<td>FR-21, FR-32, FR-35, D-25, D-30, D-33</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<h3 id="tc-billing-reporting">8. Dashboard KPI formulas and report figures</h3>
+
+<p>"Approved" throughout this section means the <strong>stored</strong> status is <code>Unpaid</code> or <code>Paid</code>; Draft bills are excluded from every money figure. Reading the stored column for that purpose is explicitly not a violation of the display rule.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>ID</th><th>Title</th><th>Type</th><th>Pri</th><th>Preconditions</th><th>Steps</th><th>Test data</th><th>Expected result</th><th>Traces to</th></tr></thead>
+<tbody>
+
+<tr>
+<td><strong>TC-BILL-064</strong></td>
+<td>The two Dashboard identities reconcile on screen</td>
+<td>API</td>
+<td><span class="badge p0">P0</span></td>
+<td>Period <code>2026-09</code> with a mix of Draft, Unpaid, Overdue and Paid bills. Admin session.</td>
+<td><ol><li><code>GET /dashboard?period=2026-09</code>.</li><li>Compute <code>water_total + electric_total + common_total</code> and compare with <code>billed_total</code>.</li><li>Compute <code>billed_total − collected_total</code> and compare with <code>outstanding_total</code>.</li><li>Sum the period's Unpaid bills independently and compare.</li><li>Assert every bill of the period has exactly three items.</li></ol></td>
+<td>The full 80-room seed for <code>2026-09</code>.</td>
+<td>Identity 1 holds exactly: the three item tiles sum to <code>billed_total</code>, because every generated bill always carries exactly three items even at 0 units and <code>0.00</code>. Identity 2 holds exactly, and <code>outstanding_total</code> equals the independent sum of the period's <code>Unpaid</code> bills — the ones displaying as <code>รอชำระ</code> and <code>เกินกำหนด</code> — since <code>Unpaid</code> and <code>Paid</code> are the only two approved statuses. A bill with fewer than three items fails step 5 and is a defect. <code>ห้องทั้งหมด 80</code>, <code>มีผู้เช่า 67</code>, <code>ห้องว่าง 13</code>, and the third is computed as the difference so the three always reconcile.</td>
+<td>FR-28, FR-17, D-41, D-18, D-44</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-065</strong></td>
+<td>The common-area tile moves from 69,300.00 to 70,350.00 when room 205 is approved</td>
+<td>API</td>
+<td><span class="badge p0">P0</span></td>
+<td>Freshly reset seed: 66 bills of the current period are approved, room 205's is still <code>Draft</code>, 13 rooms vacant.</td>
+<td><ol><li><code>GET /dashboard?period=2026-09</code> and read <code>common_total</code>.</li><li>Approve bill 118.</li><li>Re-read <code>common_total</code> and <code>billed_total</code>.</li></ol></td>
+<td>67 occupied rooms × 30.00 ตร.ม. × 35.00 บาท.</td>
+<td>Before: <code>common_total = "69300.00"</code> — <code>66 × 30 × 35 = 69,300.00</code>, because the Draft bill is excluded and the 13 vacant rooms produce no common item at all. After: <code>common_total = "70350.00"</code> — <code>67 × 30 × 35 = 70,350.00</code>, the PRD §16 headline reproduced exactly, and <code>billed_total</code> rises by <code>1,790.00</code>. Both numbers are assertable; which one applies depends only on whether the approval has happened.</td>
+<td>FR-28, FR-16, D-41, D-07, D-44</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-066</strong></td>
+<td>Draft exclusion, payment-date independence and the all-time arrears tile</td>
+<td>API</td>
+<td><span class="badge p1">P1</span></td>
+<td>Period <code>2026-09</code>: 3 Draft bills totalling <code>5,886.00</code>. A <code>2026-08</code> bill paid on 3 ก.ย. 2026. Unpaid bills exist in <code>2026-07</code> and <code>2026-08</code>.</td>
+<td><ol><li>Read <code>billed_total</code> for <code>2026-09</code> and confirm the Drafts are absent.</li><li>Read <code>collected_total</code> for <code>2026-08</code> and for <code>2026-09</code>.</li><li>Read <code>arrears_all_time</code> and compare with the sum of every Unpaid bill of every period.</li><li>Read the Monthly Billing tile strip.</li></ol></td>
+<td>Draft subtotal <code>5,886.00</code>; a September payment settling an August bill.</td>
+<td>The 3 Drafts appear in <strong>no</strong> money tile; Monthly Billing shows them separately as <code>ฉบับร่าง (ยังไม่นับเป็นยอดเรียกเก็บ) 5,886.00 · 3 ใบ</code>. The August payment counts in <strong>August's</strong> <code>collected_total</code>, not September's — collection is counted by billing period, never by payment date. <code>arrears_all_time</code> equals <code>SUM(total)</code> over every <code>Unpaid</code> bill of every period and is explicitly not period-scoped, so it exceeds September's <code>outstanding_total</code>.</td>
+<td>FR-28, FR-29, D-41, D-42</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-067</strong></td>
+<td>The Staff Dashboard selects no money columns and the charts endpoint is closed</td>
+<td>API</td>
+<td><span class="badge p1">P1</span></td>
+<td>Staff session. Period <code>2026-09</code> fully populated.</td>
+<td><ol><li><code>GET /dashboard?period=2026-09</code> as <code>staff</code>.</li><li>Grep the whole response body for an amount and for the keys <code>billed_total</code>, <code>collected_total</code>, <code>water_total</code>.</li><li>Capture the SQL the request issued.</li><li><code>GET /api/dashboard/charts?period=2026-09</code> as <code>staff</code>.</li></ol></td>
+<td>Staff session cookie.</td>
+<td>The page renders only <code>rooms_total</code> 80, <code>rooms_occupied</code> 67, <code>rooms_vacant</code> 13 and <code>reading_progress</code>. The grep finds no amount and none of the money keys. The captured SQL <strong>does not select amounts at all</strong> — <code>dashboardKpis(period, 'staff')</code> issues a different query; money is absent from the response, not hidden in the template. Step 4 returns <code>403</code>.</td>
+<td>FR-28, FR-02, D-36, D-41</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-068</strong></td>
+<td>Report 1 and report 2 identities, and the CSV export</td>
+<td>API</td>
+<td><span class="badge p1">P1</span></td>
+<td>Twelve periods of history plus <code>2026-09</code>. Clock 20 ก.ย. 2026. Admin session.</td>
+<td><ol><li><code>GET /reports/monthly</code> and check both identities on every row.</li><li><code>GET /reports/arrears</code>; sum the four bucket counts and the four bucket amounts.</li><li>Read the summary line above the arrears table.</li><li>Export both with <code>?format=csv</code> and open them in Excel.</li></ol></td>
+<td>Default range = the last 12 periods; arrears as of <code>CURDATE()</code>.</td>
+<td>Report 1: on <strong>every</strong> row <code>billed − collected = outstanding</code> and <code>water_billed + electric_billed + common_billed = billed</code>. Report 2: the four non-overlapping buckets <code>1-7 / 8-30 / 31-60 / 61+ วัน</code> — counts sum to the row count and amounts to the report total, because the rows are Unpaid bills with <code>due_date &lt; CURDATE()</code>; the not-yet-due residual appears above the table as <code>ยังไม่ครบกำหนด {n} ใบ · {amount} บาท</code> and nothing becomes invisible. A bill whose payment was voided still appears with <code>ระงับการแจ้งเตือนอัตโนมัติ</code>. The exports are UTF-8 <em>with a BOM</em> so Thai opens correctly, named <code>report-monthly-2026-09.csv</code> and <code>report-arrears-2026-09.csv</code>. No PDF export exists.</td>
+<td>FR-29, FR-43, D-42, D-25</td>
+</tr>
+
+<tr>
+<td><strong>TC-BILL-069</strong></td>
+<td>Report 3 reproduces the demo row, and every chart gap is <code>null</code> rather than 0</td>
+<td>API</td>
+<td><span class="badge p1">P1</span></td>
+<td>Room 205 (<code>room_id 41</code>) with the PRD §28 bill approved and paid on 3 ก.ย. 2026. One room has a month with no bill at all.</td>
+<td><ol><li><code>GET /reports/room-history?room_id=41&amp;period=2026-09</code>.</li><li>Read the <code>2026-09</code> row.</li><li><code>GET /api/dashboard/charts?period=2026-09</code>.</li><li>Check every series length and the empty month's value.</li><li>Check the doughnut's second slice label.</li></ol></td>
+<td>Room 41, twelve periods ending <code>2026-09</code>.</td>
+<td>The <code>2026-09</code> row reads <code>10 / 70 / 180.00 / 560.00 / 1,790.00 / Paid / 2026-09-03 / REC-202609-000852</code> — the only report using the <code>display_status</code> expression, because it is the only one whose status column a human reads row by row. It is scoped by <code>room_id</code>, so a previous Inactive tenant's bills, payments and receipts stay visible. Charts: <code>labels</code> and each of <code>water_units</code>, <code>electric_units</code> and <code>revenue_collected</code> carry exactly twelve entries; a month with no data is <code>null</code>, never <code>0</code>, so Chart.js plots a gap — <code>"0.00"</code> means the month exists and nothing has been collected. The doughnut's second slice is labelled <code>รอชำระ + เกินกำหนด</code>, because the split between them is a display rule.</td>
+<td>FR-25, FR-26, FR-30, FR-29, D-41, D-42, D-21, D-14</td>
+</tr>
+
+</tbody>
+</table>
+</div>
+
+<h3 id="tc-billing-coverage">9. Coverage and recorded assumptions</h3>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Area</th><th>Cases</th><th>P0</th><th>Functional requirements exercised</th></tr></thead>
+<tbody>
+<tr><td>1 · Generation and idempotency</td><td>TC-BILL-001 … 012</td><td>4</td><td>FR-02, FR-08, FR-09, FR-10, FR-11, FR-12, FR-17, FR-18, FR-42</td></tr>
+<tr><td>2 · Calculation and edge cases</td><td>TC-BILL-013 … 028</td><td>10</td><td>FR-06, FR-10, FR-12, FR-13, FR-14, FR-15, FR-16, FR-17, FR-26, FR-28, FR-30, FR-33, FR-36, FR-39, FR-41, FR-44, FR-48</td></tr>
+<tr><td>3 · Rate resolution</td><td>TC-BILL-029 … 033</td><td>2</td><td>FR-07, FR-08, FR-09, FR-15, FR-17, FR-24</td></tr>
+<tr><td>4 · State machine</td><td>TC-BILL-034 … 041</td><td>5</td><td>FR-18, FR-19, FR-22, FR-23, FR-24, FR-28, FR-32, FR-34, FR-39</td></tr>
+<tr><td>5 · Approval and immutability</td><td>TC-BILL-042 … 049</td><td>4</td><td>FR-02, FR-06, FR-10, FR-11, FR-16, FR-18, FR-19, FR-32, FR-33, FR-38, FR-39, FR-42</td></tr>
+<tr><td>6 · Corrections</td><td>TC-BILL-050 … 056</td><td>2</td><td>FR-18, FR-19, FR-22, FR-23, FR-24, FR-25, FR-34, FR-35, FR-39, FR-46</td></tr>
+<tr><td>7 · Overdue and the daily job</td><td>TC-BILL-057 … 063</td><td>3</td><td>FR-20, FR-21, FR-23, FR-32, FR-35, FR-37</td></tr>
+<tr><td>8 · Dashboard and reports</td><td>TC-BILL-064 … 069</td><td>2</td><td>FR-02, FR-16, FR-17, FR-25, FR-26, FR-28, FR-29, FR-30, FR-43</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout decision">
+<div class="title">Assumptions recorded by this test set</div>
+<ul>
+<li><strong>The clock is pinned, the seed is not rewritten.</strong> D-44 makes every seeded date relative to the run date, so the PRD §28 calendar cannot be asserted against a live seed. These cases pin the container clock to Asia/Bangkok and the period to <code>2026-09</code>; a case that manipulates dates says so in its preconditions. Where a grader runs on a different day, the arithmetic assertions (10 หน่วย, 70 หน่วย, 180.00, 560.00, 1,050.00, 1,790.00) still hold and only the calendar assertions shift.</li>
+<li><strong>Identifiers are the engineering specification's, not the UI design's.</strong> API cases use <code>bill 118</code>, <code>payment 96</code>, <code>receipt 96</code>, <code>room_id 41</code>; the UI design's <code>bill 1842</code> and <code>batch 418</code> are illustrative and are not asserted anywhere. Room <code>205</code>, the arithmetic and <code>REC-202609-000852</code> are the only identifiers that must reproduce.</li>
+<li><strong>Room 205's tenant is อารยา ศรีสุวรรณ, following the UI design.</strong> The two source documents disagree on this one name: the UI design's cast table declares room 205 → นางสาวอารยา ศรีสุวรรณ as binding for every chapter and gives สมชาย ใจดี to room 202, while the engineering specification's seed excerpt and fixture table label tenant id <code>37</code> "สมชาย ใจดี". The id (<code>37</code>), the room (<code>41</code> / <code>205</code>) and the phone number (<code>0812345678</code>) agree across both documents; only the name differs. No case here asserts a literal tenant name as a pass condition — TC-BILL-017 and TC-BILL-046 assert that <code>tenant_name_snapshot</code> is <em>stable</em> across a later edit, which holds under either reading — so this section passes either way, but the two documents should be reconciled.</li>
+<li><strong>TC-BILL-050 shifts one fixture value on purpose.</strong> Correcting 1,260 down to 1,206 against a previous of 1,250 would be a negative reading, which the system rejects by design; the case therefore uses a previous of 1,200 so the corrected arithmetic is legal and the revert path is still exercised end to end.</li>
+<li><strong>Delivery is asserted on rows, never on an inbox.</strong> <code>settings.line_test_mode</code> is ON in every environment, so every message assertion reads <code>notifications</code> (<code>type</code>, <code>status</code>, <code>attempt_count</code>, <code>dedupe_key</code>). A blocked Official Account is indistinguishable from a delivered message, so the word "blocked" appears in no case.</li>
+<li><strong>Receipt numbers are asserted as unique and monotonic only.</strong> No case asserts gaplessness: a rolled-back transaction consumes a number, which is a documented limitation. TC-BILL-054 asserts <code>REC-202609-000853</code> as the next number against a counter left at 852 by the seed, not as a general rule.</li>
+<li><strong>No case reintroduces a PRD §24 exclusion.</strong> No rent, no lease contract, no proration, no payment gateway, no card, no online banking, no slip upload, no QR payment, no IoT meter, no AI. The soft usage flags of FR-44 are two fixed arithmetic thresholds and are described as nothing else.</li>
+</ul>
+</div>
+
+</section>

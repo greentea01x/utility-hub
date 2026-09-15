@@ -1,0 +1,834 @@
+<section id="api-spec">
+<h2>API Specification</h2>
+
+<p>This section is the complete HTTP contract of Juristic Platform: every route, who may call it, what it accepts, what it returns, and every rule that can reject it. It is written against ADR-001 §6.2 (API style and base path), §6.3 (envelope and error format) and §6.8 (validation in four layers); where a rule comes from the product decision log the decision id is cited inline. Every worked example uses the PRD §28 demo: room 205, 30 sqm, water 1,250 → 1,260 = 10 units × 18 THB = 180, electricity 5,280 → 5,350 = 70 units × 8 THB = 560, common area 30 × 35 = 1,050, total 1,790 THB, due 5 Sep 2026, paid 3 Sep 2026, receipt <code>REC-202609-000852</code>.</p>
+
+<div class="callout decision">
+  <div class="title">The shape of this API is fixed by the ADR and is not a REST API</div>
+  <p>ADR-001 §6.2 and A-11 are binding: server-rendered pages with POST-Redirect-GET are the default, and <strong>exactly seven JSON endpoints exist under <code>/api</code></strong>. Adding an eighth is a decision, not a convenience. Consequently this specification documents <em>two</em> request surfaces with one shared set of conventions — HTML routes that accept <code>application/x-www-form-urlencoded</code> and answer with a redirect, and the seven JSON endpoints that exist only where a page must not reload. There is no <code>/api/v1</code>, no JSON CRUD for rooms, tenants or users, and no <code>GET /api/me</code>. Where this section shows "request/response" for a form route, the request is form fields and the response is a redirect or a re-render — that is the contract an implementer must build.</p>
+</div>
+
+<h3>Conventions</h3>
+
+<h4>The two surfaces</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Surface</th><th>Base path</th><th>Request</th><th>Success</th><th>Failure</th><th>Auth</th></tr></thead>
+<tbody>
+<tr><td><strong>Page routes</strong> (default)</td><td><code>/</code></td><td><code>GET</code>, or <code>POST</code> with <code>application/x-www-form-urlencoded</code> + <code>_csrf</code></td><td><code>200</code> HTML, or <code>303 See Other</code> + <code>Location</code> + one-shot flash</td><td>Re-render the same page with <code>200</code>, every typed value preserved, inline Thai error (D-40). Never a redirect, never a lost form.</td><td>Session cookie</td></tr>
+<tr><td><strong>JSON endpoints</strong> (7)</td><td><code>/api</code></td><td><code>application/json</code> + <code>X-CSRF-Token</code> on every <code>POST</code></td><td><code>200</code> with <code>{"data": …}</code></td><td>Status per the table below with <code>{"error": …}</code></td><td>Session cookie</td></tr>
+<tr><td><strong>Machine endpoints</strong> (3)</td><td>—</td><td>See each</td><td><code>200</code></td><td><code>401</code>, empty body</td><td><code>X-Line-Signature</code> / <code>X-Job-Token</code> / public</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Route naming follows ADR §6.1: page routes are lowercase, plural, hyphenated (<code>/bills</code>, <code>/bills/:id</code>, <code>/readings</code>); JSON routes are <code>/api/&lt;resource&gt;[/&lt;action&gt;]</code>. Page identifiers stay English in routes, payloads and test hooks; every visible string is Thai (D-02).</p>
+
+<h4>Authentication, session and CSRF</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Mechanism</th><th>Detail</th><th>Source</th></tr></thead>
+<tbody>
+<tr><td>Session</td><td><code>express-session</code> with the MySQL store; cookie <code>connect.sid</code> (library default, not renamed), <code>httpOnly</code>, <code>SameSite=Lax</code>, <code>Secure</code> in production, rolling 8-hour expiry. No JWT, no bearer token, no <code>Authorization</code> header anywhere in the system.</td><td>D-37</td></tr>
+<tr><td>Role gate</td><td><code>requireAuth</code> then <code>requireRole('admin')</code> / <code>requireRole('admin','staff')</code>, one enforcement point in <code>middleware/auth.js</code>. Navigation is generated from the same matrix, so a link never exists for a page the role cannot open.</td><td>D-36, ADR A-6</td></tr>
+<tr><td>CSRF</td><td>Synchronizer token stored in the session, compared with <code>crypto.timingSafeEqual</code>. Page forms send it as the hidden input <code>_csrf</code>; the six client-side <code>fetch</code> calls send the identical value as the <code>X-CSRF-Token</code> header. Every <code>POST</code> is protected except the three machine routes.</td><td>D-37, ADR A-8</td></tr>
+<tr><td>Login rate limit</td><td>10 failed logins per IP per 15 minutes, <code>app.set('trust proxy', 1)</code>. Applies to <code>POST /login</code> only — never to the webhook, the job endpoint or <code>/healthz</code>.</td><td>D-37</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>Session identity — why there is no <code>GET /api/me</code></h4>
+
+<p>The identity of the caller is never fetched; it is already on the page. On successful login the server stores exactly this object and exposes it to every EJS render as <code>currentUser</code>:</p>
+
+<pre><code>req.session.user = {
+  "id": 1,
+  "username": "admin",
+  "display_name": "นิติบุคคล",   // prints as ผู้รับเงิน on the receipt (D-27, D-46)
+  "role": "admin"                // "admin" | "staff"
+}</code></pre>
+
+<p>Nothing else is kept in the session but the CSRF token and the flash message. A JSON caller that has lost its session gets <code>401 UNAUTHENTICATED</code> from the same middleware, and the page surface redirects to <code>/login</code> instead. Adding a <code>/api/me</code> endpoint would be an eighth JSON endpoint serving data the server already rendered.</p>
+
+<h4>JSON envelope</h4>
+
+<p>Every JSON response carries <strong>exactly one</strong> top-level key — <code>data</code> or <code>error</code>. No response ever carries both, and no endpoint returns a bare array (ADR §6.3).</p>
+
+<pre><code>{ "data": { "period": "2026-09", "created": 1, "updated": 0, "skipped_approved": 0, "missing_readings": 3 } }</code></pre>
+
+<pre><code>{ "error": {
+    "code": "READING_BELOW_PREVIOUS",
+    "message": "เลขมิเตอร์ปัจจุบันน้อยกว่าเดือนก่อน (1,250) กรุณาตรวจสอบ",
+    "fields": { "current_reading": "ต้องไม่น้อยกว่า 1,250" } } }</code></pre>
+
+<p><code>code</code> is a stable <code>UPPER_SNAKE</code> identifier that tests assert on; <code>message</code> is Thai and is what the user sees; <code>fields</code> is present only on a validation failure and is keyed by the input name, so the API message and the inline form message are the same string produced by the same <code>zod</code> schema (D-40).</p>
+
+<h4>Status codes</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Status</th><th>Meaning</th><th>Page surface behaviour</th></tr></thead>
+<tbody>
+<tr><td><code>200</code></td><td>OK, or a form re-rendered with errors</td><td>HTML</td></tr>
+<tr><td><code>303</code></td><td>POST accepted, redirect to the result page (POST-Redirect-GET)</td><td><code>Location</code> + flash</td></tr>
+<tr><td><code>400</code></td><td>Malformed or unparseable request</td><td>Thai 400 flash, back to the form</td></tr>
+<tr><td><code>401</code></td><td>No session (or bad machine credential)</td><td>Redirect to <code>/login</code></td></tr>
+<tr><td><code>403</code></td><td>Role denied, or CSRF token mismatch</td><td>Thai 403 page with a button back to จดมิเตอร์ (D-40)</td></tr>
+<tr><td><code>404</code></td><td>Unknown id or unknown route</td><td>Thai 404 page</td></tr>
+<tr><td><code>409</code></td><td>Lost a state race — a conditional <code>UPDATE</code> affected 0 rows, or a unique key rejected the write</td><td>Re-render with the Thai message</td></tr>
+<tr><td><code>422</code></td><td>Well-formed but rejected by a business rule</td><td>Inline field errors, values preserved</td></tr>
+<tr><td><code>429</code></td><td>Login rate limit</td><td>Login page with the wait message</td></tr>
+<tr><td><code>500</code></td><td>Unexpected — generic Thai sentence, stack to stdout only</td><td>Thai 500 page</td></tr>
+<tr><td><code>503</code></td><td><code>/healthz</code> only: database unreachable</td><td>—</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>Error code catalogue</h4>
+
+<p>This list is exhaustive. A handler that needs a code not on this list is adding one, and the new code must be added here first.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Code</th><th>Status</th><th>Raised when</th><th>Thai message</th><th>Ref</th></tr></thead>
+<tbody>
+<tr><td><code>BAD_REQUEST</code></td><td>400</td><td>Body or query is unparseable</td><td>คำขอไม่ถูกต้อง</td><td>ADR §6.3</td></tr>
+<tr><td><code>UNAUTHENTICATED</code></td><td>401</td><td>No session on a JSON call</td><td>เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่</td><td>D-37</td></tr>
+<tr><td><code>LOGIN_INVALID</code></td><td>401</td><td>Wrong credentials, or the user is Inactive</td><td>ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง</td><td>D-37, D-46</td></tr>
+<tr><td><code>LOGIN_RATE_LIMITED</code></td><td>429</td><td>11th failed login from one IP in 15 minutes</td><td>เข้าสู่ระบบผิดพลาดหลายครั้ง กรุณารออีก 15 นาที</td><td>D-37</td></tr>
+<tr><td><code>FORBIDDEN_ROLE</code></td><td>403</td><td>Staff calling an Admin route</td><td>ไม่มีสิทธิ์เข้าถึงหน้านี้ · บัญชีของคุณเป็นเจ้าหน้าที่ กรุณาติดต่อนิติบุคคล</td><td>D-36, D-40</td></tr>
+<tr><td><code>CSRF_INVALID</code></td><td>403</td><td>Missing or mismatched token</td><td>แบบฟอร์มหมดอายุ กรุณาโหลดหน้าใหม่แล้วลองอีกครั้ง</td><td>D-37</td></tr>
+<tr><td><code>NOT_FOUND</code></td><td>404</td><td>Unknown id</td><td>ไม่พบข้อมูลที่ต้องการ</td><td>—</td></tr>
+<tr><td><code>VALIDATION_FAILED</code></td><td>422</td><td>Generic <code>zod</code> rejection; <code>fields</code> always present</td><td>ข้อมูลไม่ถูกต้อง กรุณาตรวจสอบ</td><td>D-40</td></tr>
+<tr><td><code>READING_BELOW_PREVIOUS</code></td><td>422</td><td><code>current_reading &lt; previous_reading</code> with the replacement box off</td><td>เลขมิเตอร์ปัจจุบันน้อยกว่าเดือนก่อน (1,250) กรุณาตรวจสอบ</td><td>D-13</td></tr>
+<tr><td><code>REPLACEMENT_INVALID</code></td><td>422</td><td><code>old_final &lt; previous_reading</code> or <code>current_reading &lt; new_start</code></td><td>เลขสุดท้ายของมิเตอร์เดิมต้องไม่น้อยกว่าเลขเดือนก่อน (1,250)</td><td>D-13</td></tr>
+<tr><td><code>READING_FROZEN</code></td><td>422</td><td>The room's bill for that period is not Draft</td><td>บิลอนุมัติแล้ว แก้ไขไม่ได้</td><td>D-12</td></tr>
+<tr><td><code>BILL_NOT_DRAFT</code></td><td>409</td><td>Revert or recalculate against a non-Draft bill</td><td>บิลนี้ไม่ใช่ฉบับร่างแล้ว</td><td>D-18, D-22</td></tr>
+<tr><td><code>BILL_NOT_PAYABLE</code></td><td>422</td><td>Payment attempted on a Draft bill</td><td>บิลนี้ยังไม่ได้อนุมัติ ไม่สามารถรับชำระได้</td><td>D-24</td></tr>
+<tr><td><code>BILL_ALREADY_PAID</code></td><td>409</td><td>The conditional <code>UPDATE … WHERE status='Unpaid'</code> affected 0 rows</td><td>บิลนี้ถูกชำระไปแล้ว</td><td>D-26</td></tr>
+<tr><td><code>BILL_TOTAL_CHANGED</code></td><td>409</td><td><code>expected_total</code> from a stale Payment screen ≠ <code>bills.total</code></td><td>ยอดบิลเปลี่ยนแปลง กรุณาโหลดหน้าใหม่ก่อนรับเงิน</td><td>D-22, D-24</td></tr>
+<tr><td><code>REVERT_NOT_NEWEST</code></td><td>422</td><td>A later bill exists for the same room</td><td>มีบิลรอบถัดไปแล้ว ไม่สามารถแก้ไขย้อนหลังได้ — กรุณาแก้ในรอบล่าสุด</td><td>D-22</td></tr>
+<tr><td><code>REASON_TOO_SHORT</code></td><td>422</td><td>A Thai reason shorter than 10 characters</td><td>กรุณาระบุเหตุผลอย่างน้อย 10 ตัวอักษร</td><td>D-22, D-25, D-39</td></tr>
+<tr><td><code>PAYMENT_ALREADY_VOIDED</code></td><td>409</td><td>Void attempted twice on one payment</td><td>การชำระเงินนี้ถูกยกเลิกไปแล้ว</td><td>D-25</td></tr>
+<tr><td><code>TENANT_ROOM_OCCUPIED</code></td><td>409</td><td><code>uq_tenants(active_room_id)</code> rejected a second Active tenant</td><td>ห้องนี้มีผู้เช่าอยู่แล้ว กรุณาสิ้นสุดสัญญาเช่าเดิมก่อน</td><td>D-10, ENG-1</td></tr>
+<tr><td><code>TENANCY_END_BLOCKED</code></td><td>422</td><td>Final readings missing, or the covering bill is not Paid</td><td>ยังสิ้นสุดสัญญาเช่าไม่ได้ ต้องจดมิเตอร์ครั้งสุดท้ายและบิลรอบล่าสุดต้องชำระแล้ว</td><td>D-08</td></tr>
+<tr><td><code>ROOM_CODE_TAKEN</code></td><td>409</td><td><code>uq_rooms(room_code)</code></td><td>เลขห้องนี้มีอยู่แล้ว</td><td>D-04</td></tr>
+<tr><td><code>ROOM_HAS_BILLS</code></td><td>409</td><td>Delete attempted on a room any bill references</td><td>ห้องนี้มีบิลแล้ว ลบไม่ได้ กรุณาใช้ปิดใช้งานห้อง</td><td>D-47</td></tr>
+<tr><td><code>BASELINE_LOCKED</code></td><td>422</td><td>Baseline edit on a room that already has a reading row</td><td>ห้องนี้มีการจดมิเตอร์แล้ว แก้ไขเลขมิเตอร์เริ่มต้นไม่ได้</td><td>D-06</td></tr>
+<tr><td><code>RATE_DUPLICATE</code></td><td>409</td><td><code>uq_rates(utility_type, effective_from)</code></td><td>มีอัตราของวันที่นี้อยู่แล้ว</td><td>D-17</td></tr>
+<tr><td><code>USERNAME_TAKEN</code></td><td>409</td><td><code>uq_users(username)</code></td><td>ชื่อผู้ใช้นี้ถูกใช้แล้ว</td><td>D-46</td></tr>
+<tr><td><code>ANNOUNCEMENT_IMMUTABLE</code></td><td>409</td><td>Edit, resend or recall attempted on a sent announcement</td><td>ประกาศที่ส่งแล้วแก้ไขไม่ได้</td><td>D-35</td></tr>
+<tr><td><code>INTERNAL_ERROR</code></td><td>500</td><td>Anything unhandled; the stack goes to stdout, never to the client</td><td>ระบบขัดข้อง กรุณาลองใหม่อีกครั้ง</td><td>ADR §6.3</td></tr>
+<tr><td><code>DB_UNAVAILABLE</code></td><td>503</td><td><code>GET /healthz</code> could not run <code>SELECT 1</code></td><td>—</td><td>D-43</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>Validation error shape</h4>
+
+<p>Layer 2 of ADR §6.8 — one <code>zod</code> schema per endpoint, parsed before the handler body runs — produces both payloads below from one definition. Staff saves room 205's water meter as 1,240 against a previous of 1,250:</p>
+
+<pre><code>POST /api/readings          →  422
+{ "error": {
+    "code": "READING_BELOW_PREVIOUS",
+    "message": "เลขมิเตอร์ปัจจุบันน้อยกว่าเดือนก่อน (1,250) กรุณาตรวจสอบ",
+    "fields": { "water.current_reading": "ต้องไม่น้อยกว่า 1,250" } } }</code></pre>
+
+<p>The same rule reached through a page form re-renders the form with <code>200</code>, <code>1240</code> still in the input and the identical Thai sentence above it. <code>fields</code> keys are input names, dotted for nested objects, so the client can attach each message to its own input without a lookup table.</p>
+
+<h4>Pagination, filters and periods</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Convention</th><th>Rule</th></tr></thead>
+<tbody>
+<tr><td>Pagination</td><td><code>?page=</code>, 1-based, fixed page size <strong>50</strong>, applied to <code>/rooms</code>, <code>/tenants</code>, <code>/bills</code>, <code>/announcements</code> and <code>/users</code>. An out-of-range page clamps to the last page rather than 404-ing. The rendered page includes <code>views/partials/pagination.ejs</code>. No JSON endpoint paginates: the only list-shaped JSON response is <code>/api/notifications/drain</code>, capped at one batch by design.</td></tr>
+<tr><td>The one exception</td><td><code>/readings</code> is <strong>never paginated</strong> — the floor-grouped reading round must be one continuous page on a phone, and the sticky counter counts the whole period (D-15).</td></tr>
+<tr><td>Period</td><td><code>?period=YYYY-MM</code>, regex <code>^\d{4}-(0[1-9]|1[0-2])$</code>. Absent or malformed ⇒ the current calendar month in Asia/Bangkok. There is no periods table and no open/closed state (D-11).</td></tr>
+<tr><td>Filters</td><td>Enumerated per route and rejected with <code>VALIDATION_FAILED</code> if unknown — never silently ignored.</td></tr>
+<tr><td>CSV</td><td><code>?format=csv</code> on the four report routes only. <code>Content-Type: text/csv; charset=utf-8</code>, <code>Content-Disposition: attachment; filename="report-arrears-2026-09.csv"</code>, UTF-8 BOM so Excel opens Thai correctly (D-42).</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>Types on the wire</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Kind</th><th>Wire format</th><th>Example</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>Money</td><td>JSON <strong>string</strong>, two decimals, no separators, no currency</td><td><code>"1790.00"</code></td><td><code>mysql2</code> returns <code>DECIMAL</code> as a string and no amount ever passes through a JS float (D-16, ADR A-4). Formatting to <code>1,790.00</code> / <code>1,790 บาท</code> happens at render.</td></tr>
+<tr><td>Readings, units, counts</td><td>JSON number, integer</td><td><code>1260</code>, <code>10</code></td><td><code>INT UNSIGNED</code>, whole units only (D-16)</td></tr>
+<tr><td>Area, rates</td><td>JSON string</td><td><code>"30.00"</code>, <code>"18.00"</code></td><td><code>DECIMAL(6,2)</code> / <code>DECIMAL(8,2)</code></td></tr>
+<tr><td>Business date</td><td>ISO 8601 date</td><td><code>"2026-09-05"</code></td><td><code>DATE</code>, no timezone, <code>dateStrings</code> on the pool (D-03, ADR A-5)</td></tr>
+<tr><td>Instant</td><td><code>YYYY-MM-DD HH:mm:ss</code>, Asia/Bangkok wall time, <strong>no offset suffix and no <code>Z</code></strong></td><td><code>"2026-09-03 10:22:41"</code></td><td>The connection runs at <code>+07:00</code>; no UTC is ever shown to a user (D-03)</td></tr>
+<tr><td>Period</td><td><code>YYYY-MM</code></td><td><code>"2026-09"</code></td><td>String order is chronological (ADR §6.7)</td></tr>
+<tr><td>Previous period</td><td><code>YYYY-MM</code> or the literal <code>"baseline"</code></td><td><code>"2026-08"</code></td><td><code>VARCHAR(8)</code> (D-06)</td></tr>
+<tr><td>Status</td><td>English identifier, exactly <code>Draft</code> / <code>Unpaid</code> / <code>Paid</code> / <code>Overdue</code></td><td><code>"Unpaid"</code></td><td>Thai is rendered from it; <code>data-status</code> test hooks assert on it (D-02, D-21)</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>Demo fixture ids</h4>
+
+<p>Every example below uses these ids, which are the ids <code>seed.sql</code> produces for the PRD §28 scenario. Sibling documents and tests reuse them so one example never contradicts another.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Entity</th><th>id</th><th>Identifying value</th></tr></thead>
+<tbody>
+<tr><td>Admin user</td><td><code>1</code></td><td><code>admin</code> / นิติบุคคล</td></tr>
+<tr><td>Staff user</td><td><code>2</code></td><td><code>staff</code> / เจ้าหน้าที่</td></tr>
+<tr><td>Room</td><td><code>41</code></td><td><code>room_code "205"</code>, floor 2, <code>area_sqm "30.00"</code></td></tr>
+<tr><td>Tenant</td><td><code>37</code></td><td>สมชาย ใจดี, <code>0812345678</code>, Active</td></tr>
+<tr><td>Meter readings</td><td><code>812</code> water, <code>813</code> electric</td><td>period <code>2026-09</code></td></tr>
+<tr><td>Bill</td><td><code>118</code></td><td>period <code>2026-09</code>, total <code>"1790.00"</code></td></tr>
+<tr><td>Bill items</td><td><code>352</code> water, <code>353</code> electric, <code>354</code> common</td><td>180.00 / 560.00 / 1050.00</td></tr>
+<tr><td>Payment</td><td><code>96</code></td><td>cash, <code>2026-09-03 10:22:41</code></td></tr>
+<tr><td>Receipt</td><td><code>96</code></td><td><code>REC-202609-000852</code></td></tr>
+<tr><td>Announcement</td><td><code>7</code></td><td>ปิดน้ำเพื่อซ่อมบำรุง</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Endpoint catalogue</h3>
+
+<p>Roles column: <span class="badge info">A</span> Admin, <span class="badge neutral">S</span> Staff, <span class="badge warn">M</span> machine credential. Everything not listed does not exist.</p>
+
+<h4>Auth &amp; session</h4>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Roles</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td>GET</td><td><code>/login</code></td><td>public</td><td>เข้าสู่ระบบ form; redirects to <code>/dashboard</code> if already authenticated</td></tr>
+<tr><td>POST</td><td><code>/login</code></td><td>public</td><td>Authenticate, create the session (D-37)</td></tr>
+<tr><td>POST</td><td><code>/logout</code></td><td>A S</td><td>Destroy the session row and clear the cookie</td></tr>
+<tr><td>GET</td><td><code>/password</code></td><td>A S</td><td>Change own password form</td></tr>
+<tr><td>POST</td><td><code>/password</code></td><td>A S</td><td>Change own password (current password required)</td></tr>
+<tr><td>GET</td><td><code>/</code></td><td>A S</td><td><code>303</code> to <code>/dashboard</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>Users — ผู้ใช้งานระบบ (D-46)</h4>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Roles</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td>GET</td><td><code>/users</code></td><td>A</td><td>List users, <code>?status=active|inactive|all&amp;page=</code></td></tr>
+<tr><td>GET</td><td><code>/users/new</code></td><td>A</td><td>Create form</td></tr>
+<tr><td>POST</td><td><code>/users</code></td><td>A</td><td>Create a user</td></tr>
+<tr><td>GET</td><td><code>/users/:id/edit</code></td><td>A</td><td>Edit form</td></tr>
+<tr><td>POST</td><td><code>/users/:id</code></td><td>A</td><td>Update <code>display_name</code>, <code>role</code>, <code>status</code>. Never deletes (D-46)</td></tr>
+<tr><td>POST</td><td><code>/users/:id/password</code></td><td>A</td><td>ตั้งรหัสผ่านใหม่ — the only password recovery path in v1 (D-37)</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>Rooms — ห้องพัก</h4>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Roles</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td>GET</td><td><code>/rooms</code></td><td>A S</td><td>List, <code>?filter=all|occupied|vacant|inactive&amp;page=</code>. The Staff query selects no rates and no amounts (D-36)</td></tr>
+<tr><td>GET</td><td><code>/rooms/:id</code></td><td>A S</td><td>Detail incl. 12-month reading history; Staff sees units only, never amounts</td></tr>
+<tr><td>GET</td><td><code>/rooms/new</code></td><td>A</td><td>Create form</td></tr>
+<tr><td>POST</td><td><code>/rooms</code></td><td>A</td><td>Create a room with its baselines (D-06, D-47)</td></tr>
+<tr><td>GET</td><td><code>/rooms/:id/edit</code></td><td>A</td><td>Edit form</td></tr>
+<tr><td>POST</td><td><code>/rooms/:id</code></td><td>A</td><td>Update; an area change writes <code>ROOM_AREA_CHANGE</code> (D-09, D-38)</td></tr>
+<tr><td>POST</td><td><code>/rooms/:id/deactivate</code></td><td>A</td><td>ปิดใช้งานห้อง, reason required (D-39, D-47)</td></tr>
+<tr><td>POST</td><td><code>/rooms/:id/delete</code></td><td>A</td><td>Hard delete, permitted only while no bill references the room (D-47)</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>Tenants — ผู้เช่า (Admin only, D-36)</h4>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Roles</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td>GET</td><td><code>/tenants</code></td><td>A</td><td>List, <code>?status=active|inactive|all&amp;q=&amp;page=</code></td></tr>
+<tr><td>GET</td><td><code>/tenants/new</code></td><td>A</td><td>Create form</td></tr>
+<tr><td>POST</td><td><code>/tenants</code></td><td>A</td><td>Create; sets <code>rooms.status='Occupied'</code> in the same transaction (D-07, D-10)</td></tr>
+<tr><td>GET</td><td><code>/tenants/:id/edit</code></td><td>A</td><td>Edit form</td></tr>
+<tr><td>POST</td><td><code>/tenants/:id</code></td><td>A</td><td>Update name, phone, move-in date. Room and status are not editable here (D-10)</td></tr>
+<tr><td>POST</td><td><code>/tenants/:id/end-tenancy</code></td><td>A</td><td>สิ้นสุดสัญญาเช่า — gated settlement, reason required (D-08, D-39)</td></tr>
+<tr><td>POST</td><td><code>/tenants/:id/link-code</code></td><td>A</td><td>สร้างรหัสผูก LINE — 6 chars, 7 days, single use (D-29)</td></tr>
+<tr><td>GET</td><td><code>/tenants/:id/link-code/slip</code></td><td>A</td><td>Printable A5 slip: the code plus the OA QR</td></tr>
+<tr><td>POST</td><td><code>/tenants/:id/unlink-line</code></td><td>A</td><td>ยกเลิกการผูก (D-29)</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>Meter Reading — จดมิเตอร์</h4>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Roles</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td>GET</td><td><code>/readings</code></td><td>A S</td><td>The reading round, <code>?period=&amp;filter=all|unread|done|vacant</code> (default <code>unread</code>), grouped by floor, never paginated (D-15)</td></tr>
+<tr><td>POST</td><td><code>/api/readings</code></td><td>A S</td><td><strong>JSON.</strong> Save one room's water and electricity for the period; UPSERT (D-12, D-15)</td></tr>
+<tr><td>POST</td><td><code>/api/bills/generate</code></td><td>A S</td><td><strong>JSON.</strong> ส่งให้นิติตรวจสอบ — the generation run for the period (D-18)</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>Monthly Billing &amp; Bill Detail</h4>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Roles</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td>GET</td><td><code>/bills</code></td><td>A</td><td>List, <code>?period=&amp;status=all|Draft|Unpaid|Paid|Overdue&amp;page=</code></td></tr>
+<tr><td>GET</td><td><code>/bills/:id</code></td><td>A</td><td>Bill Detail: items, snapshots, delivery state, audit timeline</td></tr>
+<tr><td>POST</td><td><code>/api/bills/approve</code></td><td>A</td><td><strong>JSON.</strong> อนุมัติและส่งบิล for 1..200 bills in one transaction (D-19)</td></tr>
+<tr><td>POST</td><td><code>/api/notifications/drain</code></td><td>A</td><td><strong>JSON.</strong> Push one batch of queued messages (D-19, D-30)</td></tr>
+<tr><td>POST</td><td><code>/bills/:id/revert</code></td><td>A</td><td>ตีกลับเป็นฉบับร่าง, reason ≥ 10 chars, newest bill only (D-22)</td></tr>
+<tr><td>POST</td><td><code>/bills/:id/notify</code></td><td>A</td><td>ส่งแจ้งเตือนอีกครั้ง — uncapped manual resend (D-30, D-33)</td></tr>
+<tr><td>GET</td><td><code>/bills/:id/invoice</code></td><td>A</td><td>A5 ใบแจ้งค่าใช้จ่าย print view; refused for a Draft bill (D-28)</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>Payment &amp; Receipt (Admin only — D-36 corrects PRD §12)</h4>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Roles</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td>GET</td><td><code>/payments</code></td><td>A</td><td>รับชำระเงิน: room search <code>?q=205</code>, lists that room's unsettled bills</td></tr>
+<tr><td>POST</td><td><code>/payments</code></td><td>A</td><td>ยืนยันรับเงินสด — one transaction: payment, status, receipt, queued PAID (D-24, D-26)</td></tr>
+<tr><td>POST</td><td><code>/payments/:id/void</code></td><td>A</td><td>ยกเลิกการชำระเงิน, reason ≥ 10 chars (D-25)</td></tr>
+<tr><td>GET</td><td><code>/receipts/:id</code></td><td>A</td><td>ใบเสร็จ — the one A5 route serving both screen and print (D-27, D-28)</td></tr>
+<tr><td>POST</td><td><code>/api/receipts/:id/print</code></td><td>A</td><td><strong>JSON.</strong> Increment <code>print_count</code> before <code>window.print()</code> (D-27)</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>Announcements — ประกาศ (Admin only)</h4>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Roles</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td>GET</td><td><code>/announcements</code></td><td>A</td><td>History: sent time, audience, recipient count, delivery result</td></tr>
+<tr><td>GET</td><td><code>/announcements/new</code></td><td>A</td><td>Compose form with live preview</td></tr>
+<tr><td>GET</td><td><code>/api/announcements/preview-count</code></td><td>A</td><td><strong>JSON.</strong> Live <code>{rooms, linked}</code> count (D-35)</td></tr>
+<tr><td>POST</td><td><code>/announcements</code></td><td>A</td><td>Create <strong>and</strong> send — there is no draft state (D-35)</td></tr>
+<tr><td>GET</td><td><code>/announcements/:id</code></td><td>A</td><td>Immutable result page; drives the drain loop for its rows</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>Dashboard, Reports, Settings</h4>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Roles</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td>GET</td><td><code>/dashboard</code></td><td>A S</td><td>ภาพรวม, <code>?period=</code>. Staff gets room counts and reading progress only (D-36, D-41)</td></tr>
+<tr><td>GET</td><td><code>/api/dashboard/charts</code></td><td>A</td><td><strong>JSON.</strong> The four Chart.js series (D-41)</td></tr>
+<tr><td>GET</td><td><code>/reports</code></td><td>A</td><td>Report index</td></tr>
+<tr><td>GET</td><td><code>/reports/monthly</code></td><td>A</td><td>สรุปการเรียกเก็บและรับชำระรายเดือน, <code>?from=&amp;to=&amp;format=csv</code></td></tr>
+<tr><td>GET</td><td><code>/reports/arrears</code></td><td>A</td><td>รายการค้างชำระ — unpaid list, aged, <code>?format=csv</code></td></tr>
+<tr><td>GET</td><td><code>/reports/room-history</code></td><td>A</td><td>ประวัติรายห้อง 12 เดือน, <code>?room_id=&amp;format=csv</code></td></tr>
+<tr><td>GET</td><td><code>/reports/top-usage</code></td><td>A</td><td>ห้องที่ใช้น้ำ/ไฟสูงสุด, <code>?period=&amp;utility=water|electric&amp;format=csv</code></td></tr>
+<tr><td>GET</td><td><code>/settings</code></td><td>A</td><td>ตั้งค่า: apartment profile, due day, current rates + history, LINE test mode, monthly message count</td></tr>
+<tr><td>POST</td><td><code>/settings/profile</code></td><td>A</td><td>Apartment profile and <code>due_day</code> (D-20)</td></tr>
+<tr><td>POST</td><td><code>/settings/rates</code></td><td>A</td><td>Insert a new effective-dated rate; never an UPDATE (D-17)</td></tr>
+<tr><td>POST</td><td><code>/settings/line-test-mode</code></td><td>A</td><td>โหมดทดสอบ LINE on/off and its whitelisted userId (D-34)</td></tr>
+<tr><td>POST</td><td><code>/settings/run-daily-job</code></td><td>A</td><td>รันงานแจ้งเตือนตอนนี้ — <code>job_name='daily_manual'</code>, skips the <code>job_runs</code> guard (D-32)</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>Machine endpoints (no session, no CSRF)</h4>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Method</th><th>Path</th><th>Credential</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td>POST</td><td><code>/line/webhook</code></td><td><code>X-Line-Signature</code></td><td>LINE events; ACKs 200 before doing any work (D-29, D-43)</td></tr>
+<tr><td>POST</td><td><code>/internal/jobs/daily</code></td><td><code>X-Job-Token</code></td><td>09:00 Asia/Bangkok reminder job (D-32, D-33)</td></tr>
+<tr><td>GET</td><td><code>/healthz</code></td><td>public</td><td>One <code>SELECT 1</code>; pinged every 10 minutes to keep the free instance awake (D-43)</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Endpoint detail</h3>
+
+<h4>Login, logout, session</h4>
+
+<p><code>POST /login</code> — body <code>username</code>, <code>password</code>, <code>_csrf</code>.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Outcome</th><th>Response</th></tr></thead>
+<tbody>
+<tr><td>Credentials valid, user Active</td><td><code>303</code> → <code>/dashboard</code>. The session is regenerated first, so a fixated session id cannot survive login.</td></tr>
+<tr><td>Wrong password, unknown username, or Inactive user</td><td><code>200</code>, login page re-rendered, <code>username</code> preserved, password cleared, <code>LOGIN_INVALID</code> message. The three cases are indistinguishable to the caller by design.</td></tr>
+<tr><td>11th failure from one IP in 15 min</td><td><code>429</code>, <code>LOGIN_RATE_LIMITED</code> (D-37)</td></tr>
+</tbody>
+</table>
+</div>
+
+<p><code>POST /logout</code> — body <code>_csrf</code> only. Deletes the session row, clears the cookie, <code>303</code> → <code>/login</code>. It is a POST, not a GET, so a prefetch or an image tag cannot log a cashier out mid-transaction.</p>
+
+<p><code>POST /password</code> — body <code>current_password</code>, <code>new_password</code> (min 8), <code>confirm_password</code>, <code>_csrf</code>. Re-hashes at bcrypt cost 10 and keeps the session. This is a <em>change</em>, not a reset: D-37's "no self-service password reset" stands, and a locked-out user is still recovered only by an Admin through <code>POST /users/:id/password</code>.</p>
+
+<h4>Users</h4>
+
+<p><code>POST /users</code> — fields <code>username</code> (unique, 3–50, <code>^[a-z0-9._-]+$</code>), <code>display_name</code> (1–100, printed as ผู้รับเงิน on receipts), <code>role</code> (<code>admin</code>|<code>staff</code>), <code>password</code> (min 8). <code>status</code> is <code>Active</code> on create. Success <code>303</code> → <code>/users</code>; duplicate username <code>409 USERNAME_TAKEN</code> re-rendered inline.</p>
+
+<p><code>POST /users/:id</code> updates <code>display_name</code>, <code>role</code> and <code>status</code> only. <code>username</code> is immutable — it is the login identity and appears in every audit row. There is no delete: <code>payments.received_by_user_id</code>, <code>meter_readings.recorded_by</code> and <code>rates.created_by</code> reference the row forever, so deactivation is the only removal (D-46). An Admin cannot set their own account Inactive; that attempt returns <code>422 VALIDATION_FAILED</code> with <code>{"status": "ไม่สามารถปิดใช้งานบัญชีของตนเองได้"}</code>, which is what prevents an empty-admin system.</p>
+
+<h4>Rooms CRUD</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Rule</th></tr></thead>
+<tbody>
+<tr><td><code>room_code</code></td><td>string(10)</td><td>yes</td><td>Unique system-wide. <code>205</code> today, <code>A-205</code> tolerated (D-04)</td></tr>
+<tr><td><code>floor</code></td><td>int</td><td>yes</td><td>1–99, <strong>entered, never parsed from the code</strong> (D-47)</td></tr>
+<tr><td><code>room_type</code></td><td>string(20)</td><td>no</td><td>Display label only; never affects an amount (D-47)</td></tr>
+<tr><td><code>area_sqm</code></td><td>decimal(6,2)</td><td>yes</td><td>0.01–999.99. Demo: <code>30.00</code>. Change is audited <code>ROOM_AREA_CHANGE</code> (D-09)</td></tr>
+<tr><td><code>baseline_water</code>, <code>baseline_electric</code></td><td>int</td><td>yes</td><td>Editable only while the room has no reading row at all (D-06)</td></tr>
+<tr><td><code>baseline_date</code></td><td>date</td><td>yes</td><td>One shared date for both meters (D-06)</td></tr>
+</tbody>
+</table>
+</div>
+
+<p><code>status</code> is <strong>not</strong> a field: it is maintained by the tenant transaction and is never independently editable (D-07). <code>POST /rooms/:id/delete</code> succeeds only while no bill references the room; otherwise <code>409 ROOM_HAS_BILLS</code> and the UI offers ปิดใช้งานห้อง instead (D-47).</p>
+
+<h4>Tenants CRUD and the LINE link code</h4>
+
+<p><code>POST /tenants</code> — <code>full_name</code> (1–100), <code>phone</code> (<code>^0\d{9}$</code>, e.g. <code>0812345678</code>), <code>room_id</code>, <code>move_in_date</code>. <code>line_user_id</code> is never accepted from a form — it is filled only by the webhook (D-10, D-29). The insert relies on <code>uq_tenants(active_room_id)</code>: a second Active tenant for room 41 is rejected by the database, surfaced as <code>409 TENANT_ROOM_OCCUPIED</code>, not by a <code>SELECT</code>-then-<code>INSERT</code> race (ENG-1).</p>
+
+<p><code>POST /tenants/:id/end-tenancy</code> — <code>reason</code> (≥ 10 Thai characters). Blocked with <code>422 TENANCY_END_BLOCKED</code> unless both conditions of D-08 hold. On success, one transaction sets <code>status='Inactive'</code>, writes <code>move_out_date = CURDATE()</code>, clears the three LINE columns, sets <code>rooms.status='Vacant'</code> and writes <code>TENANCY_END</code> with the reason (ENG-5).</p>
+
+<p><code>POST /tenants/:id/link-code</code> — no body beyond <code>_csrf</code>. Response <code>303</code> → <code>/tenants/37/link-code/slip</code>. The generated row:</p>
+
+<pre><code>{ "tenant_id": 37, "code": "K7M2XQ", "expires_at": "2026-09-08 09:14:02", "used_at": null }</code></pre>
+
+<p>Alphabet <code>ABCDEFGHJKLMNPQRSTUVWXYZ23456789</code> — no O/0/I/1 — 6 characters, 7 days, single use (D-29). Issuing a new code does not invalidate an unused earlier one; both remain valid until used or expired, because a tenant who has already been handed a slip must not be silently cut off.</p>
+
+<h4>Meter readings — the previous reading is resolved server-side, with no endpoint</h4>
+
+<p>There is deliberately no "get previous reading" call. The <code>/readings</code> page renders Previous as read-only text, and <code>POST /api/readings</code> echoes the value it actually used. One query serves both (ADR §7.1):</p>
+
+<pre><code>SELECT current_reading, period
+  FROM meter_readings
+ WHERE room_id = ? AND utility_type = ? AND period &lt; ?   -- strictly earlier
+ ORDER BY period DESC
+ LIMIT 1;</code></pre>
+
+<p>No row ⇒ the room's <code>baseline_water</code> / <code>baseline_electric</code> with <code>previous_period = "baseline"</code> (D-06). The strict <code>&lt;</code> excludes the row being written, which is exactly what makes a double-submitted save harmless (D-12, D-14).</p>
+
+<h4>Meter readings — <code>POST /api/readings</code>, save one room</h4>
+
+<pre><code>POST /api/readings
+X-CSRF-Token: &lt;token&gt;
+{ "period": "2026-09",
+  "room_id": 41,
+  "water":    { "current_reading": 1260 },
+  "electric": { "current_reading": 5350 } }</code></pre>
+
+<pre><code>200
+{ "data": {
+    "room_id": 41, "room_code": "205", "period": "2026-09", "complete": true,
+    "water":    { "previous_reading": 1250, "previous_period": "2026-08",
+                  "current_reading": 1260, "units": 10, "flag": null },
+    "electric": { "previous_reading": 5280, "previous_period": "2026-08",
+                  "current_reading": 5350, "units": 70, "flag": null },
+    "counter":  { "done": 42, "total": 67 },
+    "bill_recalculated": false } }</code></pre>
+
+<p><code>flag</code> is <code>null</code>, <code>"high_usage"</code> (ใช้สูงผิดปกติ) or <code>"no_usage"</code> (ไม่มีการใช้งาน) — soft, never blocking (D-13). <code>counter</code> is recomputed server-side and drives the sticky bar "จดแล้ว 42/67 ห้อง"; a room counts as done only when both utilities are saved (D-15). <code>bill_recalculated</code> is <code>true</code> when a Draft bill for that room and period existed and was recalculated in place on save (D-18). Money never appears in this response, which is what makes the endpoint safe for Staff (D-36).</p>
+
+<p>Meter replacement — the one branch (D-13). Room 205's water meter is swapped at 1,258 and the new dial reads 2:</p>
+
+<pre><code>{ "period": "2026-09", "room_id": 41,
+  "water": { "current_reading": 2, "meter_replaced": true,
+             "old_final": 1258, "new_start": 0,
+             "replace_reason": "มิเตอร์น้ำชำรุด เปลี่ยนใหม่วันที่ 1 ก.ย. 2026" },
+  "electric": { "current_reading": 5350 } }</code></pre>
+
+<div class="formula">units = (old_final − previous_reading) + (current_reading − new_start) = (1258 − 1250) + (2 − 0) = 8 + 2 = <strong>10 units</strong> → 10 × 18.00 = 180.00</div>
+
+<p>The demo total is unchanged, which is the point: a replacement must not move money. With the box ticked the current-below-previous block does not apply; the validations become <code>old_final ≥ previous_reading</code> and <code>current_reading ≥ new_start</code>, both of which keep <code>units ≥ 0</code> and satisfy the database <code>CHECK</code>.</p>
+
+<h4>Meter readings — <code>POST /api/bills/generate</code>, ส่งให้นิติตรวจสอบ</h4>
+
+<pre><code>{ "period": "2026-09" }</code></pre>
+
+<pre><code>200
+{ "data": { "period": "2026-09",
+            "created": 1, "updated": 0, "skipped_approved": 0,
+            "missing_readings": 3, "missing_rooms": ["108", "312", "405"] } }</code></pre>
+
+<p>The page renders D-18's Thai sentence from these counts: "สร้างบิลใหม่ 1 ใบ · อัปเดต 0 ใบ · ข้าม (อนุมัติแล้ว) 0 ใบ · ยังไม่ได้จด 3 ห้อง". Running it a second time with nothing changed returns <code>created: 0</code> and is not an error — <code>uq_bills(room_id, period)</code> is the idempotency key of the whole run (D-18). Staff may call it; the response carries counts and room codes, never amounts.</p>
+
+<h4>Billing — <code>GET /bills/:id</code>, the Bill Detail payload</h4>
+
+<p>Rendered server-side; the locals below are the contract the EJS page and the test hooks share.</p>
+
+<pre><code>{ "id": 118, "room_code_snapshot": "205", "room_area_sqm": "30.00",
+  "tenant_name_snapshot": "สมชาย ใจดี", "period": "2026-09",
+  "status": "Unpaid", "display_status": "Unpaid",
+  "total": "1790.00", "due_date": "2026-09-05",
+  "approved_by": 1, "approved_at": "2026-09-01 09:12:30",
+  "items": [
+    { "item_type": "water",    "quantity": "10.00", "unit_price": "18.00", "amount": "180.00",
+      "previous_reading": 1250, "current_reading": 1260, "previous_period": "2026-08" },
+    { "item_type": "electric", "quantity": "70.00", "unit_price": "8.00",  "amount": "560.00",
+      "previous_reading": 5280, "current_reading": 5350, "previous_period": "2026-08" },
+    { "item_type": "common",   "quantity": "30.00", "unit_price": "35.00", "amount": "1050.00",
+      "previous_reading": null, "current_reading": null, "previous_period": null } ],
+  "notification": { "type": "BILL", "status": "sent", "attempt_count": 1,
+                    "last_attempt_at": "2026-09-01 09:12:34" },
+  "can_revert": true, "can_pay": true, "auto_notify_suspended": false }</code></pre>
+
+<p>Always exactly three items, even at 0 units and <code>"0.00"</code> — that is what makes the tiles sum and the receipt print three lines (D-18, D-41). Every figure is the bill's own snapshot; nothing joins live to <code>rooms</code> or <code>tenants</code> (D-09). <code>display_status</code> comes from the one helper, <code>Unpaid</code> + <code>due_date &lt; CURDATE()</code> ⇒ <code>Overdue</code> (D-21), and <code>Overdue</code> is never a value of <code>status</code>.</p>
+
+<h4>Billing — <code>POST /api/bills/approve</code>, อนุมัติและส่งบิล</h4>
+
+<pre><code>{ "bill_ids": [118] }</code></pre>
+
+<pre><code>200
+{ "data": { "approved": 1, "already_approved": 0, "not_found": 0,
+            "queued": 1, "skipped_no_line": 0,
+            "bills": [ { "id": 118, "room_code": "205", "status": "Unpaid",
+                         "due_date": "2026-09-05", "notification": "queued" } ] } }</code></pre>
+
+<p><code>bill_ids</code> holds 1–200 ids; Bill Detail's single button sends an array of one, Monthly Billing's bulk button sends the selection. A mixed batch is never an error: non-Draft ids are counted in <code>already_approved</code> and left untouched, which makes a double-submit a no-op that returns <code>approved: 0</code>. The due date is computed once per bill and frozen (D-20):</p>
+
+<div class="formula">due_date = MAX(due_day of the period month, approval_date + 3 days), clamped to the month's last day<br>
+period 2026-09, due_day 5, approved 1 Sep 2026 → MAX(2026-09-05, 2026-09-04) = <strong>2026-09-05</strong></div>
+
+<h4>Billing — <code>POST /api/notifications/drain</code></h4>
+
+<pre><code>POST /api/notifications/drain      (no body)
+
+200
+{ "data": { "sent": 1, "failed": 0, "skipped_no_line": 0,
+            "remaining": 0, "lock": "acquired" } }</code></pre>
+
+<p>One call pushes at most 20 personalised messages, or one multicast chunk of at most 500 announcement recipients (D-34). <code>lock</code> is <code>"acquired"</code> or <code>"busy"</code>: when <code>GET_LOCK('notif_drain', 0)</code> fails, the call returns <code>busy</code> with zero counts and the client waits one second and retries — that is what stops the approve screen and the 09:00 job pushing the same rows (ADR §7.6). The client loops while <code>remaining &gt; 0</code>. A dropped connection loses nothing: the queued rows survive and the daily job would finish them anyway.</p>
+
+<div class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant B as "Admin browser"
+  participant A as "POST /api/bills/approve"
+  participant D as "POST /api/notifications/drain"
+  participant DB as MySQL
+  participant L as "LINE Messaging API"
+  B->>A: "bill_ids 118"
+  A->>DB: "one transaction: status Unpaid, freeze due_date, audit, queue notifications"
+  A-->>B: "approved 1, queued 1"
+  loop "while remaining greater than 0"
+    B->>D: "drain"
+    D->>DB: "GET_LOCK notif_drain, claim at most 20 queued rows"
+    D->>L: "push with the row's X-Line-Retry-Key"
+    D->>DB: "upsert sent or failed, attempt_count plus one, release lock"
+    D-->>B: "sent 1, failed 0, remaining 0"
+  end
+</pre>
+<div class="caption">Two round trips, never one (D-19). Money state commits before any message leaves, so a LINE outage cannot roll back a bill.</div>
+</div>
+
+<h4>Billing — <code>POST /bills/:id/revert</code>, ตีกลับเป็นฉบับร่าง</h4>
+
+<p>Form fields <code>reason</code> (≥ 10 chars) and <code>_csrf</code>. Refused with <code>422 REVERT_NOT_NEWEST</code> when <code>SELECT 1 FROM bills WHERE room_id = ? AND period &gt; ? LIMIT 1</code> returns a row, because a later bill's <code>previous_reading</code> is a snapshot of the value about to be edited (D-12, D-22). Success writes <code>BILL_REVERT</code> with before/after JSON inside the transaction and <code>303</code> → <code>/bills/118</code>. The readings unfreeze; re-approving sends <code>BILL_CORRECTED</code> (D-31).</p>
+
+<h4>Payments — ยืนยันรับเงินสด</h4>
+
+<pre><code>POST /payments
+Content-Type: application/x-www-form-urlencoded
+
+bill_id=118&amp;expected_total=1790.00&amp;_csrf=&lt;token&gt;</code></pre>
+
+<p>The amount is <strong>not</strong> an input. <code>expected_total</code> is a staleness check only: the server compares it with <code>bills.total</code> and returns <code>409 BILL_TOTAL_CHANGED</code> if the bill was reverted and recalculated while the cashier had the screen open. The stored amount is copied from the bill in SQL, so a payment can never disagree with its bill (D-24). The optional รับเงิน / เงินทอน calculator (รับเงิน 2,000 → เงินทอน 210.00) is screen-only and is never sent.</p>
+
+<div class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant B as "Admin browser"
+  participant P as "POST /payments"
+  participant DB as MySQL
+  participant R as "GET /receipts/96"
+  B->>P: "bill_id 118, expected_total 1790.00"
+  P->>DB: "UPDATE bills SET status Paid WHERE id 118 AND status Unpaid"
+  alt "0 rows affected"
+    P-->>B: "409 บิลนี้ถูกชำระไปแล้ว"
+  else "1 row affected"
+    P->>DB: "INSERT payments amount from bills.total, unique active_bill_id"
+    P->>DB: "allocate receipt number from counters, INSERT receipts"
+    P->>DB: "audit PAYMENT_CONFIRM, queue PAID notification"
+    P-->>B: "303 to /receipts/96"
+    B->>R: "open the A5 receipt"
+    R-->>B: "REC-202609-000852, 1,790.00 บาท"
+  end
+</pre>
+<div class="caption">One transaction, one button, no second screen (D-24). The receipt number is allocated after the conditional update succeeds, so two cashiers cannot receive the same number (D-26).</div>
+</div>
+
+<p>Success <code>303</code> → <code>/receipts/96</code>. The receipt page fires one <code>POST /api/notifications/drain</code> on load, which is what delivers the PAID message — no separate send endpoint exists. <code>POST /payments/:id/void</code> takes <code>reason</code> (≥ 10 chars), marks the payment and receipt voided without deleting either, returns the bill to <code>Unpaid</code>, writes <code>PAYMENT_VOID</code>, and sends nothing (D-25). The bill is thereafter excluded from automatic <code>PRE_DUE</code> and <code>OVERDUE</code> sends and shows ระงับการแจ้งเตือนอัตโนมัติ (<code>auto_notify_suspended: true</code>).</p>
+
+<h4>Receipts</h4>
+
+<p><code>GET /receipts/96</code> serves both the on-screen A5 view and the printed page from one route and one stylesheet (D-28). It renders the original while <code>print_count = 0</code> and carries the สำเนา mark at <code>print_count ≥ 1</code>; a voided receipt is stamped ยกเลิก in red (D-25, D-27). The letterhead is rendered live from Settings and carries only the apartment's own name, address, optional tax id and phone — never the software name (D-01).</p>
+
+<pre><code>POST /api/receipts/96/print      (no body, X-CSRF-Token required)
+
+200
+{ "data": { "receipt_id": 96, "receipt_no": "REC-202609-000852",
+            "print_count": 1, "copy": true } }</code></pre>
+
+<p>The button POSTs this, then calls <code>window.print()</code>, so the first sheet is the original and <code>copy: true</code> tells the page to relabel its button พิมพ์สำเนา without a reload. Printing from the browser's own menu bypasses the counter and yields an unmarked copy — an accepted limitation (D-05).</p>
+
+<h4>Announcements</h4>
+
+<pre><code>GET /api/announcements/preview-count?audience=floors&amp;floors=2,3
+
+200
+{ "data": { "rooms": 26, "linked": 21 } }</code></pre>
+
+<pre><code>POST /announcements
+title=ปิดน้ำเพื่อซ่อมบำรุง&amp;body=วันที่ 20 กันยายน เวลา 10:00–12:00 น. …&amp;audience=all&amp;_csrf=&lt;token&gt;
+→ 303 /announcements/7</code></pre>
+
+<p><code>title</code> ≤ 60 chars, <code>body</code> ≤ 400 chars, <code>audience</code> is <code>all</code> or <code>floors</code>, and <code>floors</code> is a comma-separated list required only when <code>audience=floors</code> (D-35). Creating and sending are one action: the POST writes the announcement, writes one <code>notifications</code> row per recipient tenant with <code>status='queued'</code>, and redirects to the result page, which drains them. Against the seed that is 67 rooms and 54 linked tenants — the 13 unlinked tenants get <code>skipped_no_line</code> rows so the gap is visible rather than silent (D-30, D-44). A sent announcement is immutable: any edit, resend or recall attempt is <code>409 ANNOUNCEMENT_IMMUTABLE</code>, because LINE offers no recall and the UI must not imply otherwise.</p>
+
+<h4>Dashboard summary</h4>
+
+<p><code>GET /dashboard?period=2026-09</code> renders these locals. Every formula is binding (D-41); Draft bills are excluded from every money figure, and "approved" means the <strong>stored</strong> status is <code>Unpaid</code> or <code>Paid</code>.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Local</th><th>Thai tile</th><th>Formula</th><th>Roles</th></tr></thead>
+<tbody>
+<tr><td><code>rooms_total</code></td><td>ห้องทั้งหมด</td><td><code>COUNT(rooms)</code> = 80</td><td>A S</td></tr>
+<tr><td><code>rooms_occupied</code></td><td>มีผู้เช่า</td><td><code>COUNT(rooms WHERE status='Occupied')</code> = 67</td><td>A S</td></tr>
+<tr><td><code>rooms_vacant</code></td><td>ห้องว่าง</td><td>total − occupied = 13</td><td>A S</td></tr>
+<tr><td><code>reading_progress</code></td><td>จดมิเตอร์แล้ว</td><td><code>{done, total}</code> over billable rooms for the period</td><td>A S</td></tr>
+<tr><td><code>water_total</code></td><td>ยอดค่าน้ำเดือนนี้</td><td><code>SUM(bill_items.amount) WHERE item_type='water'</code> over approved bills of the period</td><td>A</td></tr>
+<tr><td><code>electric_total</code></td><td>ยอดค่าไฟเดือนนี้</td><td>same, <code>item_type='electric'</code></td><td>A</td></tr>
+<tr><td><code>common_total</code></td><td>ยอดค่าส่วนกลาง</td><td>same, <code>item_type='common'</code> — 67 × 30 × 35 = <code>"70350.00"</code></td><td>A</td></tr>
+<tr><td><code>billed_total</code></td><td>ยอดเรียกเก็บทั้งหมด</td><td><code>SUM(bills.total)</code> over approved bills of the period</td><td>A</td></tr>
+<tr><td><code>collected_total</code></td><td>รับชำระแล้ว</td><td><code>SUM(bills.total) WHERE status='Paid'</code>, counted by billing period, not payment date</td><td>A</td></tr>
+<tr><td><code>outstanding_total</code></td><td>ค้างชำระ</td><td>billed − collected; equals the sum of the period's Unpaid and Overdue bills by construction</td><td>A</td></tr>
+<tr><td><code>arrears_all_time</code></td><td>ค้างชำระสะสมทุกงวด</td><td><code>SUM(total)</code> over every Unpaid bill of every period — explicitly all-time</td><td>A</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>The Staff dashboard query selects only the first four rows; the money columns are absent from the response, not hidden in the template (D-36, ADR A-6).</p>
+
+<pre><code>GET /api/dashboard/charts?period=2026-09        (Admin only)
+
+200
+{ "data": {
+    "period": "2026-09",
+    "labels": ["2025-10","2025-11","2025-12","2026-01","2026-02","2026-03",
+               "2026-04","2026-05","2026-06","2026-07","2026-08","2026-09"],
+    "water_units":       [612, 640, 655, 601, 588, 630, 671, 702, 715, 690, 668, 655],
+    "electric_units":    [4210, 4380, 4520, 4110, 3980, 4300, 4720, 5010, 5180, 4930, 4610, 4480],
+    "revenue_collected": ["148230.00","150110.00", null, "…", "151350.00", "0.00"],
+    "status_counts":     { "Paid": 54, "UnpaidOrOverdue": 13 } } }</code></pre>
+
+<p>A month with no data is <code>null</code>, never <code>0</code> — reports plot a gap in the line, not a false zero (D-14).</p>
+
+<h4>Reports</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Report</th><th>Route</th><th>Query</th><th>Columns</th><th>Assertions</th></tr></thead>
+<tbody>
+<tr><td>1 · Monthly totals</td><td><code>/reports/monthly</code></td><td><code>from</code>, <code>to</code> (default: last 12 periods)</td><td>period, billed, collected, outstanding — each split water / electric / common — plus bill counts by status</td><td>The three splits sum to the billed column in every row</td></tr>
+<tr><td>2 · Unpaid list</td><td><code>/reports/arrears</code></td><td>none</td><td>room, tenant, phone, period, amount, due date, days late; buckets 1-7 / 8-30 / 31-60 / 61+ วัน, sorted by days overdue desc</td><td>The four bucket counts sum to the row count and the four bucket amounts to the report total (D-42)</td></tr>
+<tr><td>3 · Room history</td><td><code>/reports/room-history</code></td><td><code>room_id</code> (required)</td><td>12 periods × water units, electric units, each amount, total, display status, payment date, receipt number</td><td>Room 41's 2026-09 row reads 10 / 70 / 180.00 / 560.00 / 1,790.00 / Paid / 2026-09-03 / REC-202609-000852</td></tr>
+<tr><td>4 · Top water / electricity</td><td><code>/reports/top-usage</code></td><td><code>period</code>, <code>utility=water|electric</code></td><td>Top 10 rooms by units for the period, each with its own previous-month comparison</td><td>Exactly 10 rows or fewer; ties broken by room code ascending</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>All four are Admin only and all four take <code>?format=csv</code>, producing <code>report-monthly-2026-09.csv</code>, <code>report-arrears-2026-09.csv</code>, <code>report-room-history-2026-09.csv</code>, <code>report-top-usage-2026-09.csv</code> through one shared helper (D-42). There is no PDF export, no report builder and no column chooser.</p>
+
+<h4>Settings and rates</h4>
+
+<p><code>GET /settings</code> renders the apartment profile, <code>due_day</code>, the three current rates with their full history, LINE test mode, and the message counter "ส่งข้อความเดือนนี้: {N}/500" where N counts <code>notifications</code> rows with <code>status='sent'</code> in the current month, in warn colour above 450 (D-34).</p>
+
+<pre><code>POST /settings/rates
+utility_type=water&amp;unit_price=18.50&amp;effective_from=2026-10-01&amp;_csrf=&lt;token&gt;
+→ 303 /settings</code></pre>
+
+<p><code>utility_type</code> is <code>water</code>, <code>electric</code> or <code>common</code>; <code>unit_price</code> is <code>DECIMAL(8,2)</code> greater than 0 (7.50 is legal); <code>effective_from</code> defaults to today and may be future-dated. The row is <strong>inserted, never updated</strong>, so history is complete and auditable; a same-day repeat is <code>409 RATE_DUPLICATE</code> from <code>uq_rates(utility_type, effective_from)</code> (D-17). Resolution is keyed to the period, not to the click:</p>
+
+<pre><code>SELECT unit_price FROM rates
+ WHERE utility_type = ? AND effective_from &lt;= CONCAT(?, '-01')
+ ORDER BY effective_from DESC LIMIT 1;</code></pre>
+
+<p>For period <code>2026-09</code> that resolves 18.00 / 8.00 / 35.00 against the seed, which is what makes 10 × 18 = 180 reproducible however late generation re-runs. If Draft bills exist for a period into which a rate is back-dated, Settings shows "มีบิลฉบับร่าง {N} ใบในรอบนี้ ยังใช้อัตราเดิมอยู่" with a button that calls <code>POST /api/bills/generate</code> for that period — recalculating Draft bills is exactly what a generation run already does, so no separate endpoint exists.</p>
+
+<p><code>POST /settings/profile</code> takes <code>apartment_name</code>, <code>address</code>, <code>tax_id</code> (optional — the receipt omits the line when empty), <code>phone</code>, <code>office_hours</code> and <code>due_day</code> (1–28, database <code>CHECK</code>). <code>POST /settings/run-daily-job</code> runs the identical job body with <code>job_name='daily_manual'</code>, skips the <code>job_runs</code> guard entirely and flashes "ส่งแจ้งเตือนก่อนครบกำหนด {a} ราย · เลยกำหนด {b} ราย · ส่งซ้ำที่ล้มเหลว {c} ราย" (D-32).</p>
+
+<h4>Machine endpoints</h4>
+
+<pre><code>POST /internal/jobs/daily
+X-Job-Token: &lt;shared secret&gt;
+
+200
+{ "data": { "job": "daily", "run_date": "2026-09-03", "already_ran": false,
+            "pre_due": 12, "overdue": 5, "retried": 1,
+            "sent": 17, "failed": 1, "skipped_no_line": 3 } }</code></pre>
+
+<p>A second call the same day returns <code>already_ran: true</code> with every count at 0 and is still <code>200</code> — a retrying scheduler must not see an error (D-32). A wrong or missing token is <code>401</code> with an empty body; the login rate limiter never applies here.</p>
+
+<pre><code>GET /healthz     →  200  { "data": { "ok": true, "db": "up" } }
+                 →  503  { "error": { "code": "DB_UNAVAILABLE", "message": "-" } }</code></pre>
+
+<h3>Role and permission matrix</h3>
+
+<p>Two roles on one <code>users.role</code> column, one middleware, no per-user permission table (D-36). The rule is stronger than navigation: money is <strong>absent from the queries that serve Staff</strong>, not hidden in the template, and there is one integration test per Staff-forbidden route asserting both <code>403</code> and that no amount appears anywhere in the response body (ADR §6.9, A-6).</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Endpoint group</th><th>Admin</th><th>Staff</th><th>Staff response contains</th></tr></thead>
+<tbody>
+<tr><td>Auth, logout, own password</td><td>full</td><td>full</td><td>own identity only</td></tr>
+<tr><td><code>/dashboard</code></td><td>full</td><td>reduced</td><td>room counts + reading progress; no money columns selected</td></tr>
+<tr><td><code>/api/dashboard/charts</code></td><td>full</td><td><span class="badge bad">403</span></td><td>—</td></tr>
+<tr><td><code>/rooms</code> read</td><td>full</td><td>read-only</td><td>code, floor, type, area, status, tenant name; no rate, no amount</td></tr>
+<tr><td><code>/rooms</code> write, deactivate, delete</td><td>full</td><td><span class="badge bad">403</span></td><td>—</td></tr>
+<tr><td><code>/readings</code>, <code>POST /api/readings</code></td><td>full</td><td>full</td><td>previous, current, units, flags, counter; never an amount</td></tr>
+<tr><td><code>POST /api/bills/generate</code></td><td>full</td><td>full</td><td>counts and room codes only</td></tr>
+<tr><td><code>/bills</code>, <code>/bills/:id</code>, approve, revert, notify, invoice</td><td>full</td><td><span class="badge bad">403</span></td><td>—</td></tr>
+<tr><td><code>/api/notifications/drain</code></td><td>full</td><td><span class="badge bad">403</span></td><td>—</td></tr>
+<tr><td><code>/payments</code>, <code>/receipts</code>, print</td><td>full</td><td><span class="badge bad">403</span></td><td>—</td></tr>
+<tr><td><code>/tenants</code> (all)</td><td>full</td><td><span class="badge bad">403</span></td><td>—</td></tr>
+<tr><td><code>/announcements</code> (all)</td><td>full</td><td><span class="badge bad">403</span></td><td>—</td></tr>
+<tr><td><code>/reports</code> (all four + CSV)</td><td>full</td><td><span class="badge bad">403</span></td><td>—</td></tr>
+<tr><td><code>/settings</code> (all), <code>/users</code> (all)</td><td>full</td><td><span class="badge bad">403</span></td><td>—</td></tr>
+<tr><td>Machine endpoints</td><td colspan="2">No session role at all — credential only</td><td>—</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout warn">
+  <div class="title">PRD §12 is corrected here, deliberately</div>
+  <p>PRD §12 grants Confirm Cash Payment to เจ้าหน้าที่. PRD §4 and D-36 grant รับชำระเงิน and ออกใบเสร็จ to Admin only, and D-36 rules the §12 sentence a drafting error. This specification follows D-36: <code>POST /payments</code> is Admin only. This is the single place a decision overrides literal PRD text (ADR A-13.7).</p>
+</div>
+
+<h3>LINE webhook — <code>POST /line/webhook</code></h3>
+
+<p>Mounted with <code>express.raw({ type: 'application/json' })</code> <strong>before</strong> the JSON body parser, because <code>validateSignature</code> needs the exact bytes. The SDK's <code>middleware()</code> is not used — it processes handlers before responding, which is the behaviour being avoided. The route is exempt from session auth, from CSRF and from the rate limiter (D-29, D-37).</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Aspect</th><th>Contract</th></tr></thead>
+<tbody>
+<tr><td>Authentication</td><td><code>X-Line-Signature</code> verified against <code>LINE_CHANNEL_SECRET</code>. Failure ⇒ <code>401</code>, empty body, nothing processed, one log line.</td></tr>
+<tr><td>Response</td><td><code>200</code> with an <strong>empty body</strong> — the one documented exception to the envelope rule — returned <em>before</em> any event is processed, so a Render cold start still ACKs inside LINE's timeout and the endpoint is never auto-disabled (D-43).</td></tr>
+<tr><td>Ordering</td><td>Events are processed after the response is flushed. A processing error is logged and never retried; LINE will not resend an ACKed event.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Event</th><th>Accepted</th><th>Effect</th><th>Reply</th></tr></thead>
+<tbody>
+<tr><td><code>follow</code></td><td>yes</td><td>UPSERT <code>line_followers</code> with <code>userId</code> and display name, clear <code>unfollowed_at</code></td><td>none</td></tr>
+<tr><td><code>unfollow</code></td><td>yes</td><td>Set <code>line_followers.unfollowed_at</code>. The tenant binding is <strong>not</strong> cleared — unfollowing is not ending a tenancy</td><td>none</td></tr>
+<tr><td><code>message</code>, <code>type: "text"</code>, 6 chars from the code alphabet after trim + uppercase</td><td>yes</td><td>Match an unused, unexpired <code>link_codes</code> row; bind <code>line_user_id</code>, <code>line_display_name</code>, <code>line_linked_at</code> to that tenant; set <code>used_at</code>; audit <code>TENANT_LINE_LINK</code></td><td><code>LINK_OK</code> naming the room, or <code>LINK_FAIL</code> if no match</td></tr>
+<tr><td><code>message</code>, any other text</td><td>yes</td><td>Nothing is written</td><td>The one fixed auto-reply pointing at the office — the OA is not a chatbot</td></tr>
+<tr><td><code>message</code>, non-text (image, sticker, location…)</td><td>ignored</td><td>Nothing</td><td>none</td></tr>
+<tr><td><code>join</code>, <code>leave</code>, <code>postback</code>, <code>memberJoined</code>, anything else</td><td>ignored</td><td>Nothing</td><td>none</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart TD
+  IN["POST /line/webhook"] --> SIG{"X-Line-Signature valid"}
+  SIG -->|no| E401["401, empty body, nothing processed"]
+  SIG -->|yes| ACK["200 empty body, flushed first"]
+  ACK --> EV{"event type"}
+  EV -->|follow| F["upsert line_followers"]
+  EV -->|unfollow| U["set unfollowed_at, binding untouched"]
+  EV -->|"message text"| C{"6 chars from the code alphabet"}
+  EV -->|other| IG["ignore"]
+  C -->|no| AR["fixed auto-reply"]
+  C -->|yes| M{"code unused and not expired"}
+  M -->|yes| BIND["bind tenant, expire code, audit TENANT_LINE_LINK"]
+  M -->|no| FAIL["reply LINK_FAIL"]
+  BIND --> OK["reply LINK_OK naming room 205"]
+</pre>
+<div class="caption">The ACK is unconditional and first (D-29, D-43). LINK_OK, LINK_FAIL and the auto-reply use the Reply API with the event's reply token and write no notifications row (ENG-4).</div>
+</div>
+
+<h3>Validation rules</h3>
+
+<p>Layers, per ADR §6.8: <strong>1</strong> the form (convenience), <strong>2</strong> <code>zod</code> at the boundary, <strong>3</strong> the service (rules needing the database), <strong>4</strong> the database (the last word). Every rule below names the layer that actually holds under a race.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>#</th><th>Rule</th><th>Layer</th><th>Failure</th><th>Worked example</th><th>Ref</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><code>current_reading ≥ previous_reading</code> when <code>meter_replaced</code> is false</td><td>1·2·4</td><td><code>422 READING_BELOW_PREVIOUS</code></td><td>previous 1,250, current 1,240 → rejected; current 1,260 → 10 units</td><td>D-13</td></tr>
+<tr><td>2</td><td>With <code>meter_replaced</code> true: <code>old_final ≥ previous_reading</code> and <code>current_reading ≥ new_start</code>; <code>replace_reason</code> required</td><td>2·3</td><td><code>422 REPLACEMENT_INVALID</code></td><td>1,250 / 1,258 / 0 / 2 → units (1258−1250)+(2−0) = 10 → 180.00</td><td>D-13</td></tr>
+<tr><td>3</td><td><code>units ≥ 0</code> always</td><td>4 <code>CHECK</code></td><td><code>500</code> if reached — no handler may produce it</td><td>Any path that would write −1 is a defect with a test</td><td>D-13, D-16</td></tr>
+<tr><td>4</td><td>One reading per room per period per utility; a double submit is an UPSERT</td><td>4 <code>uq_readings</code></td><td>none — idempotent</td><td>Saving room 41 water 1,260 twice leaves one row, still 10 units</td><td>D-12</td></tr>
+<tr><td>5</td><td>A reading is editable only while its room's bill for that period is Draft or absent</td><td>3</td><td><code>422 READING_FROZEN</code></td><td>Bill 118 Unpaid ⇒ readings 812/813 read-only, note "บิลอนุมัติแล้ว แก้ไขไม่ได้"</td><td>D-12</td></tr>
+<tr><td>6</td><td>Readings and units are whole numbers; no decimals, no negatives</td><td>1·2·4</td><td><code>422 VALIDATION_FAILED</code></td><td><code>1260.5</code> rejected at the boundary</td><td>D-16</td></tr>
+<tr><td>7</td><td>A room is billable iff <code>status='Occupied'</code> <strong>and</strong> it has exactly one Active tenant</td><td>3·4</td><td>excluded from the run, never zero-billed</td><td>13 vacant rooms produce no bill and no common area fee</td><td>D-07</td></tr>
+<tr><td>8</td><td>Generation needs both readings; missing rooms are surfaced, never blocked</td><td>3</td><td><code>missing_readings: 3</code> in the response</td><td>108, 312, 405 listed in the warn banner; approval proceeds for the rest</td><td>D-23</td></tr>
+<tr><td>9</td><td>One bill per room per period; a re-run recalculates Drafts and never touches Unpaid or Paid</td><td>4 <code>uq_bills</code></td><td><code>created: 0</code>, not an error</td><td>Second run over 2026-09 returns created 0, updated 0, skipped_approved 1</td><td>D-18</td></tr>
+<tr><td>10</td><td>Every bill carries exactly three items — water, electric, common — even at 0 units and 0.00</td><td>4 <code>uq_bill_items</code></td><td>a fourth or duplicate item is impossible</td><td>180.00 + 560.00 + 1,050.00 = 1,790.00, and the total is the SQL sum of those rows</td><td>D-18, ENG-2</td></tr>
+<tr><td>11</td><td>Approve only from Draft, Admin only, conditional <code>UPDATE</code></td><td>3·4</td><td><code>already_approved</code> count; never a lost update</td><td>Approving bill 118 twice: second call approves 0 and queues nothing</td><td>D-19</td></tr>
+<tr><td>12</td><td><code>due_date = MAX(due_day of the period month, approval_date + 3 days)</code>, clamped, frozen, never hand-editable</td><td>3</td><td>—</td><td>due_day 5, approved 1 Sep 2026 → 2026-09-05</td><td>D-20</td></tr>
+<tr><td>13</td><td>Pay only a bill whose stored status is <code>Unpaid</code> (displaying as Unpaid or Overdue)</td><td>3·4</td><td><code>422 BILL_NOT_PAYABLE</code> for Draft, <code>409 BILL_ALREADY_PAID</code> for Paid</td><td>Draft 118 → 422; after payment a second confirm → 409 บิลนี้ถูกชำระไปแล้ว</td><td>D-24, D-26</td></tr>
+<tr><td>14</td><td>The payment amount equals the bill total, always — it is copied in SQL, never posted</td><td>3</td><td><code>409 BILL_TOTAL_CHANGED</code> if <code>expected_total</code> is stale</td><td>Screen shows 1,790.00; a revert changed it to 1,810.00 → 409, reload required</td><td>D-24</td></tr>
+<tr><td>15</td><td>At most one live payment per bill; voided payments coexist</td><td>4 <code>uq_payments(active_bill_id)</code></td><td><code>409 BILL_ALREADY_PAID</code></td><td>Double-clicked confirm → one payment 96, one receipt REC-202609-000852</td><td>D-26</td></tr>
+<tr><td>16</td><td>One receipt per payment; the number is allocated in the same transaction and never reused</td><td>4 <code>uq_receipts</code></td><td><code>500</code> if violated — a defect</td><td>Void then re-pay → a new number; 000852 stays taken and prints stamped ยกเลิก</td><td>D-25, D-26</td></tr>
+<tr><td>17</td><td>Revert only a room's most recent bill; reason ≥ 10 chars; Admin only</td><td>3</td><td><code>422 REVERT_NOT_NEWEST</code> / <code>422 REASON_TOO_SHORT</code></td><td>Reverting 2026-08 while 2026-09 exists → refused server-side, not just a disabled button</td><td>D-22</td></tr>
+<tr><td>18</td><td>Void requires a Thai reason ≥ 10 chars; nothing is deleted; no LINE message is sent</td><td>3</td><td><code>422 REASON_TOO_SHORT</code>, <code>409 PAYMENT_ALREADY_VOIDED</code></td><td>Payment 96 voided → bill 118 back to Unpaid, auto reminders suspended</td><td>D-25, D-33</td></tr>
+<tr><td>19</td><td>At most one Active tenant per room</td><td>4 <code>uq_tenants(active_room_id)</code></td><td><code>409 TENANT_ROOM_OCCUPIED</code></td><td>Second Active tenant for room 41 rejected by the database, not by a SELECT</td><td>D-10, ENG-1</td></tr>
+<tr><td>20</td><td>Phone is <code>^0\d{9}$</code></td><td>2</td><td><code>422 VALIDATION_FAILED</code></td><td><code>0812345678</code> accepted; <code>+66812345678</code> rejected</td><td>D-10</td></tr>
+<tr><td>21</td><td>End of tenancy needs a final reading for both utilities and a Paid covering bill</td><td>3</td><td><code>422 TENANCY_END_BLOCKED</code></td><td>Room 312's tenant may be ended only after its final bill is Paid</td><td>D-08</td></tr>
+<tr><td>22</td><td>Baselines editable only while the room has no reading row; area change audited</td><td>3</td><td><code>422 BASELINE_LOCKED</code></td><td>Room 41 has readings ⇒ baseline_water is read-only forever</td><td>D-06, D-09</td></tr>
+<tr><td>23</td><td>A room with any bill cannot be deleted, only deactivated</td><td>3·4 FK</td><td><code>409 ROOM_HAS_BILLS</code></td><td>Room 41 → deactivate; a never-billed room may be deleted outright</td><td>D-47</td></tr>
+<tr><td>24</td><td>One rate per utility per effective date; rates are inserted, never updated</td><td>4 <code>uq_rates</code></td><td><code>409 RATE_DUPLICATE</code></td><td>Two 2026-10-01 water rates → the second is refused</td><td>D-17</td></tr>
+<tr><td>25</td><td><code>due_day</code> between 1 and 28</td><td>2·4 <code>CHECK</code></td><td><code>422 VALIDATION_FAILED</code></td><td>29 rejected, so the month-end clamp can never bite</td><td>D-20</td></tr>
+<tr><td>26</td><td>Announcement <code>title</code> ≤ 60, <code>body</code> ≤ 400, audience <code>all</code> or <code>floors</code>; <code>floors</code> required with <code>floors</code></td><td>2</td><td><code>422 VALIDATION_FAILED</code></td><td>Preview says "จะส่งถึง 67 ห้อง (ผู้เช่าที่ผูก LINE แล้ว 54 ราย)"</td><td>D-35</td></tr>
+<tr><td>27</td><td>A sent announcement is immutable — no edit, resend or recall</td><td>3</td><td><code>409 ANNOUNCEMENT_IMMUTABLE</code></td><td>Announcement 7 is viewable forever and changeable never</td><td>D-35</td></tr>
+<tr><td>28</td><td>One message type per bill (or announcement) per tenant per day</td><td>4 <code>uq_notifications(dedupe_key)</code></td><td>the duplicate row is rejected; the send never happens twice</td><td><code>BILL:118:0:37:2026-09-01</code>; a corrected re-send uses <code>BILL_CORRECTED</code> and is its own key</td><td>D-30, ENG-3</td></tr>
+<tr><td>29</td><td>Automatic retries stop at <code>attempt_count = 3</code>; the Admin's manual resend is never capped</td><td>3</td><td>—</td><td>Three failures then silence; <code>POST /bills/118/notify</code> still works</td><td>D-30, D-33</td></tr>
+<tr><td>30</td><td>The daily job runs once per calendar day on the scheduled path</td><td>4 <code>uq_job_runs</code></td><td><code>already_ran: true</code>, still <code>200</code></td><td>Manual trigger uses <code>daily_manual</code> and bypasses this guard on purpose</td><td>D-32</td></tr>
+<tr><td>31</td><td><code>period</code> matches <code>^\d{4}-(0[1-9]|1[0-2])$</code></td><td>2</td><td><code>422 VALIDATION_FAILED</code></td><td><code>2026-9</code> and <code>2026-13</code> rejected; absent ⇒ current month</td><td>D-11</td></tr>
+<tr><td>32</td><td>Every POST outside the three machine routes carries a valid CSRF token</td><td>middleware</td><td><code>403 CSRF_INVALID</code></td><td>Compared with <code>crypto.timingSafeEqual</code></td><td>D-37</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout ok">
+  <div class="title">Layer 4 is the one that still holds under a race</div>
+  <p>Eleven unique keys, three generated columns and three <code>CHECK</code>s carry the guarantees above through a double-click, a forgotten handler check and a hand-typed <code>UPDATE</code>: <code>uq_readings(room_id, period, utility_type)</code>, <code>uq_bills(room_id, period)</code>, <code>uq_bill_items(bill_id, item_type)</code>, <code>uq_payments(active_bill_id)</code>, <code>uq_tenants(active_room_id)</code>, <code>uq_receipts(payment_id)</code>, <code>uq_receipts(receipt_no)</code>, <code>uq_notifications(dedupe_key)</code>, <code>uq_job_runs(job_name, run_date)</code>, <code>uq_rates(utility_type, effective_from)</code>, <code>uq_rooms(room_code)</code>. Layers 1–3 exist to give a human a good Thai message; layer 4 exists to make the wrong number impossible (ADR A-10). None of these may be cut.</p>
+</div>
+
+<h3>Assumptions recorded by this section</h3>
+
+<ol>
+<li><strong>Form routes are the API for CRUD.</strong> Rooms, tenants, users, settings, payments, revert, void and announcements have no JSON endpoints, because ADR §6.2 fixes the JSON surface at seven endpoints. Where this section shows a "request body" for those, it is form-encoded and the response is a <code>303</code> or a re-render.</li>
+<li><strong>No <code>GET /api/me</code>.</strong> Identity is <code>req.session.user</code>, rendered into the page. A JSON caller that lost its session learns so from <code>401 UNAUTHENTICATED</code>.</li>
+<li><strong><code>expected_total</code> on <code>POST /payments</code></strong> is added as a staleness guard, not as an amount input. The stored amount is still copied from <code>bills.total</code> in SQL (D-24); the field only turns a stale screen into a <code>409</code> instead of a wrong receipt.</li>
+<li><strong>Single approve reuses the bulk endpoint.</strong> Bill Detail's button posts <code>{"bill_ids":[118]}</code> to <code>POST /api/bills/approve</code>, so there is one approval code path and one set of guards rather than two.</li>
+<li><strong>Recalculating Draft bills reuses <code>POST /api/bills/generate</code></strong> — a run already recalculates every Draft bill of the period in place (D-18), so D-17's คำนวณบิลฉบับร่างใหม่ button needs no endpoint of its own.</li>
+<li><strong>The PAID message is drained by the receipt page</strong> calling <code>POST /api/notifications/drain</code> once on load; the daily job would deliver it anyway. No per-message send endpoint exists.</li>
+<li><strong>A webhook text message is treated as a code attempt</strong> when, after trimming and upper-casing, it is exactly 6 characters drawn from the D-29 alphabet. Anything else gets the fixed auto-reply. Without this test the system cannot distinguish a mistyped code from small talk.</li>
+<li><strong>D-37's "first login forces a change"</strong> is realised as <code>GET/POST /password</code> plus a runbook step and a dashboard banner, not as a forced redirect: the ADR's <code>users</code> table carries no <code>must_change_password</code> column, and inventing one here would contradict the schema section.</li>
+<li><strong>Page size 50</strong> and the <code>/readings</code> no-pagination exception are chosen here; the ADR fixes neither. Against the seed (80 rooms, ≤80 bills per period) pagination is reachable only on the all-period bill list.</li>
+<li><strong>Announcement drains use multicast chunks of at most 500 recipients per call</strong>, while personalised types drain at most 20 rows per call, per D-34's delivery split and ADR §7.6's batch cap.</li>
+</ol>
+
+</section>

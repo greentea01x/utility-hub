@@ -1,0 +1,861 @@
+<section id="line-messages">
+<h2>LINE Official Account Messages (Tenant)</h2>
+
+<p>The tenant is the only user of this product who never sees a screen we build. Everything a tenant receives arrives in one LINE chat with the apartment's Official Account, and everything a tenant does happens at the office counter with cash. This section specifies that chat: the six outbound message types, the account-linking conversation that makes them deliverable at all, the exact Thai text of each one, and what the office sees when a message does not arrive.</p>
+
+<div class="callout decision">
+  <div class="title">Binding constraints this section obeys</div>
+  <ul>
+    <li><b>Plain text only (D-31).</b> Seven templates, no Flex Messages, no images, no rich menu, no buttons inside a message. Every mockup below uses <code>.bubble.oa</code>; <code>.flex-card</code> and <code>.rich-menu</code> exist in <code>tokens.css</code> for a post-v1 version and a v1 mockup that uses them is a defect.</li>
+    <li><b>Braced placeholders are the template; the rendered text is an example.</b> Each screen shows the D-31 template verbatim and then one worked example rendered with the PRD §28 values — room 205, 10 หน่วย × 18, 70 หน่วย × 8, 30 ตร.ม. × 35, ยอดรวม 1,790 บาท, ครบกำหนด 5 กันยายน 2026, ชำระ 3 กันยายน 2026, REC-202609-000852.</li>
+    <li><b>Money and dates (D-03).</b> LINE messages write the number followed by บาท with the trailing <code>.00</code> dropped (<code>1,790 บาท</code>), full Thai month names (<code>5 กันยายน 2026</code>), Gregorian years, 24-hour times with the suffix น., timezone Asia/Bangkok.</li>
+    <li><b>No product branding (D-01).</b> The tenant sees the apartment's Official Account. The OA display name is <code>apartment_name</code> from Settings — ศุภาลัย เรสซิเดนซ์ in the seed — and the only signature that ever appears is <code>— นิติบุคคล {apartment_name}</code> on an announcement.</li>
+    <li><b>The OA is not a chatbot (D-29).</b> Exactly three inbound behaviours exist: a string shaped like a link code, anything else, and the follow event. There is no menu, no query, no balance lookup, no tenant-facing web login (D-05, limitation 7).</li>
+  </ul>
+</div>
+
+<style>
+/* Layout specifics unique to the LINE screens. Every selector is scoped under
+   .screen, and additionally under #line-messages so it cannot reach another
+   author's mockups in the assembled document. */
+#line-messages .screen{position:relative}
+#line-messages .screen .lm-app{display:flex;flex-direction:column;min-height:inherit;background:var(--ui-line-chat)}
+#line-messages .screen .lm-status{display:flex;align-items:center;justify-content:space-between;padding:6px 16px;background:var(--ui-line-green);color:#fff;font-size:var(--ui-fs-2xs);font-weight:var(--ui-fw-med);font-variant-numeric:tabular-nums}
+#line-messages .screen .lm-app .line-chat{width:100%;max-width:none;flex:1;display:flex;flex-direction:column;border-radius:0;box-shadow:none}
+#line-messages .screen .lm-app .line-body{flex:1;align-content:flex-start}
+#line-messages .screen .line-header .lm-back{font-size:var(--ui-fs-lg);line-height:1;opacity:.9}
+#line-messages .screen .line-header .lm-oa{margin-left:auto;font-size:var(--ui-fs-2xs);font-weight:var(--ui-fw-med);background:rgba(255,255,255,.22);padding:1px 7px;border-radius:var(--ui-r-pill)}
+#line-messages .screen .lm-daysep{align-self:center;background:rgba(0,0,0,.20);color:#fff;font-size:var(--ui-fs-2xs);padding:2px 12px;border-radius:var(--ui-r-pill);margin:var(--ui-sp-1) 0}
+#line-messages .screen .lm-inputbar{display:flex;align-items:center;gap:var(--ui-sp-2);padding:var(--ui-sp-2) var(--ui-sp-3);background:var(--ui-surface);border-top:1px solid var(--ui-border)}
+#line-messages .screen .lm-inputbar .lm-fakeinput{flex:1;min-height:34px;display:flex;align-items:center;padding:0 var(--ui-sp-3);border:1px solid var(--ui-border);border-radius:var(--ui-r-pill);background:var(--ui-surface-2);color:var(--ui-muted);font-size:var(--ui-fs-sm)}
+#line-messages .screen .lm-inputbar .lm-fakeinput.typed{background:var(--ui-surface);color:var(--ui-text);font-weight:var(--ui-fw-semi);letter-spacing:.16em}
+#line-messages .screen .lm-inputbar .lm-ico{color:var(--ui-muted);font-size:var(--ui-fs-lg);line-height:1}
+#line-messages .screen .lm-anchor{position:relative}
+#line-messages .screen .lm-quiet{opacity:.55}
+</style>
+
+<h3>How to read these screens</h3>
+
+<p>A LINE message has no interface states of its own — it is one immutable bubble in a chat we do not own. The five states every screen in this document set must specify therefore map onto <b>delivery</b> state, which is what the office can actually see and act on. The mapping below is the same on every screen, so each screen's table only fills in what is specific to that message.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Document state</th><th>Means, for a LINE message</th><th><code>notifications.status</code></th><th>What the office sees</th></tr></thead>
+<tbody>
+<tr><td><b>Empty</b></td><td>The tenant has no LINE binding, so no message is generated at all — the common case on day one, and 13 of the 67 seeded tenants permanently (D-44)</td><td><code>skipped_no_line</code></td><td><span class="badge neutral">ยังไม่ได้ส่ง — ไม่มี LINE</span> on Monthly Billing and Bill Detail</td></tr>
+<tr><td><b>Loading</b></td><td>Approved and queued, not yet pushed — a bulk approval drains 20 messages per call, so a 64-room send is visibly in progress for up to three minutes (D-19)</td><td><code>queued</code></td><td>Progress bar on the approve result screen: <code>ส่ง LINE แล้ว 40/64</code></td></tr>
+<tr><td><b>Error</b></td><td>The push call failed — network, 5xx, or an expired channel token. Automatic retries stop at <code>attempt_count = 3</code>; the Admin's manual resend is never capped (D-30, D-33)</td><td><code>failed</code></td><td><span class="badge bad">ส่งไม่สำเร็จ</span>, with <code>last_error</code> and <code>http_status</code> on hover</td></tr>
+<tr><td><b>Success</b></td><td>LINE accepted the push. One row, one recipient, counted once against the monthly allowance (D-34)</td><td><code>sent</code></td><td><span class="badge ok">ส่งแล้ว</span>; Settings shows <code>ส่งข้อความเดือนนี้: 128/500</code></td></tr>
+<tr><td><b>Permission denied</b></td><td>There is no tenant-facing authorisation to deny. The two equivalents: LINE answers <code>400 invalid userId</code>, which unbinds the tenant automatically (never for a seeded <code>Useed…</code> id) and drops the room back to <b>Empty</b>; or the tenant has blocked the Official Account, which LINE reports as success and we cannot detect at all (D-05, limitation 9)</td><td><code>failed</code> → unbound, or a false <code>sent</code></td><td>The binding disappears from the Tenants row; the blocked case is invisible by design and is a listed limitation</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout warn">
+  <div class="title">Two things the mockups deliberately do not show</div>
+  <p>There is no read receipt we control and no delivery receipt LINE gives us. The <span lang="th">อ่านแล้ว</span> marks in the frames below are LINE client chrome drawn for realism only — the product never reads them, never stores them, and no screen, report or test case may claim a message was read. Likewise the input bar is the tenant's own keyboard: the product cannot pre-fill it, disable it, or attach a button to it.</p>
+</div>
+
+<h3>LM-1 · Bill issued — BILL · <code>POST /api/bills/approve</code></h3>
+
+<div class="screen-meta">
+  <span><b>Role:</b> ผู้เช่า (tenant) — LINE only, no login, no app</span>
+  <span><b>Template:</b> <code>BILL</code> (D-31 #1)</span>
+  <span><b>Entry:</b> Admin presses อนุมัติและส่งบิล on Bill Detail <code>/bills/:id</code> or in bulk on Monthly Billing <code>/bills</code>; the queued row is pushed by <code>POST /api/notifications/drain</code></span>
+  <span><b>Primary action:</b> none in-message — the tenant's action is offline: bring cash to the office within office hours</span>
+  <span><b>Delivery:</b> Push API, one call per recipient (D-34)</span>
+</div>
+
+<div class="diagram">
+<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(390px,1fr))">
+
+<div class="device phone" style="margin:0 auto;align-self:start">
+<div class="screen">
+<div class="lm-app">
+<div class="lm-status"><span>09:12</span><span>LINE ▪ ▮▮▮ 100%</span></div>
+<div class="line-chat">
+<div class="line-header lm-anchor"><span class="lm-back">‹</span><span class="avatar">🏢</span> ศุภาลัย เรสซิเดนซ์ <span class="lm-oa">Official</span><span class="ann" style="right:6px;top:22px">1</span></div>
+<div class="line-body">
+<div class="lm-daysep">1 กันยายน 2026</div>
+<div class="bubble oa lm-anchor"><span class="ann" style="left:-8px;top:-9px">2</span>🔔 ค่าใช้จ่ายประจำเดือน กันยายน 2026
+ห้อง 205
+
+💧 ค่าน้ำ 10 หน่วย × 18 บาท = 180 บาท
+⚡ ค่าไฟ 70 หน่วย × 8 บาท = 560 บาท
+🏢 ค่าส่วนกลาง 30 ตร.ม. × 35 บาท = 1,050 บาท
+
+💰 ยอดรวม 1,790 บาท
+📅 กรุณาชำระภายในวันที่ 5 กันยายน 2026
+
+ชำระเงินสดที่สำนักงานนิติบุคคล เวลา 08:00–17:00 น.<span class="time">09:12 น.</span><span class="ann" style="right:-8px;bottom:-9px">3</span></div>
+<div class="bubble user lm-anchor"><span class="ann" style="left:-8px;top:-9px">4</span>รับทราบค่ะ ขอบคุณค่ะ<span class="time">อ่านแล้ว · 09:20 น.</span></div>
+<div class="bubble oa lm-anchor"><span class="ann" style="left:-8px;top:-9px">5</span>ℹ️ ข้อความนี้เป็นระบบแจ้งเตือนอัตโนมัติ ไม่มีเจ้าหน้าที่ตอบในแชทนี้
+หากต้องการติดต่อ กรุณาโทร 02-123-4567 หรือมาที่สำนักงานนิติบุคคล เวลา 08:00–17:00 น.<span class="time">09:20 น.</span></div>
+</div>
+</div>
+<div class="lm-inputbar lm-anchor"><span class="ann" style="left:4px;top:-10px">6</span><span class="lm-ico">☺</span><span class="lm-fakeinput">ข้อความ</span><span class="lm-ico">🎤</span><span class="lm-ico">＋</span></div>
+</div>
+</div>
+</div>
+
+<div class="device phone" style="margin:0 auto;align-self:start">
+<div class="screen">
+<div class="lm-app">
+<div class="lm-status"><span>16:40</span><span>LINE ▪ ▮▮▮ 100%</span></div>
+<div class="line-chat">
+<div class="line-header"><span class="lm-back">‹</span><span class="avatar">🏢</span> ศุภาลัย เรสซิเดนซ์ <span class="lm-oa">Official</span></div>
+<div class="line-body">
+<div class="lm-daysep">1 กันยายน 2026</div>
+<div class="bubble oa lm-quiet">🔔 ค่าใช้จ่ายประจำเดือน กันยายน 2026
+ห้อง 205
+
+💧 ค่าน้ำ 10 หน่วย × 18 บาท = 180 บาท
+⚡ ค่าไฟ 70 หน่วย × 8 บาท = 560 บาท
+🏢 ค่าส่วนกลาง 30 ตร.ม. × 35 บาท = 1,050 บาท
+
+💰 ยอดรวม 1,790 บาท
+📅 กรุณาชำระภายในวันที่ 5 กันยายน 2026
+
+ชำระเงินสดที่สำนักงานนิติบุคคล เวลา 08:00–17:00 น.<span class="time">09:12 น.</span></div>
+<div class="lm-daysep">2 กันยายน 2026</div>
+<div class="bubble oa lm-anchor"><span class="ann" style="left:-8px;top:-9px">7</span>🔄 แก้ไขบิล (ยกเลิกยอดเดิม)
+🔔 ค่าใช้จ่ายประจำเดือน กันยายน 2026
+ห้อง 205
+
+💧 ค่าน้ำ 12 หน่วย × 18 บาท = 216 บาท
+⚡ ค่าไฟ 70 หน่วย × 8 บาท = 560 บาท
+🏢 ค่าส่วนกลาง 30 ตร.ม. × 35 บาท = 1,050 บาท
+
+💰 ยอดรวม 1,826 บาท
+📅 กรุณาชำระภายในวันที่ 5 กันยายน 2026
+
+ชำระเงินสดที่สำนักงานนิติบุคคล เวลา 08:00–17:00 น.<span class="time">16:38 น.</span></div>
+</div>
+</div>
+<div class="lm-inputbar"><span class="lm-ico">☺</span><span class="lm-fakeinput">ข้อความ</span><span class="lm-ico">🎤</span><span class="lm-ico">＋</span></div>
+</div>
+</div>
+</div>
+
+</div>
+<div class="caption">Left: the BILL message, the demo's first tenant-visible event. Right, the alternate state: a reading corrected after approval reverts the bill to Draft and re-approving sends <code>BILL_CORRECTED</code>, whose body is the whole BILL template behind a one-line prefix — the tenant is never asked to work out which of two numbers is current (D-22, D-31 #2). The corrected figures (12 หน่วย, 1,826 บาท) are deliberately not the §28 values, because a correction that changes nothing would illustrate nothing.</div>
+</div>
+
+<ol class="annotations" style="list-style:none;padding-left:0">
+<li><span class="ann">1</span><b>Chat header.</b> The OA display name is <code>settings.apartment_name</code> (D-01) — never "Juristic Platform", never a product logo. The avatar and the Official badge are LINE's own chrome, configured once in the LINE Official Account Manager. Nothing here is rendered by our code.</li>
+<li><span class="ann">2</span><b>The BILL bubble.</b> One plain-text message, sent after the approve transaction commits, never inside it (D-30) — a LINE outage cannot roll back an approval. The three item lines repeat the arithmetic rather than only the amounts, because the tenant's first question is always "why is it this much"; the numbers come from the frozen <code>bill_items</code> snapshot, so the message can never disagree with the printed bill or the receipt (D-17, D-22).</li>
+<li><span class="ann">3</span><b>Timestamp.</b> Set by LINE at delivery, not by us. On a bulk approval of 64 rooms the drain loop spreads sends over up to three minutes, so timestamps across rooms differ by minutes — this is expected and is not a defect (D-19, D-45).</li>
+<li><span class="ann">4</span><b>The tenant replies.</b> Nothing in the product asks for a reply, but tenants reply anyway. The inbound message is stored nowhere except LINE; it never reaches a staff screen, and no member of staff is notified.</li>
+<li><span class="ann">5</span><b>Fixed auto-reply.</b> Any inbound text that is not shaped like a link code gets one fixed reply pointing at the office, sent with the Reply API on the event's reply token — it writes no <code>notifications</code> row and does not consume the 500-message allowance (D-29, ADR ENG-4). Full wording and the shape rule are specified in LM-6.</li>
+<li><span class="ann">6</span><b>Input bar.</b> The tenant's own keyboard. v1 attaches no rich menu, no quick reply and no postback button (D-31), so this bar is the only inbound channel and it is used for exactly one thing: the six-character link code.</li>
+<li><span class="ann">7</span><b>Corrected bill.</b> Sent same-day under its own dedupe key <code>BILL_CORRECTED</code>, so it is never suppressed by the original BILL row (D-30). Where the correction followed a voided payment the template appends <span lang="th">ยอดที่ชำระไว้เดิมได้คืนเป็นเงินสดแล้ว กรุณาชำระตามยอดใหม่</span> — the cash goes back across the counter first, because the system holds no refund or credit balance (D-22, D-25).</li>
+</ol>
+
+<h4>LM-1 states</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>State</th><th>Trigger</th><th>Tenant sees</th><th>Office sees / recovery</th></tr></thead>
+<tbody>
+<tr><td><b>Empty</b></td><td>Room 205's tenant has never linked LINE</td><td>Nothing — the chat does not exist</td><td><span class="badge neutral">ยังไม่ได้ส่ง — ไม่มี LINE</span>. Recovery is paper: <b>พิมพ์ใบแจ้งหนี้</b> on Bill Detail prints the A5 ใบแจ้งค่าใช้จ่าย handed over at the office (D-28, D-30)</td></tr>
+<tr><td><b>Loading</b></td><td>Bulk approval; the row is <code>queued</code> and the drain loop has not reached it</td><td>Nothing yet, then the bubble arrives</td><td><code>ส่ง LINE แล้ว 40/64</code> with a <code>.progress</code> bar; the daily job would finish the queue even if the browser is closed (D-19, D-32)</td></tr>
+<tr><td><b>Error</b></td><td>Push returns 5xx or times out</td><td>Nothing</td><td><span class="badge bad">ส่งไม่สำเร็จ</span>; retried by the 09:00 job up to <code>attempt_count = 3</code>, then only by the Admin's <b>ส่งแจ้งเตือนอีกครั้ง</b>, which is uncapped (D-33)</td></tr>
+<tr><td><b>Success</b></td><td>Push accepted</td><td>The bubble at annotation 2</td><td><span class="badge ok">ส่งแล้ว</span>; result screen line <code>อนุมัติ 64 ใบ · ส่ง LINE สำเร็จ 51 · ยังไม่ได้ส่ง (ไม่มี LINE) 13 · ส่งไม่สำเร็จ 0</code> (D-19)</td></tr>
+<tr><td><b>Permission denied</b></td><td>LINE returns <code>400 invalid userId</code>, or the tenant blocked the OA</td><td>Nothing, in both cases</td><td>400 unbinds the tenant (never a seeded <code>Useed…</code> id) and the room becomes <b>Empty</b> at the next send. A blocked OA returns 200 and is undetectable — the word "blocked" appears in no badge, report or test case (D-30, D-05)</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>LM-1 copy</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Element</th><th>Thai copy — verbatim</th><th>Source</th></tr></thead>
+<tbody>
+<tr><td>Trigger button, Bill Detail</td><td>อนุมัติและส่งบิล</td><td>D-02</td></tr>
+<tr><td>Trigger button, Monthly Billing (bulk)</td><td>อนุมัติและส่งบิล (64 ห้อง)</td><td>D-19</td></tr>
+<tr><td>Confirm dialog — single</td><td>title <b>อนุมัติและส่งบิล</b> · body <b>อนุมัติและส่งบิลห้อง 205 ผ่าน LINE — ยกเลิกไม่ได้</b> · buttons <b>ยกเลิก</b> / <b>อนุมัติและส่ง</b></td><td>D-39 #1</td></tr>
+<tr><td>Confirm dialog — bulk</td><td>อนุมัติและส่งบิล 64 ห้อง ผ่าน LINE — ยกเลิกไม่ได้</td><td>D-39 #2</td></tr>
+<tr><td>Result screen</td><td>อนุมัติ 64 ใบ · ส่ง LINE สำเร็จ 51 · ยังไม่ได้ส่ง (ไม่มี LINE) 13 · ส่งไม่สำเร็จ 0</td><td>D-19</td></tr>
+<tr><td>Validation — nothing selected</td><td>the button stays disabled; no bill is Draft in the selection, so there is no error to show</td><td>D-19</td></tr>
+<tr><td>Message template</td><td><pre>🔔 ค่าใช้จ่ายประจำเดือน {period_th}
+ห้อง {room_code}
+
+💧 ค่าน้ำ {water_units} หน่วย × {water_rate} บาท = {water_amount} บาท
+⚡ ค่าไฟ {elec_units} หน่วย × {elec_rate} บาท = {elec_amount} บาท
+🏢 ค่าส่วนกลาง {area} ตร.ม. × {common_rate} บาท = {common_amount} บาท
+
+💰 ยอดรวม {total} บาท
+📅 กรุณาชำระภายในวันที่ {due_date_th}
+
+ชำระเงินสดที่สำนักงานนิติบุคคล เวลา {office_hours}</pre></td><td>D-31 #1</td></tr>
+<tr><td>Appended when the bill covers a missed month</td><td>หมายเหตุ: ยอดนี้ครอบคลุมการใช้ตั้งแต่รอบ กรกฎาคม 2026</td><td>D-14, D-31 #1</td></tr>
+<tr><td>Corrected-bill prefix</td><td>🔄 แก้ไขบิล (ยกเลิกยอดเดิม)</td><td>D-31 #2</td></tr>
+<tr><td>Corrected after a voided payment, appended</td><td>ยอดที่ชำระไว้เดิมได้คืนเป็นเงินสดแล้ว กรุณาชำระตามยอดใหม่</td><td>D-31 #2, D-25</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>LM-2 · Reminder before due date — PRE_DUE · <code>POST /internal/jobs/daily</code></h3>
+
+<div class="screen-meta">
+  <span><b>Role:</b> ผู้เช่า (tenant)</span>
+  <span><b>Template:</b> <code>PRE_DUE</code> (D-31 #3)</span>
+  <span><b>Entry:</b> the external scheduler calls <code>POST /internal/jobs/daily</code> at 09:00 Asia/Bangkok with <code>X-Job-Token</code>; the job selects Unpaid bills where <code>due_date − today = 2</code></span>
+  <span><b>Primary action:</b> none in-message — pay cash at the office before the due date</span>
+  <span><b>Frequency:</b> exactly once per bill, ever (D-33)</span>
+</div>
+
+<div class="diagram">
+<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(390px,1fr))">
+
+<div class="device phone" style="margin:0 auto;align-self:start">
+<div class="screen">
+<div class="lm-app">
+<div class="lm-status"><span>09:00</span><span>LINE ▪ ▮▮▮ 92%</span></div>
+<div class="line-chat">
+<div class="line-header"><span class="lm-back">‹</span><span class="avatar">🏢</span> ศุภาลัย เรสซิเดนซ์ <span class="lm-oa">Official</span></div>
+<div class="line-body">
+<div class="lm-daysep">1 กันยายน 2026</div>
+<div class="bubble oa lm-quiet">🔔 ค่าใช้จ่ายประจำเดือน กันยายน 2026
+ห้อง 205
+
+💰 ยอดรวม 1,790 บาท
+📅 กรุณาชำระภายในวันที่ 5 กันยายน 2026<span class="time">09:12 น.</span></div>
+<div class="lm-daysep lm-anchor"><span class="ann" style="left:-26px;top:0">1</span>3 กันยายน 2026</div>
+<div class="bubble oa lm-anchor"><span class="ann" style="left:-8px;top:-9px">2</span>⏰ แจ้งเตือนก่อนครบกำหนด
+ห้อง 205 มียอดค้างชำระ 1,790 บาท
+กรุณาชำระภายในวันที่ 5 กันยายน 2026 (อีก 2 วัน)
+
+ชำระเงินสดที่สำนักงานนิติบุคคล<span class="time">09:00 น.</span><span class="ann" style="right:-8px;bottom:-9px">3</span></div>
+</div>
+</div>
+<div class="lm-inputbar"><span class="lm-ico">☺</span><span class="lm-fakeinput">ข้อความ</span><span class="lm-ico">🎤</span><span class="lm-ico">＋</span></div>
+</div>
+</div>
+</div>
+
+<div class="device phone" style="margin:0 auto;align-self:start">
+<div class="screen">
+<div class="lm-app">
+<div class="lm-status"><span>09:00</span><span>LINE ▪ ▮▮▮ 92%</span></div>
+<div class="line-chat">
+<div class="line-header"><span class="lm-back">‹</span><span class="avatar">🏢</span> ศุภาลัย เรสซิเดนซ์ <span class="lm-oa">Official</span></div>
+<div class="line-body">
+<div class="lm-daysep">3 กันยายน 2026</div>
+<div class="bubble oa lm-anchor"><span class="ann" style="left:-8px;top:-9px">4</span>⏰ แจ้งเตือนก่อนครบกำหนด
+ห้อง 205 มียอดค้างชำระ 1,790 บาท
+กรุณาชำระภายในวันที่ 5 กันยายน 2026 (อีก 2 วัน)
+
+ชำระเงินสดที่สำนักงานนิติบุคคล<span class="time">09:00 น.</span></div>
+<div class="bubble oa lm-anchor"><span class="ann" style="left:-8px;top:-9px">5</span>⏰ แจ้งเตือนก่อนครบกำหนด
+ห้อง 402 มียอดค้างชำระ 1,682 บาท
+กรุณาชำระภายในวันที่ 5 กันยายน 2026 (อีก 2 วัน)
+
+ชำระเงินสดที่สำนักงานนิติบุคคล<span class="time">09:00 น.</span></div>
+</div>
+</div>
+<div class="lm-inputbar"><span class="lm-ico">☺</span><span class="lm-fakeinput">ข้อความ</span><span class="lm-ico">🎤</span><span class="lm-ico">＋</span></div>
+</div>
+</div>
+</div>
+
+</div>
+<div class="caption">Left: the reminder in the demo timeline — the bill lands on 1 ก.ย., the reminder fires at 09:00 on 3 ก.ย., the tenant pays that afternoon. Right, the alternate state: one LINE account bound to two Active tenancies (a parent renting a second room) receives one message per room, never a merged statement, because uniqueness is on the tenant and every template names its room (D-29).</div>
+</div>
+
+<ol class="annotations" style="list-style:none;padding-left:0">
+<li><span class="ann">1</span><b>Two days before, not two days of nagging.</b> The condition is literally <code>due_date − today = 2</code> evaluated once a day, so PRE_DUE is sent at most once in a bill's entire life. A bill approved late enough that the window has already passed simply never gets one — the due date is protected instead, by <code>MAX(due day, approval + 3 days)</code> (D-20, D-33).</li>
+<li><span class="ann">2</span><b>Amount and date repeated, breakdown dropped.</b> A reminder answers one question — how much, by when — and the tenant already has the itemised message from LM-1 in the same thread. Nothing is added that the bill did not already say; there is no late fee, interest or penalty anywhere in this product (D-05, limitation 3).</li>
+<li><span class="ann">3</span><b>09:00 Asia/Bangkok, always.</b> One fixed hour, set by the external scheduler, never in-process (D-32). No evening send, no weekend variation, no per-tenant preference. If the scheduler pings twice, <code>UNIQUE(job_name, run_date)</code> makes the second call a no-op, and the notification dedupe key makes it harmless even from the Admin's manual <b>รันงานแจ้งเตือนตอนนี้</b> button, which deliberately skips the job guard so a 14:00 demo still works.</li>
+<li><span class="ann">4</span><b>Room named in line 2, not only in the header.</b> The header is the apartment, not the room. For a tenant with one room this is redundant; for the account on the right it is the only thing that distinguishes two otherwise identical messages, which is why D-31 forbids hard-coding it away.</li>
+<li><span class="ann">5</span><b>Two rooms, two messages, two rows.</b> The 1,682 บาท is a second room's own bill, not a total. Both rows count separately against the 500-message monthly allowance, and each has its own <span class="badge ok">ส่งแล้ว</span> badge on its own bill. No screen ever aggregates a LINE account's rooms into one figure.</li>
+</ol>
+
+<h4>LM-2 states</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>State</th><th>Trigger</th><th>Tenant sees</th><th>Office sees / recovery</th></tr></thead>
+<tbody>
+<tr><td><b>Empty</b></td><td>No binding, or the bill was already paid before 09:00 on due − 2</td><td>Nothing</td><td>No row is written for a Paid bill at all — the reminder simply does not exist for it (D-33)</td></tr>
+<tr><td><b>Loading</b></td><td>The 09:00 job is mid-run across 26 arrears rooms</td><td>Messages appear over a few seconds</td><td>The job returns counts; nothing is shown to a user unless the manual button was used</td></tr>
+<tr><td><b>Error</b></td><td>Push failed, or the whole job never ran because the free instance was asleep and the scheduler gave up</td><td>Nothing</td><td><span class="badge bad">ส่งไม่สำเร็จ</span> per bill; a missed run is visible as a missing <code>job_runs</code> row for that date, and the manual button re-runs the identical code (D-32)</td></tr>
+<tr><td><b>Success</b></td><td>Push accepted at 09:00 on due − 2</td><td>The bubble at annotation 2</td><td>Manual-run summary: <code>ส่งแจ้งเตือนก่อนครบกำหนด 7 ราย · เลยกำหนด 4 ราย · ส่งซ้ำที่ล้มเหลว 1 ราย</code></td></tr>
+<tr><td><b>Permission denied</b></td><td>Wrong or missing <code>X-Job-Token</code> on the scheduler call</td><td>Nothing — no reminder goes out that day</td><td>401 from <code>/internal/jobs/daily</code>, no <code>job_runs</code> row. This is the failure that is silent by nature, which is why the Admin has a manual trigger at all (D-32)</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>LM-2 copy</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Element</th><th>Thai copy — verbatim</th><th>Source</th></tr></thead>
+<tbody>
+<tr><td>Message template</td><td><pre>⏰ แจ้งเตือนก่อนครบกำหนด
+ห้อง {room_code} มียอดค้างชำระ {total} บาท
+กรุณาชำระภายในวันที่ {due_date_th} (อีก 2 วัน)
+
+ชำระเงินสดที่สำนักงานนิติบุคคล</pre></td><td>D-31 #3</td></tr>
+<tr><td>Settings button, manual run</td><td>รันงานแจ้งเตือนตอนนี้</td><td>D-32</td></tr>
+<tr><td>Manual run result</td><td>ส่งแจ้งเตือนก่อนครบกำหนด 7 ราย · เลยกำหนด 4 ราย · ส่งซ้ำที่ล้มเหลว 1 ราย</td><td>D-32</td></tr>
+<tr><td>Per-bill manual resend, Bill Detail</td><td>ส่งแจ้งเตือนอีกครั้ง</td><td>D-33</td></tr>
+<tr><td>Monthly quota line, Settings</td><td>ส่งข้อความเดือนนี้: 128/500 <span class="muted">(warn colour above 450)</span></td><td>D-34</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>LM-3 · Overdue notice — OVERDUE · <code>POST /internal/jobs/daily</code></h3>
+
+<div class="screen-meta">
+  <span><b>Role:</b> ผู้เช่า (tenant)</span>
+  <span><b>Template:</b> <code>OVERDUE</code> (D-31 #4)</span>
+  <span><b>Entry:</b> the same 09:00 job, on the days where <code>days_overdue IN (1, 8, 15)</code></span>
+  <span><b>Primary action:</b> none in-message — contact the office</span>
+  <span><b>Frequency:</b> at most three per bill, ever; nothing after day 15 (D-33)</span>
+</div>
+
+<div class="callout note">
+  <div class="title">Whose bill this is</div>
+  <p>Room 205's demo bill is paid on 3 กันยายน 2026, so it never becomes overdue. The frames below are the <b>counterfactual branch of that same bill</b> — the tenant does not come to the counter — which keeps the §28 figures (ห้อง 205, 1,790 บาท, ครบกำหนด 5 กันยายน 2026) intact while showing the arrears path. PRD §15's short form <span lang="th">⚠️ คุณมียอดค้างชำระ 1,790 บาท</span> is the summary of this message; D-31 fixes the sent text, which adds the room, the due date and the number of days late, because a tenant renting two rooms cannot act on the short form.</p>
+</div>
+
+<div class="diagram">
+<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(390px,1fr))">
+
+<div class="device phone" style="margin:0 auto;align-self:start">
+<div class="screen">
+<div class="lm-app">
+<div class="lm-status"><span>09:00</span><span>LINE ▪ ▮▮▮ 88%</span></div>
+<div class="line-chat">
+<div class="line-header"><span class="lm-back">‹</span><span class="avatar">🏢</span> ศุภาลัย เรสซิเดนซ์ <span class="lm-oa">Official</span></div>
+<div class="line-body">
+<div class="lm-daysep">3 กันยายน 2026</div>
+<div class="bubble oa lm-quiet">⏰ แจ้งเตือนก่อนครบกำหนด
+ห้อง 205 มียอดค้างชำระ 1,790 บาท
+กรุณาชำระภายในวันที่ 5 กันยายน 2026 (อีก 2 วัน)
+
+ชำระเงินสดที่สำนักงานนิติบุคคล<span class="time">09:00 น.</span></div>
+<div class="lm-daysep">6 กันยายน 2026</div>
+<div class="bubble oa lm-anchor"><span class="ann" style="left:-8px;top:-9px">1</span>⚠️ เลยกำหนดชำระแล้ว
+ห้อง 205 ยอดค้างชำระ 1,790 บาท
+ครบกำหนดวันที่ 5 กันยายน 2026 (เลยมาแล้ว 1 วัน)
+
+กรุณาติดต่อสำนักงานนิติบุคคล<span class="time">09:00 น.</span><span class="ann" style="right:-8px;bottom:-9px">2</span></div>
+</div>
+</div>
+<div class="lm-inputbar"><span class="lm-ico">☺</span><span class="lm-fakeinput">ข้อความ</span><span class="lm-ico">🎤</span><span class="lm-ico">＋</span></div>
+</div>
+</div>
+</div>
+
+<div class="device phone" style="margin:0 auto;align-self:start">
+<div class="screen">
+<div class="lm-app">
+<div class="lm-status"><span>09:00</span><span>LINE ▪ ▮▮▮ 74%</span></div>
+<div class="line-chat">
+<div class="line-header"><span class="lm-back">‹</span><span class="avatar">🏢</span> ศุภาลัย เรสซิเดนซ์ <span class="lm-oa">Official</span></div>
+<div class="line-body">
+<div class="lm-daysep">6 กันยายน 2026</div>
+<div class="bubble oa">⚠️ เลยกำหนดชำระแล้ว
+ห้อง 205 ยอดค้างชำระ 1,790 บาท
+ครบกำหนดวันที่ 5 กันยายน 2026 (เลยมาแล้ว 1 วัน)
+
+กรุณาติดต่อสำนักงานนิติบุคคล<span class="time">09:00 น.</span></div>
+<div class="lm-daysep lm-anchor"><span class="ann" style="left:-26px;top:0">3</span>13 กันยายน 2026</div>
+<div class="bubble oa">⚠️ เลยกำหนดชำระแล้ว
+ห้อง 205 ยอดค้างชำระ 1,790 บาท
+ครบกำหนดวันที่ 5 กันยายน 2026 (เลยมาแล้ว 8 วัน)
+
+กรุณาติดต่อสำนักงานนิติบุคคล<span class="time">09:00 น.</span></div>
+<div class="lm-daysep">20 กันยายน 2026</div>
+<div class="bubble oa lm-anchor"><span class="ann" style="left:-8px;top:-9px">4</span>⚠️ เลยกำหนดชำระแล้ว
+ห้อง 205 ยอดค้างชำระ 1,790 บาท
+ครบกำหนดวันที่ 5 กันยายน 2026 (เลยมาแล้ว 15 วัน)
+
+กรุณาติดต่อสำนักงานนิติบุคคล<span class="time">09:00 น.</span></div>
+<div class="lm-daysep lm-anchor"><span class="ann" style="left:-26px;top:0">5</span>21 กันยายน 2026</div>
+</div>
+</div>
+<div class="lm-inputbar"><span class="lm-ico">☺</span><span class="lm-fakeinput">ข้อความ</span><span class="lm-ico">🎤</span><span class="lm-ico">＋</span></div>
+</div>
+</div>
+</div>
+
+</div>
+<div class="caption">Left: day 1. Right, the whole life of an unpaid bill — days 1, 8 and 15, then silence. The empty day separator under the last message is the point of the frame: the tenant is not messaged again, and follow-up moves to the counter and the phone.</div>
+</div>
+
+<ol class="annotations" style="list-style:none;padding-left:0">
+<li><span class="ann">1</span><b>Overdue is a display rule, not a stored status.</b> The bill row still holds <code>Unpaid</code>; <b>เกินกำหนด</b> is derived from <code>due_date &lt; CURDATE()</code> by one shared helper used by both the SQL and the JavaScript (D-21). The message does not change a status, add a charge or lock anything — it is a reminder and nothing else.</li>
+<li><span class="ann">2</span><b>Wording escalates, amount does not.</b> ยอดค้างชำระ is the same 1,790 บาท on day 1, day 8 and day 15. There is no late fee, no interest and no penalty in this product, so a message implying a growing balance would be a lie the receipt could not honour (D-05, limitation 3).</li>
+<li><span class="ann">3</span><b><code>days_overdue IN (1, 8, 15)</code>.</b> Not "every day", not "weekly until paid". Three touches is what an office needs for arrears follow-up; beyond that the tenant blocks the Official Account, and a blocked OA silently destroys bill delivery too, which we cannot even detect (D-33, D-30).</li>
+<li><span class="ann">4</span><b>Day 15 is the last message.</b> On day 16 and after, the bill is still <b>เกินกำหนด</b> on every admin screen and still appears in the arrears report and on the Dashboard, but the tenant's phone goes quiet.</li>
+<li><span class="ann">5</span><b>Nothing on day 16.</b> Also nothing at any hour other than 09:00, nothing to a bill whose most recent payment was voided (D-25), and nothing once the bill is Paid — the payment confirmation in LM-4 ends the thread for that bill permanently.</li>
+</ol>
+
+<h4>LM-3 states</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>State</th><th>Trigger</th><th>Tenant sees</th><th>Office sees / recovery</th></tr></thead>
+<tbody>
+<tr><td><b>Empty</b></td><td>No binding; or <code>days_overdue</code> is 2–7, 9–14, or 16+; or the last payment on this bill was voided</td><td>Nothing that day</td><td>No row is written. The bill still shows <span class="badge overdue">เกินกำหนด</span> and appears in รายงานห้องค้างชำระ — the arrears list is the office's tool, not the message (D-42)</td></tr>
+<tr><td><b>Loading</b></td><td>The 09:00 job is pushing 26 arrears rooms</td><td>Messages arrive over a few seconds</td><td>Counts only; there is no user-facing progress unless run manually</td></tr>
+<tr><td><b>Error</b></td><td>Push failed on day 1</td><td>Nothing on day 1; day 8 still fires on schedule</td><td><span class="badge bad">ส่งไม่สำเร็จ</span>; the next day's job retries the same row until <code>attempt_count = 3</code>, and <b>ส่งแจ้งเตือนอีกครั้ง</b> is uncapped (D-30, D-33)</td></tr>
+<tr><td><b>Success</b></td><td>Push accepted on day 1, 8 or 15</td><td>The bubble at annotation 1</td><td><span class="badge ok">ส่งแล้ว</span>; three rows maximum for the life of the bill, each with its own <code>send_date</code> in the dedupe key</td></tr>
+<tr><td><b>Permission denied</b></td><td><code>400 invalid userId</code> at push time</td><td>Nothing</td><td>The tenant is unbound and the room drops to <b>Empty</b> for every later message, including the payment confirmation — the office must re-issue a link code (LM-6)</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>LM-3 copy</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Element</th><th>Thai copy — verbatim</th><th>Source</th></tr></thead>
+<tbody>
+<tr><td>Message template</td><td><pre>⚠️ เลยกำหนดชำระแล้ว
+ห้อง {room_code} ยอดค้างชำระ {total} บาท
+ครบกำหนดวันที่ {due_date_th} (เลยมาแล้ว {days_overdue} วัน)
+
+กรุณาติดต่อสำนักงานนิติบุคคล</pre></td><td>D-31 #4</td></tr>
+<tr><td>PRD §15 short form (documentation only, never sent)</td><td>⚠️ คุณมียอดค้างชำระ 1,790 บาท</td><td>PRD §15, superseded by D-31 #4</td></tr>
+<tr><td>Status badge wherever this bill is rendered</td><td>เกินกำหนด · <code>data-status="Overdue"</code></td><td>D-02, D-21</td></tr>
+<tr><td>Arrears report empty state</td><td>ไม่มีห้องค้างชำระ 🎉</td><td>D-40</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>LM-4 · Payment confirmed — PAID · <code>POST /payments</code></h3>
+
+<div class="screen-meta">
+  <span><b>Role:</b> ผู้เช่า (tenant)</span>
+  <span><b>Template:</b> <code>PAID</code> (D-31 #5)</span>
+  <span><b>Entry:</b> Admin presses ยืนยันรับเงินสด on Payment <code>/payments</code>; the message is queued inside the payment transaction and pushed after it commits</span>
+  <span><b>Primary action:</b> none in-message — the paper receipt is handed over at the counter</span>
+  <span><b>Frequency:</b> once per payment; a voided-and-repaid bill sends a second one with a new receipt number</span>
+</div>
+
+<div class="diagram">
+<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(390px,1fr))">
+
+<div class="device phone" style="margin:0 auto;align-self:start">
+<div class="screen">
+<div class="lm-app">
+<div class="lm-status"><span>14:30</span><span>LINE ▪ ▮▮▮ 86%</span></div>
+<div class="line-chat">
+<div class="line-header"><span class="lm-back">‹</span><span class="avatar">🏢</span> ศุภาลัย เรสซิเดนซ์ <span class="lm-oa">Official</span></div>
+<div class="line-body">
+<div class="lm-daysep">3 กันยายน 2026</div>
+<div class="bubble oa lm-quiet">⏰ แจ้งเตือนก่อนครบกำหนด
+ห้อง 205 มียอดค้างชำระ 1,790 บาท
+กรุณาชำระภายในวันที่ 5 กันยายน 2026 (อีก 2 วัน)
+
+ชำระเงินสดที่สำนักงานนิติบุคคล<span class="time">09:00 น.</span></div>
+<div class="bubble oa lm-anchor"><span class="ann" style="left:-8px;top:-9px">1</span>✅ ยืนยันการชำระเงิน
+ห้อง 205
+ได้รับชำระค่าใช้จ่ายจำนวน 1,790 บาท เรียบร้อยแล้ว
+วันที่ 3 กันยายน 2026
+เลขที่ใบเสร็จ REC-202609-000852
+
+ขอบคุณครับ/ค่ะ<span class="time">14:30 น.</span><span class="ann" style="right:-8px;bottom:-9px">2</span><span class="ann" style="left:-8px;bottom:34px">3</span></div>
+<div class="bubble user lm-anchor"><span class="ann" style="left:-8px;top:-9px">4</span>ขอบคุณค่ะ<span class="time">อ่านแล้ว · 14:33 น.</span></div>
+</div>
+</div>
+<div class="lm-inputbar"><span class="lm-ico">☺</span><span class="lm-fakeinput">ข้อความ</span><span class="lm-ico">🎤</span><span class="lm-ico">＋</span></div>
+</div>
+</div>
+</div>
+
+<div class="device phone" style="margin:0 auto;align-self:start">
+<div class="screen">
+<div class="lm-app">
+<div class="lm-status"><span>11:05</span><span>LINE ▪ ▮▮▮ 71%</span></div>
+<div class="line-chat">
+<div class="line-header"><span class="lm-back">‹</span><span class="avatar">🏢</span> ศุภาลัย เรสซิเดนซ์ <span class="lm-oa">Official</span></div>
+<div class="line-body">
+<div class="lm-daysep">6 กันยายน 2026</div>
+<div class="bubble oa lm-quiet">⚠️ เลยกำหนดชำระแล้ว
+ห้อง 205 ยอดค้างชำระ 1,790 บาท
+ครบกำหนดวันที่ 5 กันยายน 2026 (เลยมาแล้ว 1 วัน)
+
+กรุณาติดต่อสำนักงานนิติบุคคล<span class="time">09:00 น.</span></div>
+<div class="lm-daysep">7 กันยายน 2026</div>
+<div class="bubble oa lm-anchor"><span class="ann" style="left:-8px;top:-9px">5</span>✅ ยืนยันการชำระเงิน
+ห้อง 205
+ได้รับชำระค่าใช้จ่ายจำนวน 1,790 บาท เรียบร้อยแล้ว
+วันที่ 7 กันยายน 2026
+เลขที่ใบเสร็จ REC-202609-000861
+
+ขอบคุณครับ/ค่ะ<span class="time">11:05 น.</span></div>
+<div class="lm-daysep lm-anchor"><span class="ann" style="left:-26px;top:0">6</span>13 กันยายน 2026</div>
+</div>
+</div>
+<div class="lm-inputbar"><span class="lm-ico">☺</span><span class="lm-fakeinput">ข้อความ</span><span class="lm-ico">🎤</span><span class="lm-ico">＋</span></div>
+</div>
+</div>
+</div>
+
+</div>
+<div class="caption">Left: the demo path — paid on the afternoon of the day the reminder went out. Right, the alternate state: a bill paid two days after it went overdue. The day-8 and day-15 reminders that would otherwise have fired on 13 and 20 กันยายน never happen, because nothing is ever sent to a Paid bill (D-33).</div>
+</div>
+
+<ol class="annotations" style="list-style:none;padding-left:0">
+<li><span class="ann">1</span><b>Sent after the commit, never inside it.</b> One transaction writes the payment, flips the bill to Paid, allocates the receipt number and queues this message; the push happens afterwards (D-24, D-30). A LINE timeout can therefore never lose a payment, and a tenant who is already walking out of the office with a paper receipt is never contradicted by a missing message.</li>
+<li><span class="ann">2</span><b>Receipt number in the message.</b> <code>REC-202609-000852</code> is the same string printed on the A5 sheet, so a tenant who loses the paper can quote the number at the counter. Numbers are unique and monotonic but not gapless, and this message is the only place a tenant ever sees one (D-27, D-05 limitation 10).</li>
+<li><span class="ann">3</span><b>Full amount, never a part payment.</b> The stored amount is fixed at the bill total and is not an input on the Payment screen; a tenant who is short is asked to come back (D-24). So this message can never read "ได้รับชำระบางส่วน", and no template exists for one.</li>
+<li><span class="ann">4</span><b>The thread ends here for this bill.</b> No further automatic message concerns it. The next bubble in this chat will be next month's BILL, or an announcement.</li>
+<li><span class="ann">5</span><b>Same template, different receipt month position.</b> The receipt number is built from the payment month, so a bill for กันยายน paid in ตุลาคม carries a <code>REC-202610-…</code> number. The message is the tenant's record of when the money was actually taken (D-27, D-44).</li>
+<li><span class="ann">6</span><b>Silence after payment is the feature.</b> The one case where a second PAID message is correct is a voided payment followed by a real one: the void is agreed at the counter with cash returned first, the corrected bill is re-sent as <code>BILL_CORRECTED</code>, and the new payment issues a new receipt number while the old number stays allocated and stamped ยกเลิก (D-25, D-27).</li>
+</ol>
+
+<h4>LM-4 states</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>State</th><th>Trigger</th><th>Tenant sees</th><th>Office sees / recovery</th></tr></thead>
+<tbody>
+<tr><td><b>Empty</b></td><td>No binding — 13 of 67 seeded tenants</td><td>Nothing</td><td>Payment, receipt and print are entirely unaffected: the paper receipt is handed over at the counter and is the tenant's proof (D-28)</td></tr>
+<tr><td><b>Loading</b></td><td>The push is in flight while the cashier is already printing</td><td>The bubble arrives seconds later</td><td>The Payment screen never waits on LINE; the receipt view opens immediately (D-30)</td></tr>
+<tr><td><b>Error</b></td><td>Push failed after a committed payment</td><td>Nothing</td><td><span class="badge bad">ส่งไม่สำเร็จ</span> on the bill. <b>The money is safe</b> — this is precisely the case the commit-then-send rule exists for. The cashier can say so, and press <b>ส่งแจ้งเตือนอีกครั้ง</b></td></tr>
+<tr><td><b>Success</b></td><td>Push accepted</td><td>The bubble at annotation 1</td><td><span class="badge ok">ส่งแล้ว</span>; the bill row reads <span class="badge paid">ชำระแล้ว</span> with <code>data-status="Paid"</code></td></tr>
+<tr><td><b>Permission denied</b></td><td>A double-clicked confirm, or two cashiers on one bill</td><td>One message, never two</td><td>The second call is refused by <code>UNIQUE(active_bill_id)</code> with a 409 and no second receipt, so no second message is ever queued (D-26)</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>LM-4 copy</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Element</th><th>Thai copy — verbatim</th><th>Source</th></tr></thead>
+<tbody>
+<tr><td>Trigger button, Payment</td><td>ยืนยันรับเงินสด</td><td>D-02</td></tr>
+<tr><td>Confirm dialog</td><td>title <b>ยืนยันรับเงินสด</b> · body <b>ยืนยันรับเงินสด 1,790 บาท · ห้อง 205 · รอบ กันยายน 2026 และออกใบเสร็จ</b> · buttons <b>ยกเลิก</b> / <b>ยืนยันรับเงินสด</b></td><td>D-39 #3</td></tr>
+<tr><td>Read-only amount on the Payment screen</td><td>ยอดที่ต้องชำระ 1,790.00 บาท</td><td>D-24</td></tr>
+<tr><td>Cashier aid (never stored, never printed, never sent)</td><td>รับเงิน 2,000 → เงินทอน 210.00</td><td>D-24</td></tr>
+<tr><td>Message template</td><td><pre>✅ ยืนยันการชำระเงิน
+ห้อง {room_code}
+ได้รับชำระค่าใช้จ่ายจำนวน {total} บาท เรียบร้อยแล้ว
+วันที่ {paid_date_th}
+เลขที่ใบเสร็จ {receipt_no}
+
+ขอบคุณครับ/ค่ะ</pre></td><td>D-31 #5</td></tr>
+<tr><td>Void dialog (the only path to a second PAID message)</td><td>คืนเงินสด 1,790 บาท ให้ผู้เช่าก่อนยืนยันการยกเลิก · button <b>ยกเลิกการชำระเงิน</b> · reason required, ≥ 10 characters</td><td>D-39 #5, D-25</td></tr>
+<tr><td>Print button</td><td>พิมพ์ใบเสร็จ</td><td>D-02, D-27</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>LM-5 · Announcement — ANNOUNCEMENT · <code>/announcements</code></h3>
+
+<div class="screen-meta">
+  <span><b>Role:</b> ผู้เช่า (tenant)</span>
+  <span><b>Template:</b> <code>ANNOUNCEMENT</code> (D-31 #6)</span>
+  <span><b>Entry:</b> Admin writes and sends on Announcements <code>/announcements</code>; the live recipient count comes from <code>GET /api/announcements/preview-count</code></span>
+  <span><b>Primary action:</b> none in-message — read it</span>
+  <span><b>Delivery:</b> Multicast in chunks of at most 500 userIds, one <code>notifications</code> row per recipient tenant (D-34, D-35)</span>
+</div>
+
+<div class="diagram">
+<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(390px,1fr))">
+
+<div class="device phone" style="margin:0 auto;align-self:start">
+<div class="screen">
+<div class="lm-app">
+<div class="lm-status"><span>10:05</span><span>LINE ▪ ▮▮▮ 64%</span></div>
+<div class="line-chat">
+<div class="line-header"><span class="lm-back">‹</span><span class="avatar">🏢</span> ศุภาลัย เรสซิเดนซ์ <span class="lm-oa">Official</span></div>
+<div class="line-body">
+<div class="lm-daysep">18 กันยายน 2026</div>
+<div class="bubble oa lm-anchor"><span class="ann" style="left:-8px;top:-9px">1</span>📢 แจ้งปิดน้ำเพื่อซ่อมบำรุง
+
+วันที่ 20 กันยายน เวลา 10:00–12:00 น. จะมีการปิดน้ำเพื่อดำเนินการซ่อมบำรุง ขออภัยในความไม่สะดวก
+
+— นิติบุคคล ศุภาลัย เรสซิเดนซ์<span class="time">10:05 น.</span><span class="ann" style="right:-8px;bottom:-9px">2</span><span class="ann" style="left:-8px;bottom:24px">3</span></div>
+</div>
+</div>
+<div class="lm-inputbar"><span class="lm-ico">☺</span><span class="lm-fakeinput">ข้อความ</span><span class="lm-ico">🎤</span><span class="lm-ico">＋</span></div>
+</div>
+</div>
+</div>
+
+<div class="device phone" style="margin:0 auto;align-self:start">
+<div class="screen">
+<div class="lm-app">
+<div class="lm-status"><span>10:05</span><span>LINE ▪ ▮▮▮ 64%</span></div>
+<div class="line-chat">
+<div class="line-header"><span class="lm-back">‹</span><span class="avatar">🏢</span> ศุภาลัย เรสซิเดนซ์ <span class="lm-oa">Official</span></div>
+<div class="line-body">
+<div class="lm-daysep">18 กันยายน 2026</div>
+<div class="bubble oa lm-anchor"><span class="ann" style="left:-8px;top:-9px">4</span>📢 แจ้งปิดน้ำเพื่อซ่อมบำรุง
+
+วันที่ 20 กันยายน เวลา 10:00–12:00 น. จะมีการปิดน้ำเพื่อดำเนินการซ่อมบำรุง ขออภัยในความไม่สะดวก
+
+— นิติบุคคล ศุภาลัย เรสซิเดนซ์<span class="time">10:05 น.</span></div>
+<div class="bubble oa lm-anchor"><span class="ann" style="left:-8px;top:-9px">5</span>📢 แจ้งปิดน้ำเพื่อซ่อมบำรุง
+
+วันที่ 20 กันยายน เวลา 10:00–12:00 น. จะมีการปิดน้ำเพื่อดำเนินการซ่อมบำรุง ขออภัยในความไม่สะดวก
+
+— นิติบุคคล ศุภาลัย เรสซิเดนซ์<span class="time">10:05 น.</span></div>
+</div>
+</div>
+<div class="lm-inputbar"><span class="lm-ico">☺</span><span class="lm-fakeinput">ข้อความ</span><span class="lm-ico">🎤</span><span class="lm-ico">＋</span></div>
+</div>
+</div>
+</div>
+
+</div>
+<div class="caption">Left: the PRD §15 announcement as the tenant of room 205 receives it. Right, the alternate state that the office must be warned about: the LINE account bound to two tenancies receives the announcement twice, because delivery is recorded one row per recipient <em>tenant</em>, not per LINE account.</div>
+</div>
+
+<ol class="annotations" style="list-style:none;padding-left:0">
+<li><span class="ann">1</span><b>Title, blank line, body, signature.</b> Exactly the four parts of the template — the title is not repeated in the body and the body is not truncated. The Announcements form caps หัวข้อ at 60 characters and เนื้อหา at 400, which keeps the whole message far inside LINE's 5,000-character limit even with the signature (D-35).</li>
+<li><span class="ann">2</span><b>Sent on demand, at whatever hour the office presses the button.</b> Announcements are outside the 09:00 reminder schedule entirely; there is no scheduling, no send-later and no draft queue (D-33, D-35).</li>
+<li><span class="ann">3</span><b>Signature is the apartment, not the software.</b> <code>— นิติบุคคล {apartment_name}</code>, one space after นิติบุคคล, taken from Settings. It is the only message of the seven that carries a signature, because it is the only one that is a statement from a person rather than a record of a transaction (D-01, D-31 #6).</li>
+<li><span class="ann">4</span><b>Audience is rooms, delivery is tenants.</b> The two options are ทุกห้องที่มีผู้เช่า and เลือกชั้น — no per-room picking, no "unpaid only" audience, no exclusions. Broadcast is never used, because it would also reach ex-tenants who still follow the Official Account (D-34, D-35).</li>
+<li><span class="ann">5</span><b>Known duplicate, accepted in v1.</b> One LINE account bound to two Active tenants gets the same announcement twice. Deduplicating by <code>recipient_user_id</code> would make the per-announcement result under-report delivery and break the one-row-per-recipient rule the whole notifications table rests on (D-30). The office is told to expect it; it is listed under Limitations rather than engineered around, and the fix — collapsing by userId while still writing both rows — is a post-v1 change.</li>
+</ol>
+
+<h4>LM-5 states</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>State</th><th>Trigger</th><th>Tenant sees</th><th>Office sees / recovery</th></tr></thead>
+<tbody>
+<tr><td><b>Empty</b></td><td>Tenant not linked; or the tenant's floor was not selected</td><td>Nothing</td><td>The preview said so before sending: <code>จะส่งถึง 67 ห้อง (ผู้เช่าที่ผูก LINE แล้ว 54 ราย)</code>. There is no paper fallback for an announcement — a notice on the board is the office's own process (D-35)</td></tr>
+<tr><td><b>Loading</b></td><td>Multicast chunks in flight</td><td>Messages appear within seconds of each other</td><td>The pressed button takes <code>.is-loading</code>; the result screen lists the counts when the last chunk returns (D-40)</td></tr>
+<tr><td><b>Error</b></td><td>A multicast chunk fails</td><td>Some tenants get it, some do not</td><td>Per-recipient rows show exactly who missed it; the Announcements list keeps the result permanently. There is no resend action — the announcement is immutable history, and sending it again means writing a new one (D-35)</td></tr>
+<tr><td><b>Success</b></td><td>All chunks accepted</td><td>The bubble at annotation 1</td><td>Announcements list row: sent time, audience, recipient count, delivery result; the sends count toward <code>ส่งข้อความเดือนนี้</code> (D-34)</td></tr>
+<tr><td><b>Permission denied</b></td><td>A staff user opens <code>/announcements</code></td><td>Nothing</td><td>Thai 403 page: <span lang="th">ไม่มีสิทธิ์เข้าถึงหน้านี้ · บัญชีของคุณเป็นเจ้าหน้าที่ กรุณาติดต่อนิติบุคคล</span> with a button back to จดมิเตอร์. Announcements are Admin-only (D-36, D-40)</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>LM-5 copy</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Element</th><th>Thai copy — verbatim</th><th>Source</th></tr></thead>
+<tbody>
+<tr><td>Page title / primary button</td><td>ประกาศ · <b>เขียนประกาศ</b> · <b>ส่งประกาศ</b></td><td>D-02, D-35</td></tr>
+<tr><td>Form fields</td><td>หัวข้อ (ไม่เกิน 60 ตัวอักษร) · เนื้อหา (ไม่เกิน 400 ตัวอักษร) · ผู้รับ: ทุกห้องที่มีผู้เช่า / เลือกชั้น</td><td>D-35</td></tr>
+<tr><td>Live recipient count</td><td>จะส่งถึง 67 ห้อง (ผู้เช่าที่ผูก LINE แล้ว 54 ราย)</td><td>D-35</td></tr>
+<tr><td>Validation — empty title</td><td>กรุณากรอกหัวข้อประกาศ</td><td>D-40 pattern, wording set here</td></tr>
+<tr><td>Validation — over length</td><td>หัวข้อยาวเกิน 60 ตัวอักษร · เนื้อหายาวเกิน 400 ตัวอักษร</td><td>D-40 pattern, wording set here</td></tr>
+<tr><td>Validation — no floor selected</td><td>กรุณาเลือกอย่างน้อยหนึ่งชั้น</td><td>D-35, wording set here</td></tr>
+<tr><td>Confirm dialog</td><td>title <b>ส่งประกาศ</b> · body <b>ส่งประกาศถึง 67 ห้อง ผ่าน LINE — เรียกคืนไม่ได้</b> · buttons <b>ยกเลิก</b> / <b>ส่งประกาศ</b></td><td>D-39 #4</td></tr>
+<tr><td>Empty state, Announcements list</td><td>ยังไม่เคยส่งประกาศ · <b>เขียนประกาศ</b></td><td>D-40</td></tr>
+<tr><td>Message template</td><td><pre>📢 {title}
+
+{body}
+
+— นิติบุคคล {apartment_name}</pre></td><td>D-31 #6</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>LM-6 · Account linking conversation — LINK_OK / LINK_FAIL · <code>POST /line/webhook</code></h3>
+
+<div class="screen-meta">
+  <span><b>Role:</b> ผู้เช่า (tenant), using LINE only</span>
+  <span><b>Templates:</b> <code>LINK_OK</code> / <code>LINK_FAIL</code> / fixed auto-reply (D-31 #7, D-29)</span>
+  <span><b>Entry:</b> Admin presses สร้างรหัสผูก LINE on Tenants <code>/tenants</code> and hands over a printed slip carrying the OA QR code and a 6-character code</span>
+  <span><b>Primary action (tenant):</b> add the Official Account, then send the code as a chat message</span>
+  <span><b>Delivery:</b> Reply API on the event's reply token — no <code>notifications</code> row, no consumption of the 500-message allowance (ADR ENG-4)</span>
+</div>
+
+<div class="callout note">
+  <div class="title">Why this conversation exists at all</div>
+  <p>A tenant cannot read their own LINE <code>userId</code> anywhere in the LINE app, so staff literally cannot type it into the Tenants form — the field is read-only and is filled only by this flow (D-29). Until it is filled, every message in LM-1 to LM-5 is <code>skipped_no_line</code> and the tenant is served on paper. This is therefore the highest-value screen in the tenant surface, and the only one where the tenant sends anything.</p>
+</div>
+
+<div class="diagram">
+<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(390px,1fr))">
+
+<div class="device phone" style="margin:0 auto;align-self:start">
+<div class="screen">
+<div class="lm-app">
+<div class="lm-status"><span>18:42</span><span>LINE ▪ ▮▮▮ 58%</span></div>
+<div class="line-chat">
+<div class="line-header lm-anchor"><span class="lm-back">‹</span><span class="avatar">🏢</span> ศุภาลัย เรสซิเดนซ์ <span class="lm-oa">Official</span><span class="ann" style="right:6px;top:22px">1</span></div>
+<div class="line-body">
+<div class="lm-daysep">31 สิงหาคม 2026</div>
+<div class="bubble oa lm-anchor"><span class="ann" style="left:-8px;top:-9px">2</span>ยินดีต้อนรับสู่ LINE ของนิติบุคคล ศุภาลัย เรสซิเดนซ์
+
+กรุณาพิมพ์รหัสผูกบัญชี 6 ตัวอักษรที่ได้รับจากสำนักงาน เพื่อเริ่มรับบิลและประกาศของห้องคุณ
+
+หากยังไม่มีรหัส กรุณาติดต่อสำนักงาน เวลา 08:00–17:00 น. หรือโทร 02-123-4567<span class="time">18:41 น.</span></div>
+<div class="bubble user lm-anchor"><span class="ann" style="left:-8px;top:-9px">3</span>K7QM4T<span class="time">อ่านแล้ว · 18:42 น.</span></div>
+<div class="bubble oa lm-anchor"><span class="ann" style="left:-8px;top:-9px">4</span>✅ ผูกบัญชีสำเร็จ
+คุณจะได้รับบิลและประกาศของห้อง 205 ผ่าน LINE นี้<span class="time">18:42 น.</span><span class="ann" style="right:-8px;bottom:-9px">5</span></div>
+</div>
+</div>
+<div class="lm-inputbar"><span class="lm-ico">☺</span><span class="lm-fakeinput">ข้อความ</span><span class="lm-ico">🎤</span><span class="lm-ico">＋</span></div>
+</div>
+</div>
+</div>
+
+<div class="device phone" style="margin:0 auto;align-self:start">
+<div class="screen">
+<div class="lm-app">
+<div class="lm-status"><span>18:40</span><span>LINE ▪ ▮▮▮ 58%</span></div>
+<div class="line-chat">
+<div class="line-header"><span class="lm-back">‹</span><span class="avatar">🏢</span> ศุภาลัย เรสซิเดนซ์ <span class="lm-oa">Official</span></div>
+<div class="line-body">
+<div class="lm-daysep">31 สิงหาคม 2026</div>
+<div class="bubble user">K7QMAT<span class="time">อ่านแล้ว · 18:39 น.</span></div>
+<div class="bubble oa lm-anchor"><span class="ann" style="left:-8px;top:-9px">6</span>❌ ไม่พบรหัสนี้ หรือรหัสหมดอายุแล้ว กรุณาติดต่อสำนักงานนิติบุคคล<span class="time">18:39 น.</span></div>
+<div class="bubble user">K7QM4T<span class="time">อ่านแล้ว · 18:40 น.</span></div>
+<div class="bubble oa">✅ ผูกบัญชีสำเร็จ
+คุณจะได้รับบิลและประกาศของห้อง 205 ผ่าน LINE นี้<span class="time">18:40 น.</span></div>
+<div class="bubble user lm-anchor"><span class="ann" style="left:-8px;top:-9px">7</span>K7QM4T<span class="time">อ่านแล้ว · 18:41 น.</span></div>
+<div class="bubble oa">❌ ไม่พบรหัสนี้ หรือรหัสหมดอายุแล้ว กรุณาติดต่อสำนักงานนิติบุคคล<span class="time">18:41 น.</span></div>
+</div>
+</div>
+<div class="lm-inputbar lm-anchor"><span class="ann" style="left:4px;top:-10px">8</span><span class="lm-ico">☺</span><span class="lm-fakeinput typed">K7QM4T</span><span class="lm-ico">🎤</span><span class="lm-ico">＋</span></div>
+</div>
+</div>
+</div>
+
+<div class="device phone" style="margin:0 auto;align-self:start">
+<div class="screen">
+<div class="lm-app">
+<div class="lm-status"><span>09:15</span><span>LINE ▪ ▮▮▮ 55%</span></div>
+<div class="line-chat">
+<div class="line-header"><span class="lm-back">‹</span><span class="avatar">🏢</span> ศุภาลัย เรสซิเดนซ์ <span class="lm-oa">Official</span></div>
+<div class="line-body">
+<div class="lm-daysep">2 กันยายน 2026</div>
+<div class="bubble user lm-anchor"><span class="ann" style="left:-8px;top:-9px">9</span>R4XTP9<span class="time">อ่านแล้ว · 09:14 น.</span></div>
+<div class="bubble oa lm-anchor"><span class="ann" style="left:-8px;top:-9px">10</span>✅ ผูกบัญชีสำเร็จ
+คุณจะได้รับบิลและประกาศของห้อง 402 ผ่าน LINE นี้<span class="time">09:14 น.</span></div>
+<div class="bubble user lm-anchor"><span class="ann" style="left:-8px;top:-9px">11</span>ขอถามเรื่องบิลเดือนที่แล้วหน่อยค่ะ มีค่าน้ำสูงกว่าปกติ<span class="time">อ่านแล้ว · 09:15 น.</span></div>
+<div class="bubble oa lm-anchor"><span class="ann" style="left:-8px;top:-9px">12</span>ℹ️ ข้อความนี้เป็นระบบแจ้งเตือนอัตโนมัติ ไม่มีเจ้าหน้าที่ตอบในแชทนี้
+หากต้องการติดต่อ กรุณาโทร 02-123-4567 หรือมาที่สำนักงานนิติบุคคล เวลา 08:00–17:00 น.<span class="time">09:15 น.</span></div>
+</div>
+</div>
+<div class="lm-inputbar"><span class="lm-ico">☺</span><span class="lm-fakeinput">ข้อความ</span><span class="lm-ico">🎤</span><span class="lm-ico">＋</span></div>
+</div>
+</div>
+</div>
+
+</div>
+<div class="caption">Left: the happy path. Centre: a mistyped code (A instead of 4) rejected, the correct code accepted, and the same code replayed a minute later rejected because it is single-use — the field <code>K7QM4T</code> is still sitting in the input bar, which is exactly how a tenant produces the third bubble. Right: an account already bound to ห้อง 205 binding a second room, then asking a question and meeting the fixed auto-reply.</div>
+</div>
+
+<ol class="annotations" style="list-style:none;padding-left:0">
+<li><span class="ann">1</span><b>Adding the OA is step one and it is not ours.</b> The tenant scans the QR code on the printed slip; LINE fires a <code>follow</code> event, and the webhook upserts <code>line_followers</code> with the userId and display name so the office has a name to recognise when the code arrives. The webhook returns 200 <em>before</em> doing any of this work — LINE disables an endpoint that answers slowly, and a disabled webhook silently kills the only channel by which a userId ever reaches the system (D-29, D-43).</li>
+<li><span class="ann">2</span><b>Greeting message.</b> Configured once in the LINE Official Account Manager, not sent by our code, and it is what stops a tenant staring at an empty chat wondering what to do. It states the one action available and the office's hours and phone number from Settings.</li>
+<li><span class="ann">3</span><b>The code.</b> Six characters from <code>ABCDEFGHJKLMNPQRSTUVWXYZ23456789</code> — no O/0 and no I/1, because this string is read off paper and typed on a phone. Valid 7 days, single use. The webhook trims whitespace and uppercases the inbound text before matching, so <code>k7qm4t</code> and <code>K7QM4T&nbsp;</code> both work.</li>
+<li><span class="ann">4</span><b>LINK_OK names the room.</b> This is the tenant's only confirmation that the office bound the right room, and the reason the reply is not a generic "สำเร็จ". Binding is keyed on the tenant (<code>UNIQUE(tenant_id)</code>), so one LINE account may serve several Active tenancies and every later message says which room it is about (D-29).</li>
+<li><span class="ann">5</span><b>What happens on the office side.</b> The code is expired, an audit row <code>TENANT_LINE_LINK</code> is written, and the Tenants row starts showing the LINE display name and the linked date with a <b>ยกเลิกการผูก</b> action for Admin. Ending a tenancy unbinds that tenancy only (D-08, D-38).</li>
+<li><span class="ann">6</span><b>LINK_FAIL is one string for four causes</b> — unknown code, expired code, already-used code, and a code whose tenancy has ended. The tenant cannot act on the difference and is pointed at the office; the distinction is recorded in the audit log, not in the reply (D-29).</li>
+<li><span class="ann">7</span><b>Single use means single use.</b> Replaying an accepted code fails. This is deliberate: an accepted code that stayed valid for seven days would let anyone who saw the printed slip bind their own LINE account to that room.</li>
+<li><span class="ann">8</span><b>Nothing clears the input bar but the tenant.</b> The product cannot pre-fill, clear or disable it, which is why a replayed code is a realistic event rather than a hypothetical one.</li>
+<li><span class="ann">9</span><b>A second code, for a second room.</b> Issued to a different tenant record — here the second room rented by the same family. A code from an already-bound account is not an error (D-29).</li>
+<li><span class="ann">10</span><b>The reply names the new room.</b> After this, this LINE account receives two bills a month, two reminders, and — as LM-5 records — every announcement twice.</li>
+<li><span class="ann">11</span><b>The question a chat inevitably attracts.</b> A tenant with an unexpected water charge will ask here first. Nobody is watching this inbox.</li>
+<li><span class="ann">12</span><b>The fixed auto-reply.</b> Any inbound text that does not match the code shape <code>^[A-Z2-9]{6}$</code> after trim-and-uppercase gets this one string; text that matches the shape but not a live code gets LINK_FAIL. Saying plainly that no human reads the chat is kinder than silence, and it is the only honest thing to say about a v1 that has no operator inbox (D-29).</li>
+</ol>
+
+<h4>LM-6 states</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>State</th><th>Trigger</th><th>Tenant sees</th><th>Office sees / recovery</th></tr></thead>
+<tbody>
+<tr><td><b>Empty</b></td><td>No code has been issued, or the tenant never added the Official Account</td><td>No chat, or a chat with only the greeting</td><td>Tenants row shows no binding; the tenant stays on paper. Recovery: press <b>สร้างรหัสผูก LINE</b> and hand over a new slip (D-29)</td></tr>
+<tr><td><b>Loading</b></td><td>Cold start on the free instance — the webhook ACKs immediately but processing takes a second or two</td><td>A short pause before the reply</td><td>Nothing. The 10-minute <code>/healthz</code> ping exists precisely so this pause stays short and the endpoint is never disabled (D-43)</td></tr>
+<tr><td><b>Error</b></td><td>Wrong, expired or already-used code</td><td><span lang="th">❌ ไม่พบรหัสนี้ หรือรหัสหมดอายุแล้ว กรุณาติดต่อสำนักงานนิติบุคคล</span></td><td>Nothing is bound; the tenant returns to the office. A bad <code>X-Line-Signature</code> is answered 401 and nothing happens at all — no reply, no row (ADR §7.5)</td></tr>
+<tr><td><b>Success</b></td><td>Live code matched</td><td><span lang="th">✅ ผูกบัญชีสำเร็จ</span> naming the room</td><td>Tenants row shows the LINE display name and linked date; audit row <code>TENANT_LINE_LINK</code>; the next bill sends instead of skipping</td></tr>
+<tr><td><b>Permission denied</b></td><td>An outsider who saw the slip sends a code that has already been used, or the tenancy has ended</td><td>The same LINK_FAIL string</td><td>No binding is moved or overwritten. The office's own action <b>ยกเลิกการผูก</b> is the only way to detach an existing binding (D-29)</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>LM-6 copy</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Element</th><th>Thai copy — verbatim</th><th>Source</th></tr></thead>
+<tbody>
+<tr><td>Trigger button, Tenants</td><td>สร้างรหัสผูก LINE</td><td>D-29</td></tr>
+<tr><td>Unbind action, Tenants</td><td>ยกเลิกการผูก</td><td>D-29</td></tr>
+<tr><td>Greeting message (LINE OA Manager, not code)</td><td><pre>ยินดีต้อนรับสู่ LINE ของนิติบุคคล {apartment_name}
+
+กรุณาพิมพ์รหัสผูกบัญชี 6 ตัวอักษรที่ได้รับจากสำนักงาน เพื่อเริ่มรับบิลและประกาศของห้องคุณ
+
+หากยังไม่มีรหัส กรุณาติดต่อสำนักงาน เวลา {office_hours} หรือโทร {phone}</pre></td><td>assumption A-4 below</td></tr>
+<tr><td><code>LINK_OK</code></td><td><pre>✅ ผูกบัญชีสำเร็จ
+คุณจะได้รับบิลและประกาศของห้อง {room_code} ผ่าน LINE นี้</pre></td><td>D-29, D-31 #7</td></tr>
+<tr><td><code>LINK_FAIL</code></td><td>❌ ไม่พบรหัสนี้ หรือรหัสหมดอายุแล้ว กรุณาติดต่อสำนักงานนิติบุคคล</td><td>D-29, D-31 #7</td></tr>
+<tr><td>Fixed auto-reply (any other inbound text)</td><td><pre>ℹ️ ข้อความนี้เป็นระบบแจ้งเตือนอัตโนมัติ ไม่มีเจ้าหน้าที่ตอบในแชทนี้
+หากต้องการติดต่อ กรุณาโทร {phone} หรือมาที่สำนักงานนิติบุคคล เวลา {office_hours}</pre></td><td>D-29 mandates the reply; wording set here (A-4)</td></tr>
+<tr><td>Printed slip heading</td><td>รหัสผูกบัญชี LINE · ห้อง 205 · ใช้ได้ถึง 7 กันยายน 2026</td><td>D-29, wording set here</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>LM-7 · What the tenant experiences — flow strip</h3>
+
+<p>Every tenant-visible event in one picture: what arrives, when, and the two places where the path leaves LINE entirely. Solid arrows are the demo path; dashed arrows are the branches that produce no message.</p>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart LR
+  A["เพิ่มเพื่อน OA และส่งรหัส 6 ตัวอักษร"] --> B["✅ ผูกบัญชีสำเร็จ · ห้อง 205"]
+  B --> C["🔔 บิลประจำเดือน · 1,790 บาท · ครบกำหนด 5 กันยายน 2026"]
+  C --> D{"ชำระก่อนครบกำหนด?"}
+  D -->|"ยัง"| E["⏰ ก่อนครบกำหนด 2 วัน · 3 กันยายน 09:00 น."]
+  E --> F{"ชำระแล้ว?"}
+  F -->|"ยัง"| G["⚠️ เลยกำหนด · เฉพาะวันที่ 1, 8 และ 15"]
+  G --> H["เงียบหลังวันที่ 15 · ติดตามที่สำนักงาน"]
+  D -->|"ชำระ"| I["จ่ายเงินสดที่สำนักงาน เวลา 08:00–17:00 น."]
+  F -->|"ชำระ"| I
+  G --> I
+  I --> J["✅ ยืนยันการชำระเงิน · REC-202609-000852"]
+  J --> K["รับใบเสร็จกระดาษ A5 ที่เคาน์เตอร์"]
+  C -.->|"เมื่อมีเรื่องแจ้ง"| L["📢 ประกาศจากนิติบุคคล"]
+  A -.->|"ยังไม่ผูก LINE"| M["ไม่มีข้อความใด ๆ · รับใบแจ้งค่าใช้จ่าย A5 ที่สำนักงาน"]
+  M --> I
+</pre>
+<div class="caption">Thirteen nodes, five of them messages. A bill produces at most four automatic messages in its entire life (one BILL, one PRE_DUE, up to three OVERDUE minus the ones cut short by payment) plus one PAID; everything else the tenant experiences happens on paper or across the counter (D-33).</div>
+</div>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>#</th><th>Moment</th><th>Message</th><th>Trigger</th><th>Timing</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>Linking</td><td><code>LINK_OK</code> / <code>LINK_FAIL</code></td><td>Tenant sends the code</td><td>Immediate reply</td></tr>
+<tr><td>2</td><td>Bill approved</td><td><code>BILL</code></td><td>Admin: อนุมัติและส่งบิล</td><td>Seconds to three minutes after the click</td></tr>
+<tr><td>2b</td><td>Bill corrected</td><td><code>BILL_CORRECTED</code></td><td>Admin re-approves after ตีกลับเป็นฉบับร่าง</td><td>Same as above</td></tr>
+<tr><td>3</td><td>Two days before due</td><td><code>PRE_DUE</code></td><td>Daily job</td><td>09:00 on <code>due_date − 2</code>, once ever</td></tr>
+<tr><td>4</td><td>Late</td><td><code>OVERDUE</code></td><td>Daily job</td><td>09:00 on days 1, 8 and 15 only</td></tr>
+<tr><td>5</td><td>Cash received</td><td><code>PAID</code></td><td>Admin: ยืนยันรับเงินสด</td><td>Immediately after the transaction commits</td></tr>
+<tr><td>6</td><td>Anything the office wants to say</td><td><code>ANNOUNCEMENT</code></td><td>Admin: ส่งประกาศ</td><td>On demand, multicast</td></tr>
+<tr><td>7</td><td>Tenant writes anything else</td><td>fixed auto-reply</td><td>Inbound message</td><td>Immediate reply, no row, no allowance used</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>LM-8 · Deferred surfaces and assumptions recorded by this screen set</h3>
+
+<div class="callout bad">
+  <div class="title">No rich menu and no Flex card in v1</div>
+  <p>The brief for this section asked for a rich menu "if the decisions include one" and for the bill to be a Flex card. <b>D-31 excludes both</b>: seven plain-text templates, no Flex Messages, no images, no rich menu. <code>tokens.css</code> carries <code>.flex-card</code> and <code>.rich-menu</code> for a post-v1 version and marks them reserved; a v1 mockup using either is a defect, so neither appears above and no rich-menu mockup was produced. What it would take to add one later: a rich menu is an image plus a tappable-area map uploaded to the LINE channel, so it needs a designed 2500×1686 asset the team does not have, and every cell must lead somewhere — and there is nowhere for a tenant to go, because there is no tenant-facing web surface (D-05, limitation 7). A Flex bill would additionally duplicate every amount in a second, richer format that must stay in step with the plain-text one; one template module, one string per message, is the decision (D-31).</p>
+</div>
+
+<ol>
+  <li><b>A-1 · Overdue uses the demo bill's counterfactual branch.</b> Room 205's bill is paid on 3 กันยายน 2026, so it can never be overdue. LM-3 shows the same bill on the branch where the tenant does not come to the counter, which keeps the §28 figures exact rather than inventing a second room with invented amounts. The overdue dates (6, 13 and 20 กันยายน 2026) follow from <code>due_date = 5 กันยายน 2026</code> and <code>days_overdue IN (1, 8, 15)</code>.</li>
+  <li><b>A-2 · PRD §15's overdue line is a summary, not the sent text.</b> <span lang="th">⚠️ คุณมียอดค้างชำระ 1,790 บาท</span> is reproduced in the copy table as documentation. The string actually sent is D-31 #4, which adds the room, the due date and the day count — a tenant renting two rooms cannot act on the short form, and D-31 is binding on exact wording.</li>
+  <li><b>A-3 · Timestamps and battery levels in the frames are illustrative,</b> except 09:00 น. on PRE_DUE and OVERDUE, which is fixed by D-32 and must not be redrawn at another hour. Bill and payment times follow the demo narrative (approved 1 ก.ย. 09:12, paid 3 ก.ย. 14:30) and match the receipt mockup in the foundations document.</li>
+  <li><b>A-4 · Three strings are set here because no decision fixed them.</b> The LINE greeting message (configured in the LINE Official Account Manager, not in code), the fixed auto-reply text that D-29 requires but does not word, and the code-shape rule that separates a code attempt from ordinary chat: trim, uppercase, then <code>^[A-Z2-9]{6}$</code> — a match that is not a live code gets <code>LINK_FAIL</code>, anything else gets the auto-reply. If engineering words any of the three differently, the template module wins and this table follows it.</li>
+  <li><b>A-5 · Duplicate announcements for a shared LINE account are accepted, not fixed.</b> LM-5's right-hand frame is real behaviour, not a mockup error. It follows from one <code>notifications</code> row per recipient tenant (D-30) combined with a per-tenant binding (D-29), and collapsing it would break the delivery counts that make <span lang="th">ส่งบิลผ่าน LINE OA</span> verifiable. It belongs in the Limitations list of any document that carries one.</li>
+  <li><b>A-6 · The link-code slip is not mocked up here.</b> It is a print artefact owned by the Tenants screen; this section specifies only its heading text and the code alphabet, so the two documents cannot drift into two different slips.</li>
+  <li><b>A-7 · LINE test mode is ON in every environment (D-34),</b> so during development and rehearsal every message in this section is redirected to one whitelisted userId while the intended recipient is still recorded on the row. The frames above show what the real tenant would see with test mode off — the state that exists only during the graded demo run.</li>
+  <li><b>A-8 · Read receipts, day separators, the input bar, the avatar and the Official badge are LINE client chrome,</b> drawn for realism. The product neither controls nor reads any of them, and no requirement, report or test case may depend on them. Where an earlier message is drawn dimmed it is a reading aid in this document only — it marks the context bubble so the eye lands on the new one; LINE renders every message at full strength.</li>
+</ol>
+
+</section>

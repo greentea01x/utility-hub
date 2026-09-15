@@ -1,0 +1,1208 @@
+<section id="announce-reports-settings">
+<h2>Announcements, Reports &amp; Settings</h2>
+
+<p>Three Admin-only surfaces that sit outside the billing spine: the one place the office speaks to every tenant at once (<b>Announcements</b>), the four reports the office opens when someone disputes a number (<b>Reports</b>), and the two pages that decide what every future bill will cost and who may press the buttons (<b>Settings</b> and the Users page it links to). All four screens are desktop-only: D-45 commits the phone surface to Login, จดมิเตอร์ and the reduced ภาพรวม, and D-36 keeps every screen in this section out of the Staff role entirely — so there is no 390&nbsp;px variant to design, and the only phone-shaped artefact here is the LINE bubble preview, which is a picture of the tenant's phone, not a page of ours.</p>
+
+<div class="callout decision">
+<div class="title">Decisions this section renders, and the four assumptions it adds</div>
+<p><b>Rendered verbatim:</b> D-35 (audience is two options only — <i>ทุกห้องที่มีผู้เช่า</i> or <i>เลือกชั้น</i>; live preview; live room + linked count; immutable history), D-31 §6 (the ANNOUNCEMENT template), D-34 (multicast for announcements, the 500-message line, LINE test mode default ON), D-39 §4 (the one confirmation dialog on this section's only irreversible action), D-42 (exactly four reports, each with a CSV export), D-41 (money figures read approved bills), D-21 (Overdue is derived, never stored), D-17 (insert-only effective-dated rates plus the Draft-recalculation notice), D-20 (due day 1–28, and the <span class="badge neutral">MAX(day, approval + 3)</span> rule), D-33 (the reminder schedule), D-32 (the manual job button and its result line), D-46 (the Users field list, Inactive instead of delete, ตั้งรหัสผ่านใหม่ as the only recovery path), D-40 (403, empty, failed-save, loading), D-03 (formats), D-44 (every figure below reconciles against the seed).</p>
+<p><b>Assumption A-D1 — routes.</b> The ADR fixes page routes as lowercase, plural, hyphenated and puts <code>reports/*.ejs</code> in its own view folder, but names no report path. This section uses <code>/announcements</code>, <code>/reports/monthly</code>, <code>/reports/arrears</code>, <code>/reports/top-usage</code>, <code>/reports/room-history</code>, <code>/settings</code>, <code>/users</code>, with <code>/reports</code> redirecting to <code>/reports/monthly</code>. Each CSV is the same path plus <code>.csv</code>, so the export button is an ordinary link and needs no eighth JSON endpoint.</p>
+<p><b>Assumption A-D2 — export filenames.</b> D-42 fixes <code>report-{name}-{period}.csv</code>. Two reports are not single-period: the monthly summary writes the range as <code>report-monthly-2026-04_2026-09.csv</code>, and the per-room history names the room, <code>report-room-history-205-2026-09.csv</code>. Both keep the prefix, the separator and the extension the helper already produces.</p>
+<p><b>Assumption A-D3 — reminder days are shown, not edited.</b> The brief asks for reminder days in Settings; D-33 fixes them as constants (<i>due − 2</i>, then <i>due + 1, 8, 15</i>, all at 09:00 Asia/Bangkok). Settings therefore renders the schedule read-only next to the manual trigger of D-32. Making it editable would create a setting no test asserts and a fifth message nobody decided to send.</p>
+<p><b>Assumption A-D4 — no receipt-footer field.</b> The brief asks for a receipt footer; the <code>settings</code> table has no such column and D-27 fixes the receipt's fields exactly. Settings instead renders a live letterhead preview of the four fields that <i>do</i> print (name, address, optional tax ID, phone), so the Admin can see the effect of an edit without a free-text field that would let a VAT line back onto a non-tax receipt.</p>
+<p><b>One deviation from the brief, on purpose:</b> the brief lists an audience of “all rooms / selected rooms / floor”. D-35 allows exactly two options and forbids per-room selection. The decision log wins.</p>
+</div>
+
+<style>
+/* Layout specifics for this section's mockups only. Every selector is scoped
+   under .screen (the product UI), so nothing here can reach the document CSS. */
+#announce-reports-settings .screen{position:relative}
+.screen .ars-mk{position:relative}
+.screen .ars-2col{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:var(--ui-sp-5);align-items:start}
+.screen .ars-2col > *{min-width:0}
+.screen .ars-count{float:right;font-size:var(--ui-fs-xs);color:var(--ui-muted);font-weight:var(--ui-fw-med);font-variant-numeric:tabular-nums}
+.screen .ars-ta{height:132px}
+.screen .ars-floors{display:flex;flex-wrap:wrap;gap:var(--ui-sp-2);margin:var(--ui-sp-2) 0 0 30px}
+.screen .ars-split{display:grid;grid-template-columns:1fr 1fr;gap:var(--ui-sp-4);align-items:start}
+.screen .ars-chart{display:block;width:100%;height:auto}
+.screen .ars-legend{display:flex;gap:var(--ui-sp-5);font-size:var(--ui-fs-xs);color:var(--ui-text-2);margin-top:var(--ui-sp-2);justify-content:center}
+.screen .ars-legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px}
+.screen .ars-delta{font-size:var(--ui-fs-xs);font-variant-numeric:tabular-nums;white-space:nowrap}
+.screen .ars-delta.up{color:var(--ui-danger)} .screen .ars-delta.down{color:var(--ui-success)} .screen .ars-delta.flat{color:var(--ui-muted)}
+.screen .ars-err{min-height:560px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:var(--ui-sp-3);padding:var(--ui-sp-6)}
+.screen .ars-err .ico{font-size:44px;opacity:.4}
+.screen .ars-letterhead{border:1px dashed var(--ui-border-strong);border-radius:var(--ui-r-sm);padding:var(--ui-sp-3);text-align:center;background:#fff;line-height:1.5}
+.screen .ars-letterhead b{font-size:15px}
+.screen .ars-sched{display:grid;grid-template-columns:max-content 1fr;gap:var(--ui-sp-1) var(--ui-sp-4);font-size:var(--ui-fs-sm);margin:0}
+.screen .ars-sched dt{color:var(--ui-muted)} .screen .ars-sched dd{margin:0;font-weight:var(--ui-fw-med)}
+.screen .ars-inline-confirm{display:flex;align-items:center;gap:var(--ui-sp-2);font-size:var(--ui-fs-sm);color:var(--ui-danger);font-weight:var(--ui-fw-med)}
+</style>
+
+<h3>Announcements — ประกาศ (<code>/announcements</code>)</h3>
+
+<div class="screen-meta">
+  <span><b>Role:</b> Admin only (D-36); Staff receives the Thai 403 page</span>
+  <span><b>Route:</b> <code>GET/POST /announcements</code> · live count <code>GET /api/announcements/preview-count</code></span>
+  <span><b>Entry points:</b> sidebar 📢 ประกาศ · Dashboard has no shortcut — an announcement is never an accident</span>
+  <span><b>Primary action:</b> ส่งประกาศ (one confirmation dialog, then multicast)</span>
+</div>
+
+<p>One page, three jobs: compose, see exactly what 54 phones will show, and read the delivery record of everything sent before. The form is deliberately narrow — 60 characters of title, 400 of body, two audience options — because every field on this page is a field that cannot be taken back once the button is pressed.</p>
+
+<div class="device desktop">
+<div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/announcements</span></div>
+<div class="screen">
+<div class="app">
+  <nav class="sidebar">
+    <div class="brand"><b>ศุภาลัย เรสซิเดนซ์</b><span>Juristic Platform</span></div>
+    <a class="nav-item">📊 ภาพรวม</a>
+    <a class="nav-item">📝 จดมิเตอร์</a>
+    <a class="nav-item">🧾 บิลประจำเดือน <span class="count">12</span></a>
+    <a class="nav-item">💵 รับชำระเงิน</a>
+    <a class="nav-item">🚪 ห้องพัก</a>
+    <a class="nav-item">👤 ผู้เช่า</a>
+    <a class="nav-item active">📢 ประกาศ</a>
+    <a class="nav-item">📈 รายงาน</a>
+    <div class="nav-section">ตั้งค่าระบบ</div>
+    <a class="nav-item">⚙️ ตั้งค่า</a>
+    <a class="nav-item">👥 ผู้ใช้งานระบบ</a>
+    <div class="user">นิติบุคคล · admin · ออกจากระบบ</div>
+  </nav>
+  <div class="main">
+    <div class="topbar">
+      <span class="title">ประกาศ</span>
+      <span class="actions"><span class="badge neutral">ส่งข้อความเดือนนี้ 195/500</span></span>
+    </div>
+    <div class="page">
+      <div class="ars-2col">
+
+        <div class="card">
+          <div class="card-head"><span class="card-title">เขียนประกาศใหม่</span><span class="ui-sub">ส่งผ่าน LINE Official Account · ข้อความธรรมดา</span></div>
+
+          <label class="field">
+            <span class="label">หัวข้อ <span class="req">*</span><span class="ars-count">24/60</span></span>
+            <span class="input ars-mk" style="display:flex;align-items:center"><span class="ann" style="top:-9px;left:-9px">1</span>แจ้งปิดน้ำชั่วคราว ชั้น 3</span>
+            <span class="hint">ขึ้นต้นข้อความใน LINE หลังไอคอน 📢 — เขียนให้อ่านจบได้ในบรรทัดเดียว</span>
+          </label>
+
+          <label class="field">
+            <span class="label">เนื้อหา <span class="req">*</span><span class="ars-count">208/400</span></span>
+            <span class="textarea ars-ta ars-mk" style="display:block;white-space:pre-line"><span class="ann" style="top:-9px;left:-9px">2</span>นิติบุคคลจะปิดน้ำชั่วคราวเพื่อล้างถังเก็บน้ำของชั้น 3
+วันพฤหัสบดีที่ 10 กันยายน 2026 เวลา 09:00–15:00 น.
+
+ขออภัยในความไม่สะดวก กรุณาสำรองน้ำใช้ล่วงหน้า หากมีข้อสงสัยติดต่อสำนักงานนิติบุคคล 02-123-4567</span>
+            <span class="hint">ขึ้นบรรทัดใหม่ได้ · ระบบไม่ใส่ชื่อนิติบุคคลซ้ำ เพราะต่อท้ายให้อัตโนมัติแล้ว</span>
+          </label>
+
+          <div class="field">
+            <span class="label">กลุ่มผู้รับ <span class="req">*</span></span>
+            <label class="check ars-mk"><span class="ann" style="top:-2px;left:-14px">3</span><input type="radio" name="aud"> ทุกห้องที่มีผู้เช่า <span class="ui-sub">(67 ห้อง)</span></label>
+            <label class="check"><input type="radio" name="aud" checked> เลือกชั้น</label>
+            <div class="ars-floors ars-mk">
+              <span class="ann" style="top:-12px;left:-12px">4</span>
+              <span class="chip">ชั้น 1 <span class="count">15</span></span>
+              <span class="chip">ชั้น 2 <span class="count">14</span></span>
+              <span class="chip active">ชั้น 3 <span class="count">14</span></span>
+              <span class="chip">ชั้น 4 <span class="count">13</span></span>
+              <span class="chip">ชั้น 5 <span class="count">11</span></span>
+            </div>
+          </div>
+
+          <div class="notice ars-mk"><span class="ann" style="top:-9px;left:-9px">5</span><b>จะส่งถึง 14 ห้อง (ผู้เช่าที่ผูก LINE แล้ว 11 ราย)</b>อีก 3 ห้องยังไม่ได้ผูก LINE จะไม่ได้รับประกาศนี้ — แจ้งด้วยวิธีอื่นหากจำเป็น</div>
+
+          <div class="card-foot">
+            <button class="btn">ล้างฟอร์ม</button>
+            <button class="btn primary ars-mk"><span class="ann" style="top:-9px;left:-9px">6</span>ส่งประกาศ</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><span class="card-title">ตัวอย่างที่ผู้เช่าจะเห็น</span><span class="badge info">อัปเดตสด</span></div>
+          <div class="line-chat ars-mk" style="width:100%">
+            <span class="ann" style="top:-9px;left:-9px">7</span>
+            <div class="line-header"><span class="avatar">ศ</span> ศุภาลัย เรสซิเดนซ์</div>
+            <div class="line-body">
+              <div class="bubble oa">📢 แจ้งปิดน้ำชั่วคราว ชั้น 3
+
+นิติบุคคลจะปิดน้ำชั่วคราวเพื่อล้างถังเก็บน้ำของชั้น 3
+วันพฤหัสบดีที่ 10 กันยายน 2026 เวลา 09:00–15:00 น.
+
+ขออภัยในความไม่สะดวก กรุณาสำรองน้ำใช้ล่วงหน้า หากมีข้อสงสัยติดต่อสำนักงานนิติบุคคล 02-123-4567
+
+— นิติบุคคล ศุภาลัย เรสซิเดนซ์<span class="time">ตัวอย่าง</span></div>
+            </div>
+          </div>
+          <p class="ui-sub" style="margin-top:12px">ข้อความธรรมดาเท่านั้น ไม่มีปุ่มและไม่มีรูปภาพ (D-31)</p>
+        </div>
+
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">ประกาศที่ส่งแล้ว</span><span class="ui-sub">ประกาศที่ส่งแล้วแก้ไข ส่งซ้ำ หรือเรียกคืนไม่ได้</span></div>
+        <div class="table-scroll">
+          <table class="zebra compact">
+            <thead><tr>
+              <th class="ars-mk"><span class="ann" style="top:2px;left:2px">8</span>หัวข้อ</th>
+              <th>กลุ่มผู้รับ</th><th>ส่งเมื่อ</th><th class="num">ห้อง</th>
+              <th class="ars-mk"><span class="ann" style="top:2px;left:2px">9</span>ผลการส่ง</th><th></th>
+            </tr></thead>
+            <tbody>
+              <tr>
+                <td><b>แจ้งกำหนดชำระค่าน้ำค่าไฟ รอบกันยายน 2026</b></td>
+                <td>ทุกห้องที่มีผู้เช่า</td><td>1 ก.ย. 2026 09:20 น.</td><td class="num">67</td>
+                <td><span class="badge ok">ส่งแล้ว 54</span> <span class="badge neutral">ไม่มี LINE 13</span></td>
+                <td><a class="btn ghost sm">ดู</a></td>
+              </tr>
+              <tr>
+                <td><b>แจ้งล้างถังเก็บน้ำ 25 ส.ค. 2026</b></td>
+                <td>ทุกห้องที่มีผู้เช่า</td><td>22 ส.ค. 2026 10:05 น.</td><td class="num">67</td>
+                <td><span class="badge ok">ส่งแล้ว 53</span> <span class="badge neutral">ไม่มี LINE 13</span> <span class="badge bad">ส่งไม่สำเร็จ 1</span></td>
+                <td><a class="btn ghost sm">ดู</a></td>
+              </tr>
+              <tr>
+                <td><b>แจ้งซ่อมลิฟต์ ชั้น 4–5</b></td>
+                <td>ชั้น 4, 5</td><td>12 ส.ค. 2026 16:40 น.</td><td class="num">27</td>
+                <td><span class="badge ok">ส่งแล้ว 22</span> <span class="badge neutral">ไม่มี LINE 5</span></td>
+                <td><a class="btn ghost sm">ดู</a></td>
+              </tr>
+              <tr>
+                <td><b>แจ้งเปลี่ยนเวลาทำการสำนักงาน</b></td>
+                <td>ทุกห้องที่มีผู้เช่า</td><td>3 ส.ค. 2026 09:00 น.</td><td class="num">67</td>
+                <td><span class="badge ok">ส่งแล้ว 54</span> <span class="badge neutral">ไม่มี LINE 13</span></td>
+                <td><a class="btn ghost sm">ดู</a></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination"><a class="page-link">‹</a><a class="page-link active">1</a><a class="page-link">2</a><a class="page-link">›</a><span class="page-info">แสดง 1–4 จาก 9 ประกาศ</span></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+</div>
+</div>
+
+<ol class="annotations">
+  <li><span class="ann">1</span><b>หัวข้อ · <code>title VARCHAR(60)</code>.</b> Required, hard-capped at 60 characters; the counter turns <code>--ui-warning</code> at 55 and the field goes <code>.field.invalid</code> at 61 with the input refusing further keystrokes. Every keystroke re-renders marker&nbsp;7 and nothing else — the title is not part of the recipient query, so it never re-fires the count request.</li>
+  <li><span class="ann">2</span><b>เนื้อหา · <code>body VARCHAR(400)</code>.</b> Required, 400 characters, newlines preserved (<code>white-space: pre-line</code> in the bubble, so what is typed is what is sent). 400 + 60 + the template's fixed characters stays far under LINE's 5,000-character message limit, which is why no truncation logic exists anywhere in the send path.</li>
+  <li><span class="ann">3</span><b>กลุ่มผู้รับ — exactly two options (D-35).</b> <i>ทุกห้องที่มีผู้เช่า</i> is the default and resolves to <code>rooms.status = 'Occupied'</code>; <i>เลือกชั้น</i> reveals marker&nbsp;4. There is no per-room picker and no “ห้องที่ค้างชำระ” audience — arrears are chased per bill by the D-33 job, never by a group message that names debtors on a shared floor.</li>
+  <li><span class="ann">4</span><b>Floor multi-select over <code>rooms.floor</code> (D-47).</b> Chips are toggles; at least one must be on, and the count on each chip is that floor's occupied-room count, so the Admin can see before choosing that ชั้น 5 is a smaller send. Selecting a floor writes <code>audience='floors'</code> and the comma-separated <code>audience_floors</code>. Clearing every chip disables the primary button and shows the field error.</li>
+  <li><span class="ann">5</span><b>Live recipient count.</b> Debounced <code>GET /api/announcements/preview-count</code> on every audience change, rendering D-35's sentence verbatim. The second number is the load-bearing one: 14 rooms will be told, 11 phones will ring. While the request is in flight the notice keeps the previous numbers and shows an inline <code>.spinner</code> — it never blanks, because a blank count next to an irreversible button is worse than a stale one.</li>
+  <li><span class="ann">6</span><b>ส่งประกาศ.</b> Disabled until title, body and a non-empty audience all validate. Opens D-39's fourth dialog (second frame below). On confirm: INSERT the <code>announcements</code> row, INSERT one <code>notifications</code> row per recipient tenant, commit, and only then multicast in chunks of 500 (D-34) — one API call for this send. Tenants with no <code>line_user_id</code> get a <code>skipped_no_line</code> row and no call. The button then goes <code>.btn.is-loading</code> and the page redirects to the history table with the new row on top.</li>
+  <li><span class="ann">7</span><b>Live preview, rendered through the real D-31 ANNOUNCEMENT template.</b> The preview calls the same <code>lib/templates.js</code> function the sender calls, so a template edit cannot make the preview lie. The signature line <i>— นิติบุคคล ศุภาลัย เรสซิเดนซ์</i> is appended from Settings and is not editable here (D-01).</li>
+  <li><span class="ann">8</span><b>History — immutable (D-35).</b> Newest first, 25 per page. There is no edit, resend or recall control anywhere in this table, because LINE offers no recall and a resend would double every recipient's notification row. ดู opens a read-only view of the sent text.</li>
+  <li><span class="ann">9</span><b>ผลการส่ง, counted from <code>notifications</code>, one row per recipient (D-30).</b> The three badges always sum to the ห้อง column — that is the report's own consistency check. <span class="badge bad">ส่งไม่สำเร็จ</span> carries the LINE error on hover. The word “blocked” appears nowhere: LINE returns 200 for a blocked recipient, so a message the tenant never saw is counted here as sent, and that gap is limitation&nbsp;9 of D-05.</li>
+</ol>
+
+<h4>Alternate state — the confirmation dialog (D-39 §4)</h4>
+
+<div class="device desktop">
+<div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/announcements</span></div>
+<div class="screen">
+<div class="app">
+  <nav class="sidebar">
+    <div class="brand"><b>ศุภาลัย เรสซิเดนซ์</b><span>Juristic Platform</span></div>
+    <a class="nav-item">📊 ภาพรวม</a>
+    <a class="nav-item">📝 จดมิเตอร์</a>
+    <a class="nav-item">🧾 บิลประจำเดือน <span class="count">12</span></a>
+    <a class="nav-item">💵 รับชำระเงิน</a>
+    <a class="nav-item">🚪 ห้องพัก</a>
+    <a class="nav-item">👤 ผู้เช่า</a>
+    <a class="nav-item active">📢 ประกาศ</a>
+    <a class="nav-item">📈 รายงาน</a>
+    <div class="nav-section">ตั้งค่าระบบ</div>
+    <a class="nav-item">⚙️ ตั้งค่า</a>
+    <a class="nav-item">👥 ผู้ใช้งานระบบ</a>
+    <div class="user">นิติบุคคล · admin · ออกจากระบบ</div>
+  </nav>
+  <div class="main">
+    <div class="topbar">
+      <span class="title">ประกาศ</span>
+      <span class="actions"><span class="badge neutral">ส่งข้อความเดือนนี้ 195/500</span></span>
+    </div>
+    <div class="page">
+      <div class="card">
+        <div class="card-head"><span class="card-title">เขียนประกาศใหม่</span></div>
+        <div class="field"><span class="label">หัวข้อ</span><span class="input readonly" style="display:block">แจ้งปิดน้ำชั่วคราว ชั้น 3</span></div>
+        <div class="notice"><b>จะส่งถึง 14 ห้อง (ผู้เช่าที่ผูก LINE แล้ว 11 ราย)</b>ชั้น 3 · ห้องว่าง 2 ห้องไม่นับ</div>
+        <div class="card-foot"><button class="btn">ล้างฟอร์ม</button><button class="btn primary is-loading">ส่งประกาศ</button></div>
+      </div>
+    </div>
+  </div>
+  <div class="modal">
+    <div class="dialog">
+      <div class="dialog-title ars-mk"><span class="ann" style="top:2px;left:2px">1</span>ยืนยันการส่งประกาศ</div>
+      <div class="dialog-body ars-mk">
+        <span class="ann" style="top:-2px;left:2px">2</span>
+        <p>ส่งประกาศถึง 14 ห้อง ผ่าน LINE — เรียกคืนไม่ได้</p>
+        <p class="ui-sub" style="margin:0">ผู้เช่าที่ผูก LINE แล้ว 11 ราย · อีก 3 ห้องจะไม่ได้รับ</p>
+      </div>
+      <div class="dialog-actions ars-mk">
+        <span class="ann" style="top:-2px;left:2px">3</span>
+        <button class="btn">ยกเลิก</button>
+        <button class="btn primary">ส่งประกาศ</button>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+
+<ol class="annotations">
+  <li><span class="ann">1</span><b>Shared <code>confirm-dialog.ejs</code>, never <code>window.confirm()</code>.</b> One component, six call sites (D-39); this is call site four. Escape and the backdrop both cancel; focus is trapped and starts on ยกเลิก, so a stray Enter cannot send.</li>
+  <li><span class="ann">2</span><b>The sentence is D-39's, verbatim, with the live count substituted.</b> The count comes from the same response as marker&nbsp;5 above, re-fetched when the dialog opens — if a tenant linked LINE in the meantime, the number the Admin confirms is the number that will actually be pushed.</li>
+  <li><span class="ann">3</span><b>The primary button repeats the verb (ส่งประกาศ), never ตกลง.</b> On confirm the button goes <code>.is-loading</code>, the dialog stays open until the transaction commits, and only then does the page redirect. A double-click is absorbed by the disabled state and, behind it, by <code>uq_notifications(dedupe_key)</code> — the same key that stops a bill message going out twice in one day (ENG-3).</li>
+</ol>
+
+<h4>Announcements — states</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>State</th><th>What renders</th><th>Components</th><th>Thai copy</th></tr></thead>
+<tbody>
+<tr><td><b>Empty</b></td><td>History card only; the compose form is always available</td><td><code>.empty-state</code> with the 📢 icon, no action button</td><td>ยังไม่เคยส่งประกาศ</td></tr>
+<tr><td><b>Loading (page)</b></td><td>Compose form renders immediately; the history table shows four <code>.skeleton.row</code> bars</td><td><code>.skeleton.row</code> ×4</td><td>—</td></tr>
+<tr><td><b>Loading (count)</b></td><td>Notice keeps the previous numbers, adds an inline spinner; ส่งประกาศ disabled while in flight</td><td><code>.spinner</code> + <code>.btn.is-disabled</code></td><td>กำลังคำนวณผู้รับ…</td></tr>
+<tr><td><b>Sending</b></td><td>Dialog stays open, primary button <code>.is-loading</code>, both buttons disabled</td><td><code>.btn.primary.is-loading</code></td><td>(label hidden by the spinner)</td></tr>
+<tr><td><b>Validation error</b></td><td>Inline field errors; the form keeps every typed character; no redirect (D-40)</td><td><code>.field.invalid</code> + <code>.field .error</code></td><td>see the copy table below</td></tr>
+<tr><td><b>Zero recipients</b></td><td>Notice turns warn, ส่งประกาศ disabled — a send with no recipient is refused before the dialog</td><td><code>.notice.warn</code> + <code>.btn.is-disabled</code></td><td>ไม่มีห้องที่ตรงกับกลุ่มผู้รับนี้ — กรุณาเลือกใหม่</td></tr>
+<tr><td><b>Failed save</b></td><td>Dialog closes, a <code>.notice.bad</code> appears above the form, every field preserved, ลองอีกครั้ง offered</td><td><code>.notice.bad</code></td><td>ส่งประกาศไม่สำเร็จ กรุณาลองอีกครั้ง — ยังไม่มีการส่งข้อความใด ๆ</td></tr>
+<tr><td><b>Partial delivery</b></td><td>Success page + a warn notice; the announcement row still exists and is still immutable</td><td><code>.notice.warn</code> + row badges</td><td>ส่งประกาศแล้ว · สำเร็จ 10 ราย · ไม่สำเร็จ 1 ราย</td></tr>
+<tr><td><b>Success</b></td><td>Redirect to the history table, new row first, one non-undoable toast</td><td><code>.toast</code></td><td>ส่งประกาศถึง 11 ราย เรียบร้อยแล้ว</td></tr>
+<tr><td><b>Permission denied</b></td><td>Staff opening <code>/announcements</code> gets the Thai 403 page, never a silent redirect (D-40)</td><td><code>errors/403.ejs</code></td><td>ไม่มีสิทธิ์เข้าถึงหน้านี้ · บัญชีของคุณเป็นเจ้าหน้าที่ กรุณาติดต่อนิติบุคคล</td></tr>
+<tr><td><b>Quota near limit</b></td><td>The topbar badge turns warn above 450 sends; nothing is blocked (D-34)</td><td><code>.badge.warn</code></td><td>ส่งข้อความเดือนนี้ 462/500</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>Announcements — exact Thai copy</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Element</th><th>Thai copy</th><th>Rule</th></tr></thead>
+<tbody>
+<tr><td>Page title / nav</td><td>ประกาศ</td><td>D-02 mapping</td></tr>
+<tr><td>Card titles</td><td>เขียนประกาศใหม่ · ตัวอย่างที่ผู้เช่าจะเห็น · ประกาศที่ส่งแล้ว</td><td>—</td></tr>
+<tr><td>Field labels</td><td>หัวข้อ · เนื้อหา · กลุ่มผู้รับ</td><td>Required fields carry a red asterisk</td></tr>
+<tr><td>Audience options</td><td>ทุกห้องที่มีผู้เช่า · เลือกชั้น</td><td>D-35, exactly these two</td></tr>
+<tr><td>Recipient line</td><td>จะส่งถึง 14 ห้อง (ผู้เช่าที่ผูก LINE แล้ว 11 ราย)</td><td>D-35 verbatim; braces are {rooms} and {linked}</td></tr>
+<tr><td>Buttons</td><td>ส่งประกาศ · ล้างฟอร์ม · ดู</td><td>Primary is the verb, never ตกลง</td></tr>
+<tr><td>Confirmation dialog</td><td>Title ยืนยันการส่งประกาศ · body ส่งประกาศถึง 14 ห้อง ผ่าน LINE — เรียกคืนไม่ได้ · buttons ยกเลิก / ส่งประกาศ</td><td>D-39 §4</td></tr>
+<tr><td>Validation — title empty</td><td>กรุณากรอกหัวข้อประกาศ</td><td>zod, 422</td></tr>
+<tr><td>Validation — title too long</td><td>หัวข้อยาวเกิน 60 ตัวอักษร</td><td>zod, 422</td></tr>
+<tr><td>Validation — body empty</td><td>กรุณากรอกเนื้อหาประกาศ</td><td>zod, 422</td></tr>
+<tr><td>Validation — body too long</td><td>เนื้อหายาวเกิน 400 ตัวอักษร</td><td>zod, 422</td></tr>
+<tr><td>Validation — no floor chosen</td><td>กรุณาเลือกอย่างน้อย 1 ชั้น</td><td>zod, 422</td></tr>
+<tr><td>Validation — no recipients</td><td>ไม่มีห้องที่ตรงกับกลุ่มผู้รับนี้ — กรุณาเลือกใหม่</td><td>service rule, 422</td></tr>
+<tr><td>Delivery badges</td><td>ส่งแล้ว · ไม่มี LINE · ส่งไม่สำเร็จ</td><td>D-30's three <code>notifications.status</code> outcomes</td></tr>
+<tr><td>Immutability hint</td><td>ประกาศที่ส่งแล้วแก้ไข ส่งซ้ำ หรือเรียกคืนไม่ได้</td><td>D-35 — the UI must not imply recall exists</td></tr>
+<tr><td>Empty state</td><td>ยังไม่เคยส่งประกาศ</td><td>D-40 list of eight</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Reports — รายงาน (<code>/reports</code>)</h3>
+
+<div class="screen-meta">
+  <span><b>Role:</b> Admin only (D-42); Staff receives the Thai 403 page</span>
+  <span><b>Routes:</b> <code>/reports/monthly</code> · <code>/reports/arrears</code> · <code>/reports/top-usage</code> · <code>/reports/room-history</code> (A-D1)</span>
+  <span><b>Entry points:</b> sidebar 📈 รายงาน · Dashboard tiles deep-link into the matching tab · Bill Detail links to ประวัติรายห้อง</span>
+  <span><b>Primary action:</b> ส่งออก CSV — the page is read-only; nothing on it changes a bill</span>
+</div>
+
+<p>Four reports, four tabs, one filter bar. D-42 fixes the set exactly: no report builder, no column chooser, no PDF. Every figure below reconciles against the D-44 seed — 67 occupied rooms of 30&nbsp;ตร.ม., water 18.00, electricity 8.00, common 35.00 — and the September column is the state of the demo after room 205 has paid: 55 rooms settled for 98,420.00 and 12 rooms overdue for 23,146.00, which sum to the 121,566.00 billed.</p>
+
+<h4>Tab 1 — สรุปการเรียกเก็บและรับชำระรายเดือน (<code>/reports/monthly</code>)</h4>
+
+<div class="device desktop">
+<div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/reports/monthly?from=2026-04&amp;to=2026-09</span></div>
+<div class="screen">
+<div class="app">
+  <nav class="sidebar">
+    <div class="brand"><b>ศุภาลัย เรสซิเดนซ์</b><span>Juristic Platform</span></div>
+    <a class="nav-item">📊 ภาพรวม</a>
+    <a class="nav-item">📝 จดมิเตอร์</a>
+    <a class="nav-item">🧾 บิลประจำเดือน <span class="count">12</span></a>
+    <a class="nav-item">💵 รับชำระเงิน</a>
+    <a class="nav-item">🚪 ห้องพัก</a>
+    <a class="nav-item">👤 ผู้เช่า</a>
+    <a class="nav-item">📢 ประกาศ</a>
+    <a class="nav-item active">📈 รายงาน</a>
+    <div class="nav-section">ตั้งค่าระบบ</div>
+    <a class="nav-item">⚙️ ตั้งค่า</a>
+    <a class="nav-item">👥 ผู้ใช้งานระบบ</a>
+    <div class="user">นิติบุคคล · admin · ออกจากระบบ</div>
+  </nav>
+  <div class="main">
+    <div class="topbar">
+      <span class="title">รายงาน</span>
+      <span class="actions"><a class="btn secondary sm ars-mk"><span class="ann" style="top:-9px;left:-9px">3</span>⬇ ส่งออก CSV</a></span>
+    </div>
+    <div class="page">
+
+      <div class="tabs ars-mk">
+        <span class="ann" style="top:-4px;left:-14px">1</span>
+        <a class="tab-link active">สรุปรายเดือน</a>
+        <a class="tab-link">ค้างชำระ</a>
+        <a class="tab-link">ห้องที่ใช้สูงสุด</a>
+        <a class="tab-link">ประวัติรายห้อง</a>
+      </div>
+
+      <div class="toolbar ars-mk">
+        <span class="ann" style="top:-12px;left:-12px">2</span>
+        <label class="field inline" style="margin:0"><span class="label" style="margin:0">ตั้งแต่งวด</span>
+          <span class="select" style="width:170px;min-height:34px;padding:6px 12px;font-size:13px">เมษายน 2026</span></label>
+        <label class="field inline" style="margin:0"><span class="label" style="margin:0">ถึงงวด</span>
+          <span class="select" style="width:170px;min-height:34px;padding:6px 12px;font-size:13px">กันยายน 2026</span></label>
+        <button class="btn sm primary">ใช้ตัวกรอง</button>
+        <span class="ui-sub">6 งวด · สูงสุด 12 งวด</span>
+      </div>
+
+      <div class="kpi-grid">
+        <div class="kpi neutral ars-mk"><span class="ann" style="top:-9px;left:-9px">4</span><div class="label">ยอดเรียกเก็บรวม</div><div class="value">753,736.00</div><div class="sub">บาท · 402 บิลที่อนุมัติแล้ว</div></div>
+        <div class="kpi paid"><div class="label">รับชำระแล้ว</div><div class="value">730,590.00</div><div class="sub">บาท · 390 บิล</div></div>
+        <div class="kpi overdue"><div class="label">ค้างชำระ</div><div class="value">23,146.00</div><div class="sub">บาท · 12 บิล</div></div>
+        <div class="kpi water"><div class="label">ค่าน้ำรวม</div><div class="value">79,308.00</div><div class="sub">บาท · 4,406 หน่วย</div></div>
+        <div class="kpi elec"><div class="label">ค่าไฟรวม</div><div class="value">252,328.00</div><div class="sub">บาท · 31,541 หน่วย</div></div>
+        <div class="kpi fee"><div class="label">ค่าส่วนกลางรวม</div><div class="value">422,100.00</div><div class="sub">บาท · 67 ห้อง × 6 งวด</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">ยอดเรียกเก็บและยอดรับชำระรายงวด</span><span class="ui-sub">หน่วย: บาท</span></div>
+        <div class="ars-mk">
+          <span class="ann" style="top:-4px;left:-4px">5</span>
+          <svg class="ars-chart" viewBox="0 0 720 236" role="img" aria-label="แผนภูมิแท่ง ยอดเรียกเก็บและยอดรับชำระ 6 งวด ตั้งแต่เมษายนถึงกันยายน 2026">
+            <g stroke="var(--ui-border)" stroke-width="1">
+              <line x1="64" y1="16" x2="704" y2="16"></line>
+              <line x1="64" y1="61" x2="704" y2="61"></line>
+              <line x1="64" y1="106" x2="704" y2="106"></line>
+              <line x1="64" y1="151" x2="704" y2="151"></line>
+            </g>
+            <line x1="64" y1="196" x2="704" y2="196" stroke="var(--ui-border-strong)" stroke-width="1"></line>
+            <g fill="var(--ui-muted)" font-size="10" text-anchor="end">
+              <text x="56" y="20">140,000</text><text x="56" y="65">105,000</text>
+              <text x="56" y="110">70,000</text><text x="56" y="155">35,000</text><text x="56" y="200">0</text>
+            </g>
+            <g fill="var(--ui-brand-soft)" stroke="var(--ui-brand)" stroke-width="1">
+              <rect x="86" y="28" width="28" height="168" rx="2"></rect>
+              <rect x="193" y="31" width="28" height="165" rx="2"></rect>
+              <rect x="299" y="39" width="28" height="157" rx="2"></rect>
+              <rect x="406" y="34" width="28" height="162" rx="2"></rect>
+              <rect x="513" y="36" width="28" height="160" rx="2"></rect>
+              <rect x="619" y="40" width="28" height="156" rx="2"></rect>
+            </g>
+            <g fill="var(--ui-success)">
+              <rect x="120" y="28" width="28" height="168" rx="2"></rect>
+              <rect x="227" y="31" width="28" height="165" rx="2"></rect>
+              <rect x="333" y="39" width="28" height="157" rx="2"></rect>
+              <rect x="440" y="34" width="28" height="162" rx="2"></rect>
+              <rect x="547" y="36" width="28" height="160" rx="2"></rect>
+              <rect x="653" y="69" width="28" height="127" rx="2"></rect>
+            </g>
+            <g fill="var(--ui-text-2)" font-size="10" text-anchor="middle">
+              <text x="134" y="23">130,484</text><text x="241" y="26">128,330</text><text x="347" y="34">122,324</text>
+              <text x="454" y="29">126,400</text><text x="561" y="31">124,632</text><text x="667" y="64">98,420</text>
+            </g>
+            <g fill="var(--ui-overdue)" font-size="10" text-anchor="end">
+              <text x="704" y="52">ค้างชำระ 23,146</text>
+            </g>
+            <path d="M 619 40 L 704 40" stroke="var(--ui-overdue)" stroke-width="1" stroke-dasharray="3 3" fill="none"></path>
+            <g fill="var(--ui-text-2)" font-size="11" text-anchor="middle">
+              <text x="117" y="214">เม.ย. 2026</text><text x="224" y="214">พ.ค. 2026</text><text x="330" y="214">มิ.ย. 2026</text>
+              <text x="437" y="214">ก.ค. 2026</text><text x="544" y="214">ส.ค. 2026</text><text x="650" y="214">ก.ย. 2026</text>
+            </g>
+          </svg>
+          <div class="ars-legend">
+            <span><i style="background:var(--ui-brand-soft);border:1px solid var(--ui-brand)"></i>ยอดเรียกเก็บ</span>
+            <span><i style="background:var(--ui-success)"></i>รับชำระแล้ว</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">รายละเอียดรายงวด</span><span class="ui-sub">อ่านจากบิลที่อนุมัติแล้วเท่านั้น (D-41)</span></div>
+        <div class="table-scroll">
+          <table class="zebra compact">
+            <thead><tr>
+              <th>งวด</th>
+              <th class="num ars-mk"><span class="ann" style="top:2px;left:2px">6</span>💧 ค่าน้ำ</th>
+              <th class="num">⚡ ค่าไฟ</th><th class="num">🏢 ค่าส่วนกลาง</th>
+              <th class="num">เรียกเก็บ</th><th class="num">รับชำระ</th><th class="num">ค้างชำระ</th>
+              <th class="ars-mk"><span class="ann" style="top:2px;left:2px">7</span>จำนวนบิล</th>
+            </tr></thead>
+            <tbody>
+              <tr><td><b>กันยายน 2026</b></td><td class="num">12,240.00</td><td class="num">38,976.00</td><td class="num">70,350.00</td><td class="num">121,566.00</td><td class="num">98,420.00</td><td class="num">23,146.00</td><td><span class="badge paid" data-status="Paid">ชำระแล้ว 55</span> <span class="badge overdue" data-status="Overdue">เกินกำหนด 12</span></td></tr>
+              <tr><td>สิงหาคม 2026</td><td class="num">12,978.00</td><td class="num">41,304.00</td><td class="num">70,350.00</td><td class="num">124,632.00</td><td class="num">124,632.00</td><td class="num">0.00</td><td><span class="badge paid" data-status="Paid">ชำระแล้ว 67</span></td></tr>
+              <tr><td>กรกฎาคม 2026</td><td class="num">13,482.00</td><td class="num">42,568.00</td><td class="num">70,350.00</td><td class="num">126,400.00</td><td class="num">126,400.00</td><td class="num">0.00</td><td><span class="badge paid" data-status="Paid">ชำระแล้ว 67</span></td></tr>
+              <tr><td>มิถุนายน 2026</td><td class="num">12,510.00</td><td class="num">39,464.00</td><td class="num">70,350.00</td><td class="num">122,324.00</td><td class="num">122,324.00</td><td class="num">0.00</td><td><span class="badge paid" data-status="Paid">ชำระแล้ว 67</span></td></tr>
+              <tr><td>พฤษภาคม 2026</td><td class="num">13,860.00</td><td class="num">44,120.00</td><td class="num">70,350.00</td><td class="num">128,330.00</td><td class="num">128,330.00</td><td class="num">0.00</td><td><span class="badge paid" data-status="Paid">ชำระแล้ว 67</span></td></tr>
+              <tr><td>เมษายน 2026</td><td class="num">14,238.00</td><td class="num">45,896.00</td><td class="num">70,350.00</td><td class="num">130,484.00</td><td class="num">130,484.00</td><td class="num">0.00</td><td><span class="badge paid" data-status="Paid">ชำระแล้ว 67</span></td></tr>
+              <tr style="font-weight:600"><td>รวม 6 งวด</td><td class="num">79,308.00</td><td class="num">252,328.00</td><td class="num">422,100.00</td><td class="num">753,736.00</td><td class="num">730,590.00</td><td class="num">23,146.00</td><td>402 บิล</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="notice ars-mk" style="margin:12px 0 0"><span class="ann" style="top:-9px;left:-9px">8</span><b>การตรวจสอบในตัว</b>ทุกแถว: ค่าน้ำ + ค่าไฟ + ค่าส่วนกลาง = เรียกเก็บ และ รับชำระ + ค้างชำระ = เรียกเก็บ · แถวรวมต้องเท่ากับผลบวกของทุกงวด</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+</div>
+</div>
+
+<ol class="annotations">
+  <li><span class="ann">1</span><b>Four tabs, four routes.</b> Each is a real page load, not a client-side switch, so a report is bookmarkable and the browser Back button behaves. The active tab is derived from the path, never from JavaScript state. <code>/reports</code> alone redirects to <code>/reports/monthly</code>.</li>
+  <li><span class="ann">2</span><b>Month-range filter.</b> Two <code>&lt;select&gt;</code> elements over the periods that actually have bills — never a free date picker, because a period is a <code>CHAR(7)</code> key, not a date (ADR §6.7). The range is inclusive, capped at 12 periods to keep the query and the chart bounded, and it is carried in the query string so the CSV link inherits it unchanged.</li>
+  <li><span class="ann">3</span><b>ส่งออก CSV.</b> A plain link to <code>/reports/monthly.csv</code> with the same query string — no eighth JSON endpoint (ADR §6.2). One shared helper writes UTF-8 <i>with BOM</i> so Excel opens Thai correctly, and the filename is <code>report-monthly-2026-04_2026-09.csv</code> (A-D2). The export contains exactly the rows on screen, including the totals row.</li>
+  <li><span class="ann">4</span><b>KPI tiles are the table's totals row, promoted.</b> Money is summed over bills whose <i>stored</i> status is Unpaid or Paid — Draft bills are excluded, and reading the stored column here is explicitly not a D-21 violation because the tile means “approved”, not “what a human sees”. The three money tiles reconcile on screen by construction: 730,590.00 + 23,146.00 = 753,736.00.</li>
+  <li><span class="ann">5</span><b>Chart.</b> In the running app this is Chart.js from cdnjs, fed by the same query as the table; the inline SVG here is the static stand-in for this document. Two series, not a stacked bar, because the question the office asks is “how big is the gap”, and a stack hides exactly that. September is the only period with a gap, and the dashed rule labels it with the same 23,146.00 the tile shows.</li>
+  <li><span class="ann">6</span><b>The three-way split is always present.</b> D-41 guarantees every generated bill carries exactly three <code>bill_items</code>, even at 0 units and 0.00 — enforced by <code>uq_bill_items(bill_id, item_type)</code> (ENG-2) — so these columns are never null and never need a <code>COALESCE</code>. A period whose split does not sum to its billed column is a defect with its own assertion, not a rounding artefact: amounts are rounded once, in SQL, at item level (ADR §6.4).</li>
+  <li><span class="ann">7</span><b>Bill counts use the display status (D-21).</b> This column is read by a human, so it goes through the shared helper: <code>Unpaid AND due_date &lt; CURDATE()</code> renders เกินกำหนด. On 8 ก.ย. 2026 every unsettled September bill is past its 5 ก.ย. due date, so รอชำระ is absent from this table — that is correct, not a missing badge.</li>
+  <li><span class="ann">8</span><b>The consistency notice is a feature, not decoration.</b> It states the two identities the test plan asserts on this report, so an examiner can check the arithmetic on screen without opening the database.</li>
+</ol>
+
+<h4>Tab 2 — รายการค้างชำระ (<code>/reports/arrears</code>)</h4>
+
+<div class="device desktop">
+<div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/reports/arrears</span></div>
+<div class="screen">
+<div class="app">
+  <nav class="sidebar">
+    <div class="brand"><b>ศุภาลัย เรสซิเดนซ์</b><span>Juristic Platform</span></div>
+    <a class="nav-item">📊 ภาพรวม</a>
+    <a class="nav-item">📝 จดมิเตอร์</a>
+    <a class="nav-item">🧾 บิลประจำเดือน <span class="count">12</span></a>
+    <a class="nav-item">💵 รับชำระเงิน</a>
+    <a class="nav-item">🚪 ห้องพัก</a>
+    <a class="nav-item">👤 ผู้เช่า</a>
+    <a class="nav-item">📢 ประกาศ</a>
+    <a class="nav-item active">📈 รายงาน</a>
+    <div class="nav-section">ตั้งค่าระบบ</div>
+    <a class="nav-item">⚙️ ตั้งค่า</a>
+    <a class="nav-item">👥 ผู้ใช้งานระบบ</a>
+    <div class="user">นิติบุคคล · admin · ออกจากระบบ</div>
+  </nav>
+  <div class="main">
+    <div class="topbar">
+      <span class="title">รายงาน</span>
+      <span class="actions"><a class="btn secondary sm">⬇ ส่งออก CSV</a></span>
+    </div>
+    <div class="page">
+
+      <div class="tabs">
+        <a class="tab-link">สรุปรายเดือน</a>
+        <a class="tab-link active">ค้างชำระ</a>
+        <a class="tab-link">ห้องที่ใช้สูงสุด</a>
+        <a class="tab-link">ประวัติรายห้อง</a>
+      </div>
+
+      <div class="notice warn ars-mk"><span class="ann" style="top:-9px;left:-9px">1</span><b>ทุกงวด ไม่ใช่เฉพาะรอบนี้</b>รายงานนี้ไล่บิลที่ยังไม่ชำระทั้งหมดย้อนหลังทุกงวด · ข้อมูล ณ 8 ก.ย. 2026 14:20 น.</div>
+
+      <div class="kpi-grid ars-mk">
+        <span class="ann" style="top:-9px;left:-9px">2</span>
+        <div class="kpi overdue"><div class="label">1–7 วัน</div><div class="value">12</div><div class="sub">ห้อง · 23,146.00 บาท</div></div>
+        <div class="kpi neutral"><div class="label">8–30 วัน</div><div class="value">0</div><div class="sub">ห้อง · 0.00 บาท</div></div>
+        <div class="kpi neutral"><div class="label">31–60 วัน</div><div class="value">0</div><div class="sub">ห้อง · 0.00 บาท</div></div>
+        <div class="kpi neutral"><div class="label">61+ วัน</div><div class="value">0</div><div class="sub">ห้อง · 0.00 บาท</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">รายการค้างชำระ 12 รายการ · รวม 23,146.00 บาท</span><span class="ui-sub">เรียงตามจำนวนวันที่เลยกำหนด</span></div>
+        <div class="table-scroll">
+          <table class="zebra compact sticky">
+            <thead><tr>
+              <th>ห้อง</th><th>ผู้เช่า</th>
+              <th class="ars-mk"><span class="ann" style="top:2px;left:2px">3</span>โทรศัพท์</th>
+              <th>งวด</th><th class="num">ยอด</th><th>ครบกำหนด</th>
+              <th class="num ars-mk"><span class="ann" style="top:2px;left:2px">4</span>เลยกำหนด</th>
+              <th>สถานะ</th><th></th>
+            </tr></thead>
+            <tbody>
+              <tr><td><b>312</b></td><td>วิชัย มั่นคง</td><td>081-234-5678</td><td>กันยายน 2026</td><td class="num">3,528.00</td><td>5 ก.ย. 2026</td><td class="num">3 วัน</td><td><span class="badge overdue" data-status="Overdue">เกินกำหนด</span></td><td><a class="btn ghost sm">ดูบิล</a></td></tr>
+              <tr><td><b>511</b></td><td>ปรีชา วงศ์อารีย์</td><td>089-441-2290</td><td>กันยายน 2026</td><td class="num">3,060.00</td><td>5 ก.ย. 2026</td><td class="num">3 วัน</td><td><span class="badge overdue" data-status="Overdue">เกินกำหนด</span></td><td><a class="btn ghost sm">ดูบิล</a></td></tr>
+              <tr><td><b>108</b></td><td>นภัสสร ทองใบ</td><td>086-771-3045</td><td>กันยายน 2026</td><td class="num">2,926.00</td><td>5 ก.ย. 2026</td><td class="num">3 วัน</td><td><span class="badge overdue" data-status="Overdue">เกินกำหนด</span></td><td><a class="btn ghost sm">ดูบิล</a></td></tr>
+              <tr><td><b>502</b></td><td>จิราพร แก้วประเสริฐ</td><td>092-330-1187</td><td>กันยายน 2026</td><td class="num">1,700.00</td><td>5 ก.ย. 2026</td><td class="num">3 วัน</td><td><span class="badge overdue" data-status="Overdue">เกินกำหนด</span></td><td><a class="btn ghost sm">ดูบิล</a></td></tr>
+              <tr><td><b>407</b></td><td>ณัฐวุฒิ พูลทรัพย์</td><td>084-556-9012</td><td>กันยายน 2026</td><td class="num">1,626.00</td><td>5 ก.ย. 2026</td><td class="num">3 วัน</td><td><span class="badge overdue" data-status="Overdue">เกินกำหนด</span></td><td><a class="btn ghost sm">ดูบิล</a></td></tr>
+              <tr><td><b>216</b></td><td>ศิริพร บุญมี</td><td>081-902-4471</td><td>กันยายน 2026</td><td class="num">1,576.00</td><td>5 ก.ย. 2026</td><td class="num">3 วัน</td><td><span class="badge overdue" data-status="Overdue">เกินกำหนด</span></td><td><a class="btn ghost sm">ดูบิล</a></td></tr>
+              <tr><td><b>410</b></td><td>สมชาย เกษมสุข</td><td>095-118-7734</td><td>กันยายน 2026</td><td class="num">1,576.00</td><td>5 ก.ย. 2026</td><td class="num">3 วัน</td><td><span class="badge overdue" data-status="Overdue">เกินกำหนด</span></td><td><a class="btn ghost sm">ดูบิล</a></td></tr>
+              <tr><td><b>209</b></td><td>ธีรพงษ์ สุขสวัสดิ์</td><td>083-604-2258</td><td>กันยายน 2026</td><td class="num">1,534.00</td><td>5 ก.ย. 2026</td><td class="num">3 วัน</td><td><span class="badge overdue" data-status="Overdue">เกินกำหนด</span></td><td><a class="btn ghost sm">ดูบิล</a></td></tr>
+              <tr><td><b>103</b></td><td>พิมพ์ชนก อินทร์แก้ว</td><td>087-225-6690</td><td>กันยายน 2026</td><td class="num">1,484.00</td><td>5 ก.ย. 2026</td><td class="num">3 วัน</td><td><span class="badge overdue" data-status="Overdue">เกินกำหนด</span></td><td><a class="btn ghost sm">ดูบิล</a></td></tr>
+              <tr><td><b>305</b></td><td>กมลชนก แสงทอง</td><td>090-447-1123</td><td>กันยายน 2026</td><td class="num">1,426.00</td><td>5 ก.ย. 2026</td><td class="num">3 วัน</td><td><span class="badge overdue" data-status="Overdue">เกินกำหนด</span></td><td><a class="btn ghost sm">ดูบิล</a></td></tr>
+              <tr><td><b>114</b></td><td>อนุชา ตั้งใจดี</td><td>082-773-5541</td><td>กันยายน 2026</td><td class="num">1,384.00</td><td>5 ก.ย. 2026</td><td class="num">3 วัน</td><td><span class="badge overdue" data-status="Overdue">เกินกำหนด</span></td><td><a class="btn ghost sm">ดูบิล</a></td></tr>
+              <tr><td><b>316</b></td><td>รัตนา เพชรรัตน์</td><td>094-006-8832</td><td>กันยายน 2026</td><td class="num">1,326.00</td><td>5 ก.ย. 2026</td><td class="num">3 วัน</td><td><span class="badge overdue" data-status="Overdue">เกินกำหนด</span></td><td><a class="btn ghost sm">ดูบิล</a></td></tr>
+              <tr style="font-weight:600"><td colspan="4">รวม 12 รายการ</td><td class="num">23,146.00</td><td colspan="4"></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="ui-sub ars-mk" style="margin-top:10px"><span class="ann" style="top:-4px;left:-14px">5</span>ผลรวมของทั้ง 4 ช่วงอายุหนี้ต้องเท่ากับ 12 รายการ และ 23,146.00 บาทเสมอ</p>
+      </div>
+
+    </div>
+  </div>
+</div>
+</div>
+</div>
+
+<ol class="annotations">
+  <li><span class="ann">1</span><b>Scope banner.</b> This is the one report that ignores the month filter — D-42 defines it as every Unpaid bill across every period — so the page says so before the reader assumes otherwise. The as-of stamp matters because the ageing is computed against <code>CURDATE()</code> and changes at midnight with no job (D-21).</li>
+  <li><span class="ann">2</span><b>Four non-overlapping ageing buckets.</b> 1–7 / 8–30 / 31–60 / 61+ วัน, computed from <code>due_date</code>, never stored. Against the D-44 seed — history fully paid, only the current period outstanding — every row lands in the first bucket and the other three read zero. That is the honest rendering of the seed, and it is precisely why the three empty tiles use <code>.kpi.neutral</code> rather than a red variant: an empty ageing bucket is good news. The other buckets are exercised by the test plan's fixtures, not by the demo data.</li>
+  <li><span class="ann">3</span><b>Phone number is on the report on purpose.</b> This is the sheet the office prints and works down; without the number the operator opens twelve tenant records to make twelve calls. Note that 13 of the 67 tenants have no LINE binding, so the phone column is the only channel that reaches every debtor.</li>
+  <li><span class="ann">4</span><b>เลยกำหนด is derived, and this report ages the stored column.</b> D-42 ages every <code>Unpaid</code> bill; the badge next to it goes through the D-21 display helper. The two agree here because all twelve are past due — a bill that is Unpaid but not yet due would carry <span class="badge unpaid" data-status="Unpaid">รอชำระ</span> and no bucket, and is excluded from the row count by the <code>due_date &lt; CURDATE()</code> predicate.</li>
+  <li><span class="ann">5</span><b>The stated invariant is the test.</b> Bucket counts sum to the row count; bucket amounts sum to the report total. One assertion each in the test plan, and both are visible on screen.</li>
+</ol>
+
+<h4>Tab 3 — ห้องที่ใช้น้ำ/ไฟสูงสุด (<code>/reports/top-usage</code>)</h4>
+
+<div class="device desktop">
+<div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/reports/top-usage?period=2026-09</span></div>
+<div class="screen">
+<div class="app">
+  <nav class="sidebar">
+    <div class="brand"><b>ศุภาลัย เรสซิเดนซ์</b><span>Juristic Platform</span></div>
+    <a class="nav-item">📊 ภาพรวม</a>
+    <a class="nav-item">📝 จดมิเตอร์</a>
+    <a class="nav-item">🧾 บิลประจำเดือน <span class="count">12</span></a>
+    <a class="nav-item">💵 รับชำระเงิน</a>
+    <a class="nav-item">🚪 ห้องพัก</a>
+    <a class="nav-item">👤 ผู้เช่า</a>
+    <a class="nav-item">📢 ประกาศ</a>
+    <a class="nav-item active">📈 รายงาน</a>
+    <div class="nav-section">ตั้งค่าระบบ</div>
+    <a class="nav-item">⚙️ ตั้งค่า</a>
+    <a class="nav-item">👥 ผู้ใช้งานระบบ</a>
+    <div class="user">นิติบุคคล · admin · ออกจากระบบ</div>
+  </nav>
+  <div class="main">
+    <div class="topbar">
+      <span class="title">รายงาน</span>
+      <span class="actions"><a class="btn secondary sm">⬇ ส่งออก CSV</a></span>
+    </div>
+    <div class="page">
+
+      <div class="tabs">
+        <a class="tab-link">สรุปรายเดือน</a>
+        <a class="tab-link">ค้างชำระ</a>
+        <a class="tab-link active">ห้องที่ใช้สูงสุด</a>
+        <a class="tab-link">ประวัติรายห้อง</a>
+      </div>
+
+      <div class="toolbar ars-mk">
+        <span class="ann" style="top:-12px;left:-12px">1</span>
+        <span class="month-picker"><span class="arrow">‹</span> กันยายน 2026 <span class="arrow">›</span></span>
+        <span class="ui-sub">10 อันดับแรก · เทียบกับงวดก่อนหน้าของห้องเดียวกัน</span>
+      </div>
+
+      <div class="ars-split">
+        <div class="card">
+          <div class="card-head"><span class="card-title">💧 ห้องที่ใช้น้ำสูงสุด</span><span class="badge water">รวม 680 หน่วย</span></div>
+          <div class="table-scroll">
+            <table class="zebra compact">
+              <thead><tr><th style="width:34px">#</th><th>ห้อง</th><th class="num">หน่วย</th>
+                <th class="num ars-mk"><span class="ann" style="top:2px;left:2px">2</span>งวดก่อน</th>
+                <th class="num">ค่าน้ำ</th></tr></thead>
+              <tbody>
+                <tr><td>1</td><td><b>412</b> <span class="ui-sub">สมหญิง ปิ่นทอง</span></td><td class="num">38</td><td class="num"><span class="ars-delta up">31 · +7</span></td><td class="num">684.00</td></tr>
+                <tr><td>2</td><td><b>108</b> <span class="ui-sub">นภัสสร ทองใบ</span></td><td class="num">34</td><td class="num"><span class="ars-delta down">36 · −2</span></td><td class="num">612.00</td></tr>
+                <tr><td>3</td><td><b>312</b> <span class="ui-sub">วิชัย มั่นคง</span></td><td class="num">31</td><td class="num"><span class="ars-delta up">27 · +4</span></td><td class="num">558.00</td></tr>
+                <tr><td>4</td><td><b>511</b> <span class="ui-sub">ปรีชา วงศ์อารีย์</span></td><td class="num">29</td><td class="num"><span class="ars-delta up">22 · +7</span></td><td class="num">522.00</td></tr>
+                <tr><td>5</td><td><b>214</b> <span class="ui-sub">เกศรา พันธุ์ดี</span></td><td class="num">26</td><td class="num"><span class="ars-delta flat">26 · 0</span></td><td class="num">468.00</td></tr>
+                <tr><td>6</td><td><b>106</b> <span class="ui-sub">ชัยวัฒน์ ศรีนวล</span></td><td class="num">24</td><td class="num"><span class="ars-delta down">29 · −5</span></td><td class="num">432.00</td></tr>
+                <tr><td>7</td><td><b>403</b> <span class="ui-sub">มานพ ธรรมรักษ์</span></td><td class="num">22</td><td class="num"><span class="ars-delta up">18 · +4</span></td><td class="num">396.00</td></tr>
+                <tr><td>8</td><td><b>509</b> <span class="ui-sub">อรทัย จันทร์เพ็ญ</span></td><td class="num">20</td><td class="num"><span class="ars-delta down">21 · −1</span></td><td class="num">360.00</td></tr>
+                <tr><td>9</td><td><b>301</b> <span class="ui-sub">สุรชัย พรหมมา</span></td><td class="num">18</td><td class="num"><span class="ars-delta up">15 · +3</span></td><td class="num">324.00</td></tr>
+                <tr><td>10</td><td><b>410</b> <span class="ui-sub">สมชาย เกษมสุข</span></td><td class="num">15</td><td class="num"><span class="ars-delta up">12 · +3</span></td><td class="num">270.00</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><span class="card-title">⚡ ห้องที่ใช้ไฟสูงสุด</span><span class="badge elec">รวม 4,872 หน่วย</span></div>
+          <div class="table-scroll">
+            <table class="zebra compact">
+              <thead><tr><th style="width:34px">#</th><th>ห้อง</th><th class="num">หน่วย</th><th class="num">งวดก่อน</th><th class="num">ค่าไฟ</th></tr></thead>
+              <tbody>
+                <tr class="is-selected"><td>1</td><td><b>312</b> <span class="ui-sub">วิชัย มั่นคง</span> <span class="badge warn">ใช้สูงผิดปกติ</span></td><td class="num">240</td><td class="num ars-mk"><span class="ann" style="top:2px;left:-10px">3</span><span class="ars-delta up">68 · +172</span></td><td class="num">1,920.00</td></tr>
+                <tr><td>2</td><td><b>511</b> <span class="ui-sub">ปรีชา วงศ์อารีย์</span></td><td class="num">186</td><td class="num"><span class="ars-delta up">164 · +22</span></td><td class="num">1,488.00</td></tr>
+                <tr><td>3</td><td><b>108</b> <span class="ui-sub">นภัสสร ทองใบ</span></td><td class="num">158</td><td class="num"><span class="ars-delta up">141 · +17</span></td><td class="num">1,264.00</td></tr>
+                <tr><td>4</td><td><b>412</b> <span class="ui-sub">สมหญิง ปิ่นทอง</span></td><td class="num">152</td><td class="num"><span class="ars-delta up">149 · +3</span></td><td class="num">1,216.00</td></tr>
+                <tr><td>5</td><td><b>214</b> <span class="ui-sub">เกศรา พันธุ์ดี</span></td><td class="num">144</td><td class="num"><span class="ars-delta up">138 · +6</span></td><td class="num">1,152.00</td></tr>
+                <tr><td>6</td><td><b>106</b> <span class="ui-sub">ชัยวัฒน์ ศรีนวล</span></td><td class="num">138</td><td class="num"><span class="ars-delta down">145 · −7</span></td><td class="num">1,104.00</td></tr>
+                <tr><td>7</td><td><b>403</b> <span class="ui-sub">มานพ ธรรมรักษ์</span></td><td class="num">131</td><td class="num"><span class="ars-delta up">118 · +13</span></td><td class="num">1,048.00</td></tr>
+                <tr><td>8</td><td><b>509</b> <span class="ui-sub">อรทัย จันทร์เพ็ญ</span></td><td class="num">127</td><td class="num"><span class="ars-delta down">130 · −3</span></td><td class="num">1,016.00</td></tr>
+                <tr><td>9</td><td><b>301</b> <span class="ui-sub">สุรชัย พรหมมา</span></td><td class="num">119</td><td class="num"><span class="ars-delta up">111 · +8</span></td><td class="num">952.00</td></tr>
+                <tr><td>10</td><td><b>208</b> <span class="ui-sub">วรรณา สินทรัพย์</span></td><td class="num">116</td><td class="num"><span class="ars-delta up">109 · +7</span></td><td class="num">928.00</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="notice ars-mk"><span class="ann" style="top:-9px;left:-9px">4</span><b>ทำไมไม่มีอันดับตามยอดเงิน</b>อัตราเดียวกันทุกห้องและทุกห้อง 30 ตร.ม. เท่ากัน อันดับตามหน่วยกับอันดับตามยอดเงินจึงเป็นอันดับเดียวกัน · ค่าส่วนกลางไม่เข้ารายงานนี้เพราะไม่ได้ขึ้นกับการใช้งาน</div>
+
+    </div>
+  </div>
+</div>
+</div>
+</div>
+
+<ol class="annotations">
+  <li><span class="ann">1</span><b>Single-period picker, not the range.</b> D-42 defines this report as top 10 for the selected period; the arrows step one month and reload. The period is in the query string so the CSV link and a bookmark carry it.</li>
+  <li><span class="ann">2</span><b>งวดก่อน is each room's own previous period, not the building average.</b> That is the comparison that answers the only question this report is opened to answer — “is 38 units normal for <i>this</i> room?”. A room with no previous reading (baseline month, D-06) renders an em dash and no delta, never a fake +0.</li>
+  <li><span class="ann">3</span><b>The abnormal-usage flag comes from the reading screen, not from this report.</b> Room 312 at 240 units against 68 crossed D-13's 3× threshold with its ≥ 10-unit floor when the reading was saved; this report renders the same badge so the two screens cannot disagree. The flag is advisory — the bill was still generated and approved at the recorded units.</li>
+  <li><span class="ann">4</span><b>Deliberate omissions, stated on the page.</b> No baht ranking (identical rates and identical 30&nbsp;ตร.ม. areas make it the same ranking) and no common-fee column (it is area × rate and moves only when a room's area is edited, which D-38 audits separately). Saying so on screen prevents the “can you add…” request that would grow a fifth report D-42 does not allow.</li>
+</ol>
+
+<h4>Tab 4 — ประวัติรายห้อง 12 เดือน (<code>/reports/room-history</code>)</h4>
+
+<div class="device desktop">
+<div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/reports/room-history?room=205</span></div>
+<div class="screen">
+<div class="app">
+  <nav class="sidebar">
+    <div class="brand"><b>ศุภาลัย เรสซิเดนซ์</b><span>Juristic Platform</span></div>
+    <a class="nav-item">📊 ภาพรวม</a>
+    <a class="nav-item">📝 จดมิเตอร์</a>
+    <a class="nav-item">🧾 บิลประจำเดือน <span class="count">12</span></a>
+    <a class="nav-item">💵 รับชำระเงิน</a>
+    <a class="nav-item">🚪 ห้องพัก</a>
+    <a class="nav-item">👤 ผู้เช่า</a>
+    <a class="nav-item">📢 ประกาศ</a>
+    <a class="nav-item active">📈 รายงาน</a>
+    <div class="nav-section">ตั้งค่าระบบ</div>
+    <a class="nav-item">⚙️ ตั้งค่า</a>
+    <a class="nav-item">👥 ผู้ใช้งานระบบ</a>
+    <div class="user">นิติบุคคล · admin · ออกจากระบบ</div>
+  </nav>
+  <div class="main">
+    <div class="topbar">
+      <span class="title">รายงาน</span>
+      <span class="actions"><a class="btn secondary sm">⬇ ส่งออก CSV</a><button class="btn sm">พิมพ์</button></span>
+    </div>
+    <div class="page">
+
+      <div class="tabs">
+        <a class="tab-link">สรุปรายเดือน</a>
+        <a class="tab-link">ค้างชำระ</a>
+        <a class="tab-link">ห้องที่ใช้สูงสุด</a>
+        <a class="tab-link active">ประวัติรายห้อง</a>
+      </div>
+
+      <div class="toolbar ars-mk">
+        <span class="ann" style="top:-12px;left:-12px">1</span>
+        <label class="field inline" style="margin:0"><span class="label" style="margin:0">ห้อง</span>
+          <span class="select" style="width:280px;min-height:34px;padding:6px 12px;font-size:13px">205 · อารยา ศรีสุวรรณ</span></label>
+        <span class="badge occupied">มีผู้เช่า</span>
+        <span class="ui-sub">30.00 ตร.ม. · ชั้น 2 · เข้าอยู่ 1 มี.ค. 2025</span>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">ห้อง 205 · 12 งวดล่าสุด</span><span class="ui-sub">ตุลาคม 2025 – กันยายน 2026</span></div>
+        <div class="table-scroll">
+          <table class="zebra compact sticky">
+            <thead><tr>
+              <th>งวด</th>
+              <th class="num ars-mk"><span class="ann" style="top:2px;left:2px">2</span>💧 หน่วย</th><th class="num">ค่าน้ำ</th>
+              <th class="num">⚡ หน่วย</th><th class="num">ค่าไฟ</th>
+              <th class="num">🏢 ค่าส่วนกลาง</th><th class="num">รวม</th>
+              <th>สถานะ</th><th>วันที่ชำระ</th>
+              <th class="ars-mk"><span class="ann" style="top:2px;left:2px">3</span>เลขที่ใบเสร็จ</th>
+            </tr></thead>
+            <tbody>
+              <tr class="is-selected"><td><b>กันยายน 2026</b></td><td class="num">10</td><td class="num">180.00</td><td class="num">70</td><td class="num">560.00</td><td class="num">1,050.00</td><td class="num"><b>1,790.00</b></td><td><span class="badge paid" data-status="Paid">ชำระแล้ว</span></td><td>3 ก.ย. 2026</td><td>REC-202609-000852</td></tr>
+              <tr><td>สิงหาคม 2026</td><td class="num">11</td><td class="num">198.00</td><td class="num">74</td><td class="num">592.00</td><td class="num">1,050.00</td><td class="num">1,840.00</td><td><span class="badge paid" data-status="Paid">ชำระแล้ว</span></td><td>4 ส.ค. 2026</td><td>REC-202608-000795</td></tr>
+              <tr><td>กรกฎาคม 2026</td><td class="num">12</td><td class="num">216.00</td><td class="num">78</td><td class="num">624.00</td><td class="num">1,050.00</td><td class="num">1,890.00</td><td><span class="badge paid" data-status="Paid">ชำระแล้ว</span></td><td>3 ก.ค. 2026</td><td>REC-202607-000731</td></tr>
+              <tr><td>มิถุนายน 2026</td><td class="num">10</td><td class="num">180.00</td><td class="num">72</td><td class="num">576.00</td><td class="num">1,050.00</td><td class="num">1,806.00</td><td><span class="badge paid" data-status="Paid">ชำระแล้ว</span></td><td>5 มิ.ย. 2026</td><td>REC-202606-000668</td></tr>
+              <tr><td>พฤษภาคม 2026</td><td class="num">13</td><td class="num">234.00</td><td class="num">83</td><td class="num">664.00</td><td class="num">1,050.00</td><td class="num">1,948.00</td><td><span class="badge paid" data-status="Paid">ชำระแล้ว</span></td><td>2 พ.ค. 2026</td><td>REC-202605-000604</td></tr>
+              <tr><td>เมษายน 2026</td><td class="num">14</td><td class="num">252.00</td><td class="num">88</td><td class="num">704.00</td><td class="num">1,050.00</td><td class="num">2,006.00</td><td><span class="badge paid" data-status="Paid">ชำระแล้ว</span></td><td>3 เม.ย. 2026</td><td>REC-202604-000541</td></tr>
+              <tr><td>มีนาคม 2026</td><td class="num">12</td><td class="num">216.00</td><td class="num">80</td><td class="num">640.00</td><td class="num">1,050.00</td><td class="num">1,906.00</td><td><span class="badge paid" data-status="Paid">ชำระแล้ว</span></td><td>4 มี.ค. 2026</td><td>REC-202603-000477</td></tr>
+              <tr><td>กุมภาพันธ์ 2026</td><td class="num">9</td><td class="num">162.00</td><td class="num">68</td><td class="num">544.00</td><td class="num">1,050.00</td><td class="num">1,756.00</td><td><span class="badge paid" data-status="Paid">ชำระแล้ว</span></td><td>3 ก.พ. 2026</td><td>REC-202602-000414</td></tr>
+              <tr><td>มกราคม 2026</td><td class="num">8</td><td class="num">144.00</td><td class="num">61</td><td class="num">488.00</td><td class="num">1,050.00</td><td class="num">1,682.00</td><td><span class="badge paid" data-status="Paid">ชำระแล้ว</span></td><td>5 ม.ค. 2026</td><td>REC-202601-000350</td></tr>
+              <tr><td>ธันวาคม 2025</td><td class="num">9</td><td class="num">162.00</td><td class="num">59</td><td class="num">472.00</td><td class="num">1,050.00</td><td class="num">1,684.00</td><td><span class="badge paid" data-status="Paid">ชำระแล้ว</span></td><td>4 ธ.ค. 2025</td><td>REC-202512-000287</td></tr>
+              <tr><td>พฤศจิกายน 2025</td><td class="num">10</td><td class="num">180.00</td><td class="num">64</td><td class="num">512.00</td><td class="num">1,050.00</td><td class="num">1,742.00</td><td><span class="badge paid" data-status="Paid">ชำระแล้ว</span></td><td>3 พ.ย. 2025</td><td>REC-202511-000223</td></tr>
+              <tr><td>ตุลาคม 2025</td><td class="num">11</td><td class="num">198.00</td><td class="num">66</td><td class="num">528.00</td><td class="num">1,050.00</td><td class="num">1,776.00</td><td><span class="badge paid" data-status="Paid">ชำระแล้ว</span></td><td>5 ต.ค. 2025</td><td>REC-202510-000160</td></tr>
+              <tr style="font-weight:600"><td>รวม 12 งวด</td><td class="num">129</td><td class="num">2,322.00</td><td class="num">863</td><td class="num">6,904.00</td><td class="num">12,600.00</td><td class="num">21,826.00</td><td colspan="3"></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="ui-sub ars-mk" style="margin-top:10px"><span class="ann" style="top:-4px;left:-14px">4</span>เฉลี่ยต่อเดือน · น้ำ 10.8 หน่วย · ไฟ 71.9 หน่วย · ยอดรวม 1,818.83 บาท</p>
+      </div>
+
+    </div>
+  </div>
+</div>
+</div>
+</div>
+
+<ol class="annotations">
+  <li><span class="ann">1</span><b>Room picker, one room at a time.</b> Searchable select over all 80 rooms showing code and current tenant. Bill Detail and the Rooms page both deep-link here with <code>?room=</code>, because this is the screen the office opens when a tenant disputes a reading — the fastest path to it must not be a menu hunt.</li>
+  <li><span class="ann">2</span><b>Units and money side by side, twelve rows, no chart.</b> A dispute is settled by reading a number aloud, not by pointing at a line. The 12-period window is fixed by D-42; the month-range filter does not apply to this tab.</li>
+  <li><span class="ann">3</span><b>Receipt numbers are shown because the tenant is holding one.</b> Monotonic, never gapless (D-27) — the jumps between 000160 and 000852 are other rooms' receipts, not lost documents, and no copy on this page may claim the sequence is continuous. A voided receipt would render with a strikethrough and its replacement number beside it.</li>
+  <li><span class="ann">4</span><b>Averages, not projections.</b> Twelve rows of arithmetic and nothing more — no trend line, no forecast, no anomaly score. Anything cleverer here would be the AI/ML that PRD §24 puts out of scope. Note the totals row reconciles with the twelve row totals exactly, because each row's total is the stored bill total and the column is a plain SUM.</li>
+</ol>
+
+<h4>Alternate state — Staff opening a report (D-40)</h4>
+
+<div class="device desktop">
+<div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/reports/monthly</span></div>
+<div class="screen">
+<div class="app">
+  <div class="main">
+    <div class="topbar"><span class="title">Juristic Platform</span><span class="actions"><span class="ui-sub">เจ้าหน้าที่ · staff</span><button class="btn sm">ออกจากระบบ</button></span></div>
+    <div class="page">
+      <div class="ars-err ars-mk">
+        <span class="ann" style="top:12px;left:12px">1</span>
+        <div class="ico">🔒</div>
+        <h2>ไม่มีสิทธิ์เข้าถึงหน้านี้</h2>
+        <p class="ui-muted" style="max-width:460px">บัญชีของคุณเป็นเจ้าหน้าที่ กรุณาติดต่อนิติบุคคล</p>
+        <a class="btn primary">กลับไปหน้าจดมิเตอร์</a>
+        <p class="ui-sub" style="margin-top:8px">รหัสข้อผิดพลาด: FORBIDDEN_ROLE</p>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+
+<ol class="annotations">
+  <li><span class="ann">1</span><b>One 403 page, four routes, one sentence.</b> Staff hitting <code>/announcements</code>, <code>/reports/*</code>, <code>/settings</code> or <code>/users</code> lands here — never a silent redirect, so every row of the D-36 permission matrix is testable by URL. The sidebar is absent because a Staff session never renders Admin navigation, and the JSON equivalent is <code>403 { "error": { "code": "FORBIDDEN_ROLE" } }</code>. Critically, no amount appears anywhere in a Staff response body: money is absent from the payload, not merely hidden by CSS.</li>
+</ol>
+
+<h4>Reports — states</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>State</th><th>Tab</th><th>What renders</th><th>Thai copy</th></tr></thead>
+<tbody>
+<tr><td><b>Empty</b></td><td>สรุปรายเดือน · ห้องที่ใช้สูงสุด</td><td><code>.empty-state</code> in place of chart and table; filters stay usable</td><td>ยังไม่มีข้อมูลในช่วงเวลานี้</td></tr>
+<tr><td><b>Empty</b></td><td>ค้างชำระ</td><td>Four zero tiles plus the celebratory empty state — an empty arrears report is the goal, not a failure</td><td>ไม่มีห้องค้างชำระ 🎉</td></tr>
+<tr><td><b>Empty</b></td><td>ประวัติรายห้อง</td><td>Room selected but never billed (a new room, D-47)</td><td>ห้องนี้ยังไม่มีบิลในระบบ</td></tr>
+<tr><td><b>Empty</b></td><td>ประวัติรายห้อง</td><td>No room chosen yet — the prompt state, with the picker focused</td><td>เลือกห้องเพื่อดูประวัติ 12 เดือน</td></tr>
+<tr><td><b>Loading</b></td><td>all</td><td>Filter bar renders immediately; skeleton rows for the table and a grey block for the chart</td><td>—</td></tr>
+<tr><td><b>Validation error</b></td><td>สรุปรายเดือน</td><td><code>.field.invalid</code> on the offending select; the previous result stays on screen</td><td>เดือนเริ่มต้นต้องไม่หลังเดือนสิ้นสุด</td></tr>
+<tr><td><b>Validation error</b></td><td>สรุปรายเดือน</td><td>Range longer than 12 periods; the filter is not applied</td><td>เลือกช่วงได้สูงสุด 12 งวด</td></tr>
+<tr><td><b>Error (query failed)</b></td><td>all</td><td><code>.notice.bad</code> above the card, filters preserved, ลองอีกครั้ง offered (D-40)</td><td>โหลดรายงานไม่สำเร็จ กรุณาลองอีกครั้ง</td></tr>
+<tr><td><b>Error (export failed)</b></td><td>all</td><td>Toast; the on-screen report is untouched because the export is a separate GET</td><td>ส่งออกไฟล์ไม่สำเร็จ กรุณาลองอีกครั้ง</td></tr>
+<tr><td><b>Success</b></td><td>all</td><td>No toast for a read — the rendered table <i>is</i> the confirmation. Export downloads silently.</td><td>—</td></tr>
+<tr><td><b>Permission denied</b></td><td>all</td><td>Thai 403 page, frame above; API returns 403 <code>FORBIDDEN_ROLE</code></td><td>ไม่มีสิทธิ์เข้าถึงหน้านี้ · บัญชีของคุณเป็นเจ้าหน้าที่ กรุณาติดต่อนิติบุคคล</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>Reports — exact Thai copy</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Element</th><th>Thai copy</th><th>Rule</th></tr></thead>
+<tbody>
+<tr><td>Page title / nav</td><td>รายงาน</td><td>D-02 mapping</td></tr>
+<tr><td>Tabs</td><td>สรุปรายเดือน · ค้างชำระ · ห้องที่ใช้สูงสุด · ประวัติรายห้อง</td><td>The four reports of D-42, in this order</td></tr>
+<tr><td>Full report titles</td><td>สรุปการเรียกเก็บและรับชำระรายเดือน · รายการค้างชำระ · ห้องที่ใช้น้ำ/ไฟสูงสุด · ประวัติรายห้อง 12 เดือน</td><td>D-42 verbatim; the tab labels are their short forms</td></tr>
+<tr><td>Filter labels</td><td>ตั้งแต่งวด · ถึงงวด · ห้อง</td><td>Periods read กันยายน 2026 (D-03)</td></tr>
+<tr><td>Buttons</td><td>ใช้ตัวกรอง · ⬇ ส่งออก CSV · ดูบิล · พิมพ์</td><td>Export is a link, not a form post</td></tr>
+<tr><td>Column headers (monthly)</td><td>งวด · 💧 ค่าน้ำ · ⚡ ค่าไฟ · 🏢 ค่าส่วนกลาง · เรียกเก็บ · รับชำระ · ค้างชำระ · จำนวนบิล</td><td>—</td></tr>
+<tr><td>Column headers (arrears)</td><td>ห้อง · ผู้เช่า · โทรศัพท์ · งวด · ยอด · ครบกำหนด · เลยกำหนด · สถานะ</td><td>—</td></tr>
+<tr><td>Ageing buckets</td><td>1–7 วัน · 8–30 วัน · 31–60 วัน · 61+ วัน</td><td>D-42, non-overlapping</td></tr>
+<tr><td>Totals rows</td><td>รวม 6 งวด · รวม 12 รายการ · รวม 12 งวด</td><td>Always the last row, always bold</td></tr>
+<tr><td>Scope banner (arrears)</td><td>ทุกงวด ไม่ใช่เฉพาะรอบนี้ — รายงานนี้ไล่บิลที่ยังไม่ชำระทั้งหมดย้อนหลังทุกงวด</td><td>D-42 scope, stated because it differs from every other tab</td></tr>
+<tr><td>Validation — reversed range</td><td>เดือนเริ่มต้นต้องไม่หลังเดือนสิ้นสุด</td><td>zod, 422</td></tr>
+<tr><td>Validation — range too long</td><td>เลือกช่วงได้สูงสุด 12 งวด</td><td>zod, 422</td></tr>
+<tr><td>Validation — no room chosen</td><td>กรุณาเลือกห้อง</td><td>zod, 422</td></tr>
+<tr><td>Confirmation dialogs</td><td><b>none</b></td><td>D-39 lists six dialogs and none of them is a read or an export. Reports never confirms.</td></tr>
+<tr><td>Empty states</td><td>ยังไม่มีข้อมูลในช่วงเวลานี้ · ไม่มีห้องค้างชำระ 🎉</td><td>D-40 list of eight</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Settings — ตั้งค่า (<code>/settings</code>)</h3>
+
+<div class="screen-meta">
+  <span><b>Role:</b> Admin only (D-36 — Staff never see a rate)</span>
+  <span><b>Routes:</b> <code>GET/POST /settings</code> · manual job <code>POST /internal/jobs/daily</code> with <code>job_name='daily_manual'</code> (D-32)</span>
+  <span><b>Entry points:</b> sidebar ⚙️ ตั้งค่า · Bill Detail links here from the rate line of a bill</span>
+  <span><b>Primary action:</b> บันทึกอัตราใหม่ — the only control on the site that changes what a future bill costs</span>
+</div>
+
+<p>Four independent forms on one page, each saving on its own so a typo in the phone number can never roll back a rate change. The rate form is the dangerous one and is treated as such: it inserts, never updates, and the page shows the resulting history immediately underneath so the Admin can see that yesterday's bills still carry yesterday's price.</p>
+
+<div class="device desktop">
+<div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/settings</span></div>
+<div class="screen">
+<div class="app">
+  <nav class="sidebar">
+    <div class="brand"><b>ศุภาลัย เรสซิเดนซ์</b><span>Juristic Platform</span></div>
+    <a class="nav-item">📊 ภาพรวม</a>
+    <a class="nav-item">📝 จดมิเตอร์</a>
+    <a class="nav-item">🧾 บิลประจำเดือน <span class="count">12</span></a>
+    <a class="nav-item">💵 รับชำระเงิน</a>
+    <a class="nav-item">🚪 ห้องพัก</a>
+    <a class="nav-item">👤 ผู้เช่า</a>
+    <a class="nav-item">📢 ประกาศ</a>
+    <a class="nav-item">📈 รายงาน</a>
+    <div class="nav-section">ตั้งค่าระบบ</div>
+    <a class="nav-item active">⚙️ ตั้งค่า</a>
+    <a class="nav-item">👥 ผู้ใช้งานระบบ</a>
+    <div class="user">นิติบุคคล · admin · ออกจากระบบ</div>
+  </nav>
+  <div class="main">
+    <div class="topbar"><span class="title">ตั้งค่า</span><span class="actions"><span class="ui-sub">แก้ไขได้เฉพาะนิติบุคคล</span></span></div>
+    <div class="page">
+      <div class="ars-2col">
+
+        <div>
+          <div class="card">
+            <div class="card-head"><span class="card-title">อัตราค่าบริการ</span><span class="badge info">บันทึกแล้วแก้ไขไม่ได้ · เพิ่มอัตราใหม่แทน</span></div>
+            <div class="field-row">
+              <label class="field"><span class="label">💧 ค่าน้ำ (บาท/หน่วย) <span class="req">*</span></span>
+                <span class="input ars-mk" style="display:flex;align-items:center"><span class="ann" style="top:-9px;left:-9px">1</span>18.00</span>
+                <span class="hint">ปัจจุบัน 18.00</span></label>
+              <label class="field"><span class="label">⚡ ค่าไฟ (บาท/หน่วย) <span class="req">*</span></span>
+                <span class="input" style="display:flex;align-items:center">8.00</span>
+                <span class="hint">ปัจจุบัน 8.00</span></label>
+              <label class="field"><span class="label">🏢 ค่าส่วนกลาง (บาท/ตร.ม.) <span class="req">*</span></span>
+                <span class="input" style="display:flex;align-items:center">35.00</span>
+                <span class="hint">ปัจจุบัน 35.00</span></label>
+            </div>
+            <label class="field" style="max-width:260px"><span class="label">มีผลตั้งแต่วันที่ <span class="req">*</span></span>
+              <span class="input ars-mk" style="display:flex;align-items:center"><span class="ann" style="top:-9px;left:-9px">2</span>08/09/2026</span>
+              <span class="hint">ตั้งเป็นวันในอนาคตได้ · ระบบเลือกอัตราตาม<b>วันแรกของงวด</b> ไม่ใช่วันที่กดปุ่ม</span></label>
+            <div class="notice ars-mk"><span class="ann" style="top:-9px;left:-9px">3</span><b>บิลที่อนุมัติแล้วจะไม่เปลี่ยน</b>ทุกบิลเก็บอัตราที่ใช้จริงไว้ในตัวเอง ใบเสร็จที่พิมพ์ซ้ำจึงได้ตัวเลขเดิมเสมอ</div>
+            <div class="card-foot"><button class="btn">ยกเลิก</button><button class="btn primary">บันทึกอัตราใหม่</button></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><span class="card-title">ประวัติอัตรา</span><span class="ui-sub">เรียงตามวันที่มีผล ล่าสุดก่อน</span></div>
+            <div class="table-scroll">
+              <table class="zebra compact">
+                <thead><tr><th>ประเภท</th><th class="num">อัตรา</th>
+                  <th class="ars-mk"><span class="ann" style="top:2px;left:2px">4</span>มีผลตั้งแต่</th>
+                  <th>ผู้บันทึก</th><th>สถานะ</th></tr></thead>
+                <tbody>
+                  <tr><td><span class="badge elec">⚡ ค่าไฟ</span></td><td class="num">8.50</td><td>1 ต.ค. 2026</td><td>นิติบุคคล</td><td><span class="badge info">มีผลในอนาคต</span></td></tr>
+                  <tr><td><span class="badge water">💧 ค่าน้ำ</span></td><td class="num">18.00</td><td>1 ต.ค. 2025</td><td>นิติบุคคล</td><td><span class="badge ok">ใช้อยู่</span></td></tr>
+                  <tr><td><span class="badge elec">⚡ ค่าไฟ</span></td><td class="num">8.00</td><td>1 ต.ค. 2025</td><td>นิติบุคคล</td><td><span class="badge ok">ใช้อยู่</span></td></tr>
+                  <tr><td><span class="badge fee">🏢 ค่าส่วนกลาง</span></td><td class="num">35.00</td><td>1 ต.ค. 2025</td><td>นิติบุคคล</td><td><span class="badge ok">ใช้อยู่</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><span class="card-title">การเรียกเก็บและการแจ้งเตือน</span></div>
+            <label class="field" style="max-width:220px"><span class="label">วันครบกำหนดชำระ <span class="req">*</span></span>
+              <span class="input ars-mk" style="display:flex;align-items:center"><span class="ann" style="top:-9px;left:-9px">5</span>5</span>
+              <span class="hint">วันที่ 1–28 ของงวดนั้น · เมื่ออนุมัติ ระบบใช้วันที่ช้ากว่าระหว่าง “วันครบกำหนดของงวด” กับ “วันอนุมัติ + 3 วัน”</span></label>
+            <div class="divider"></div>
+            <h4 style="margin-bottom:8px">ตารางแจ้งเตือนอัตโนมัติ <span class="badge neutral">แก้ไขไม่ได้</span></h4>
+            <dl class="ars-sched ars-mk">
+              <span class="ann" style="top:-9px;left:-9px">6</span>
+              <dt>ก่อนครบกำหนด</dt><dd>2 วันก่อนวันครบกำหนด</dd>
+              <dt>เลยกำหนด</dt><dd>วันที่ 1, 8 และ 15 หลังครบกำหนด</dd>
+              <dt>เวลาส่ง</dt><dd>09:00 น. ทุกวัน (เวลาไทย)</dd>
+              <dt>สูงสุดต่อบิล</dt><dd>4 ข้อความ · ไม่ส่งให้บิลที่ชำระแล้ว</dd>
+            </dl>
+            <div class="divider"></div>
+            <div class="progress-label ars-mk"><span class="ann" style="top:-9px;left:-9px">7</span><span>ส่งข้อความเดือนนี้ (LINE ฟรี 500 ข้อความ/เดือน)</span><span>195/500</span></div>
+            <div class="progress"><div class="bar" style="width:39%"></div></div>
+            <div class="card-foot"><button class="btn secondary">รันงานแจ้งเตือนตอนนี้</button><button class="btn primary">บันทึก</button></div>
+          </div>
+        </div>
+
+        <div>
+          <div class="card">
+            <div class="card-head"><span class="card-title">ข้อมูลอพาร์ตเมนต์</span></div>
+            <label class="field"><span class="label">ชื่ออพาร์ตเมนต์ <span class="req">*</span></span>
+              <span class="input ars-mk" style="display:flex;align-items:center"><span class="ann" style="top:-9px;left:-9px">8</span>ศุภาลัย เรสซิเดนซ์</span></label>
+            <label class="field"><span class="label">ที่อยู่ <span class="req">*</span></span>
+              <span class="textarea" style="display:block;height:64px">88/1 ถนนพหลโยธิน แขวงจตุจักร
+เขตจตุจักร กรุงเทพฯ 10900</span></label>
+            <label class="field"><span class="label">เลขประจำตัวผู้เสียภาษี</span>
+              <span class="input" style="display:flex;align-items:center">0105558012345</span>
+              <span class="hint">ไม่บังคับ · เว้นว่างไว้ ใบเสร็จจะไม่พิมพ์บรรทัดนี้</span></label>
+            <label class="field"><span class="label">โทรศัพท์ <span class="req">*</span></span>
+              <span class="input" style="display:flex;align-items:center">02-123-4567</span></label>
+            <label class="field"><span class="label">เวลาทำการ <span class="req">*</span></span>
+              <span class="input" style="display:flex;align-items:center">จันทร์–ศุกร์ 09:00–17:00 น.</span>
+              <span class="hint">ข้อความนี้ต่อท้ายบิลที่ส่งทาง LINE ทุกใบ</span></label>
+            <div class="card-foot"><button class="btn primary">บันทึก</button></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><span class="card-title">ตัวอย่างหัวใบเสร็จ</span></div>
+            <div class="ars-letterhead ars-mk">
+              <span class="ann" style="top:-9px;left:-9px">9</span>
+              <b>ศุภาลัย เรสซิเดนซ์</b><br>
+              <span class="ui-sub">88/1 ถนนพหลโยธิน แขวงจตุจักร เขตจตุจักร กรุงเทพฯ 10900</span><br>
+              <span class="ui-sub">โทร. 02-123-4567 · เลขประจำตัวผู้เสียภาษี 0105558012345</span>
+            </div>
+            <p class="ui-sub" style="margin-top:10px">ใบเสร็จพิมพ์เฉพาะชื่อและที่อยู่ของนิติบุคคล ไม่มีชื่อซอฟต์แวร์</p>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><span class="card-title">โหมดทดสอบ LINE</span><span class="badge warn">เปิดอยู่</span></div>
+            <label class="check ars-mk"><span class="ann" style="top:-2px;left:-14px">10</span><input type="checkbox" checked> ส่งข้อความทั้งหมดไปยังบัญชีทดสอบเท่านั้น</label>
+            <label class="field"><span class="label">LINE User ID สำหรับทดสอบ</span>
+              <span class="input" style="display:flex;align-items:center;font-family:var(--ui-mono);font-size:13px">Ud4f8a91c02e7b6…</span></label>
+            <div class="notice warn"><b>ผู้เช่าจะไม่ได้รับข้อความจริง</b>ปิดโหมดนี้เฉพาะตอนสาธิตหรือใช้งานจริงเท่านั้น · ระบบยังบันทึกผู้รับที่ตั้งใจส่งไว้ครบทุกราย</div>
+            <div class="card-foot"><button class="btn primary">บันทึก</button></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+
+<ol class="annotations">
+  <li><span class="ann">1</span><b>Three rates, one form, insert-only (D-17).</b> Saving writes new <code>rates</code> rows; no existing row is ever UPDATEd, which is what makes the history below complete and a reprinted receipt truthful. The hint under each field shows the rate in force today, so the Admin can see what is being changed <i>from</i>. Only rates that actually differ produce a row — resaving 18.00 as 18.00 is a no-op, not a duplicate.</li>
+  <li><span class="ann">2</span><b>มีผลตั้งแต่วันที่ — the field that makes this safe.</b> Defaults to today, accepts a future date, and is the key of <code>UNIQUE(utility_type, effective_from)</code>, so a same-day tie is impossible at the database level. Resolution is keyed to the <i>first day of the bill's period month</i>, never to the moment the button was pressed — which is the one line that stops a single September carrying two electricity rates because three rooms were read late.</li>
+  <li><span class="ann">3</span><b>The snapshot promise, stated where the risk is.</b> Every bill item carries its own <code>unit_price</code>, so approved bills, the monthly report and every reprint are immune to this form. This notice is permanent, not a flash message.</li>
+  <li><span class="ann">4</span><b>History with a future row.</b> The 8.50 electricity rate effective 1 ต.ค. 2026 is real, saved, and not yet in force — <span class="badge info">มีผลในอนาคต</span> distinguishes it from <span class="badge ok">ใช้อยู่</span>. The October billing run will pick it up automatically because its <code>effective_from</code> is ≤ 1 ต.ค. 2026. Rows are never editable or deletable from this table; correcting a mistake means inserting another row.</li>
+  <li><span class="ann">5</span><b>วันครบกำหนดชำระ, 1–28 (D-20).</b> A day of month, not a date, enforced by <code>CHECK (due_day BETWEEN 1 AND 28)</code> so February never needs a clamp in practice (the clamp is written anyway). The hint spells out the approval-time rule, because that is where an office manager's mental model breaks: a bill approved on 4 ก.ย. is due 7 ก.ย., not 5 ก.ย. There is no per-bill due-date override anywhere in the product.</li>
+  <li><span class="ann">6</span><b>The reminder schedule is displayed, not configured (A-D3, D-33).</b> Four fixed facts: −2 days, then +1, +8, +15, all at 09:00 Asia/Bangkok, capped at four messages per bill and never sent to a Paid bill. Showing them here answers the office's question without creating a setting that no test asserts and no code reads.</li>
+  <li><span class="ann">7</span><b>Quota visibility, not quota machinery (D-34).</b> The count is <code>COUNT(*)</code> over <code>notifications</code> where <code>status='sent'</code> this month — failed and <code>skipped_no_line</code> rows never inflate it. The bar turns <code>--ui-warning</code> above 450. Nothing is throttled or blocked: exhausting the free allowance silently stops delivery, and that is limitation 12 of D-05. Beside it, รันงานแจ้งเตือนตอนนี้ runs the identical daily-job code with <code>job_name='daily_manual'</code>, skipping the <code>job_runs</code> guard so a 14:00 demo still works; safety comes from the notification dedupe key.</li>
+  <li><span class="ann">8</span><b>Apartment profile — one property, one building (D-04).</b> These five fields are the only place the organisation names itself. The name also renders in the sidebar brand and as the LINE signature <i>— นิติบุคคล ศุภาลัย เรสซิเดนซ์</i>; the software name never appears in either place.</li>
+  <li><span class="ann">9</span><b>Live letterhead preview replaces the receipt-footer field (A-D4).</b> It renders the exact block the A5 receipt prints. Clearing the tax ID removes that half of the third line immediately, which is the fastest way to show that the field is optional (D-27) without a free-text footer that could smuggle a VAT line onto a non-tax receipt.</li>
+  <li><span class="ann">10</span><b>LINE test mode, default ON in every environment (D-34).</b> While it is on, every outbound message is redirected to the single whitelisted user ID while the <i>intended</i> recipient is still written to the notifications row — so delivery reports stay meaningful during development. The warn badge in the card head is deliberately loud: the demo is the only time this is turned off.</li>
+</ol>
+
+<h4>Alternate state — a rate saved while Draft bills exist (D-17)</h4>
+
+<div class="device desktop">
+<div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/settings</span></div>
+<div class="screen">
+<div class="app">
+  <nav class="sidebar">
+    <div class="brand"><b>ศุภาลัย เรสซิเดนซ์</b><span>Juristic Platform</span></div>
+    <a class="nav-item">📊 ภาพรวม</a>
+    <a class="nav-item">📝 จดมิเตอร์</a>
+    <a class="nav-item">🧾 บิลประจำเดือน <span class="count">67</span></a>
+    <a class="nav-item">💵 รับชำระเงิน</a>
+    <a class="nav-item">🚪 ห้องพัก</a>
+    <a class="nav-item">👤 ผู้เช่า</a>
+    <a class="nav-item">📢 ประกาศ</a>
+    <a class="nav-item">📈 รายงาน</a>
+    <div class="nav-section">ตั้งค่าระบบ</div>
+    <a class="nav-item active">⚙️ ตั้งค่า</a>
+    <a class="nav-item">👥 ผู้ใช้งานระบบ</a>
+    <div class="user">นิติบุคคล · admin · ออกจากระบบ</div>
+  </nav>
+  <div class="main">
+    <div class="topbar"><span class="title">ตั้งค่า</span><span class="actions"><span class="ui-sub">1 ก.ย. 2026 · ยังไม่อนุมัติบิลรอบนี้</span></span></div>
+    <div class="page">
+      <div class="notice ok ars-mk"><span class="ann" style="top:-9px;left:-9px">1</span><b>บันทึกอัตราใหม่แล้ว</b>⚡ ค่าไฟ 8.50 บาท/หน่วย มีผลตั้งแต่ 1 ก.ย. 2026</div>
+      <div class="notice warn ars-mk"><span class="ann" style="top:-9px;left:-9px">2</span><b>มีบิลฉบับร่าง 67 ใบในรอบนี้ ยังใช้อัตราเดิมอยู่</b>บิลฉบับร่างถูกสร้างก่อนบันทึกอัตราใหม่ · กดปุ่มด้านล่างเพื่อคำนวณใหม่ตามอัตราปัจจุบัน — บิลที่อนุมัติแล้วจะไม่ถูกแตะต้อง
+        <div style="margin-top:10px"><button class="btn secondary sm">คำนวณบิลฉบับร่างใหม่</button></div>
+      </div>
+
+      <div class="card" style="max-width:620px">
+        <div class="card-head"><span class="card-title">อัตราค่าบริการ</span></div>
+        <div class="field-row">
+          <label class="field"><span class="label">💧 ค่าน้ำ (บาท/หน่วย) <span class="req">*</span></span>
+            <span class="input" style="display:flex;align-items:center">18.00</span><span class="hint">ปัจจุบัน 18.00</span></label>
+          <label class="field"><span class="label">⚡ ค่าไฟ (บาท/หน่วย) <span class="req">*</span></span>
+            <span class="input" style="display:flex;align-items:center">8.50</span><span class="hint">ปัจจุบัน 8.50</span></label>
+          <label class="field"><span class="label">🏢 ค่าส่วนกลาง (บาท/ตร.ม.) <span class="req">*</span></span>
+            <span class="input" style="display:flex;align-items:center">35.00</span><span class="hint">ปัจจุบัน 35.00</span></label>
+        </div>
+        <label class="field invalid ars-mk" style="max-width:260px"><span class="ann" style="top:-9px;left:-9px">3</span><span class="label">มีผลตั้งแต่วันที่ <span class="req">*</span></span>
+          <span class="input" style="display:flex;align-items:center">01/09/2026</span>
+          <span class="error">มีอัตราค่าไฟของวันที่นี้อยู่แล้ว กรุณาเลือกวันอื่น</span></label>
+        <div class="card-foot"><button class="btn">ยกเลิก</button><button class="btn primary">บันทึกอัตราใหม่</button></div>
+      </div>
+    </div>
+    <div class="toast-stack">
+      <div class="toast ars-mk"><span class="ann" style="top:-9px;left:-9px">4</span>บันทึกข้อมูลอพาร์ตเมนต์แล้ว</div>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+
+<ol class="annotations">
+  <li><span class="ann">1</span><b>Success is an inline notice, not a dialog.</b> D-39 lists exactly six confirmation dialogs and a rate change is not one of them — it is reversible by inserting another row, and it touches no phone and no cash. Adding a seventh dialog here would be a designer overruling the decision log.</li>
+  <li><span class="ann">2</span><b>D-17's Draft warning, verbatim.</b> Shown only when Draft bills exist for a period the new rate reaches back into. คำนวณบิลฉบับร่างใหม่ recalculates <i>Draft bills only</i>; the sentence says so, because the office's real fear is that approved bills and issued receipts will move. This is the one control on the page that changes money already computed, and it is a secondary button, never the primary.</li>
+  <li><span class="ann">3</span><b><code>UNIQUE(utility_type, effective_from)</code> surfaced as a field error.</b> The database refuses the duplicate; the route turns the constraint violation into a 422 with a Thai <code>fields</code> message, and the form re-renders with every typed value preserved (D-40) — never a redirect, never a lost form.</li>
+  <li><span class="ann">4</span><b>Toast for the low-stakes save.</b> Apartment-profile saves get a toast and nothing else. It carries no undo: D-39 forbids the toast-with-undo pattern product-wide, because an undo window would force outbound LINE messages into a queue.</li>
+</ol>
+
+<h4>Users — ผู้ใช้งานระบบ (<code>/users</code>)</h4>
+
+<div class="screen-meta">
+  <span><b>Role:</b> Admin only (D-46)</span>
+  <span><b>Route:</b> <code>GET/POST /users</code></span>
+  <span><b>Entry points:</b> sidebar 👥 ผู้ใช้งานระบบ, under the ตั้งค่าระบบ group</span>
+  <span><b>Primary action:</b> เพิ่มผู้ใช้งาน · secondary ตั้งรหัสผ่านใหม่, the only password-recovery path in v1</span>
+</div>
+
+<div class="device desktop">
+<div class="chrome"><i></i><i></i><i></i><span class="url">app.juristic.local/users</span></div>
+<div class="screen">
+<div class="app">
+  <nav class="sidebar">
+    <div class="brand"><b>ศุภาลัย เรสซิเดนซ์</b><span>Juristic Platform</span></div>
+    <a class="nav-item">📊 ภาพรวม</a>
+    <a class="nav-item">📝 จดมิเตอร์</a>
+    <a class="nav-item">🧾 บิลประจำเดือน <span class="count">12</span></a>
+    <a class="nav-item">💵 รับชำระเงิน</a>
+    <a class="nav-item">🚪 ห้องพัก</a>
+    <a class="nav-item">👤 ผู้เช่า</a>
+    <a class="nav-item">📢 ประกาศ</a>
+    <a class="nav-item">📈 รายงาน</a>
+    <div class="nav-section">ตั้งค่าระบบ</div>
+    <a class="nav-item">⚙️ ตั้งค่า</a>
+    <a class="nav-item active">👥 ผู้ใช้งานระบบ</a>
+    <div class="user">นิติบุคคล · admin · ออกจากระบบ</div>
+  </nav>
+  <div class="main">
+    <div class="topbar"><span class="title">ผู้ใช้งานระบบ</span><span class="actions"><button class="btn primary sm">+ เพิ่มผู้ใช้งาน</button></span></div>
+    <div class="page">
+
+      <div class="card" style="max-width:640px">
+        <div class="card-head"><span class="card-title">เพิ่มผู้ใช้งาน</span><button class="btn ghost sm">ปิด</button></div>
+        <div class="field-row">
+          <label class="field"><span class="label">ชื่อผู้ใช้ <span class="req">*</span></span>
+            <span class="input ars-mk" style="display:flex;align-items:center"><span class="ann" style="top:-9px;left:-9px">1</span>staff2</span>
+            <span class="hint">a–z 0–9 . _ · 3–50 ตัวอักษร · เปลี่ยนภายหลังไม่ได้</span></label>
+          <label class="field"><span class="label">ชื่อที่แสดง <span class="req">*</span></span>
+            <span class="input ars-mk" style="display:flex;align-items:center"><span class="ann" style="top:-9px;left:-9px">2</span>สมศักดิ์ ช่างประจำ</span>
+            <span class="hint">ชื่อนี้พิมพ์เป็น “ผู้รับเงิน” บนใบเสร็จ</span></label>
+        </div>
+        <div class="field-row">
+          <label class="field"><span class="label">บทบาท <span class="req">*</span></span>
+            <span class="select ars-mk" style="display:flex;align-items:center" data-role="staff"><span class="ann" style="top:-9px;left:-9px">3</span>เจ้าหน้าที่</span>
+            <span class="hint">เจ้าหน้าที่เห็นเฉพาะ ภาพรวม · ห้องพัก · จดมิเตอร์ — ไม่เห็นยอดเงิน อัตรา ใบเสร็จ หรือหน้านี้</span></label>
+          <label class="field"><span class="label">รหัสผ่านเริ่มต้น <span class="req">*</span></span>
+            <span class="input" style="display:flex;align-items:center">••••••••••</span>
+            <span class="hint">อย่างน้อย 8 ตัวอักษร · แจ้งผู้ใช้ด้วยวาจา ระบบไม่ส่งอีเมล</span></label>
+        </div>
+        <div class="card-foot"><button class="btn">ยกเลิก</button><button class="btn primary">สร้างผู้ใช้งาน</button></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">ผู้ใช้งานทั้งหมด 3 บัญชี</span><span class="ui-sub">ผู้ใช้งานถูกปิดใช้งานได้ แต่ลบไม่ได้</span></div>
+        <div class="table-scroll">
+          <table class="zebra compact">
+            <thead><tr><th>ชื่อผู้ใช้</th><th>ชื่อที่แสดง</th><th>บทบาท</th><th>สถานะ</th><th>สร้างเมื่อ</th><th></th></tr></thead>
+            <tbody>
+              <tr>
+                <td><code style="font-size:12px">admin</code></td><td>นิติบุคคล</td>
+                <td><span class="badge info" data-role="admin">ผู้ดูแลระบบ</span></td>
+                <td><span class="badge ok">ใช้งานอยู่</span></td><td>1 ต.ค. 2025</td>
+                <td class="ars-mk"><span class="ann" style="top:2px;left:-10px">4</span><a class="btn ghost sm">ตั้งรหัสผ่านใหม่</a> <span class="ui-sub">— บัญชีของคุณ</span></td>
+              </tr>
+              <tr>
+                <td><code style="font-size:12px">staff</code></td><td>เจ้าหน้าที่</td>
+                <td><span class="badge neutral" data-role="staff">เจ้าหน้าที่</span></td>
+                <td><span class="badge ok">ใช้งานอยู่</span></td><td>1 ต.ค. 2025</td>
+                <td class="ars-mk"><span class="ann" style="top:2px;left:-10px">5</span>
+                  <span class="ars-inline-confirm">ปิดใช้งานบัญชีนี้? <button class="btn danger sm">ยืนยัน</button> <button class="btn ghost sm">ยกเลิก</button></span>
+                </td>
+              </tr>
+              <tr>
+                <td><code style="font-size:12px">staff2</code></td><td>สมศักดิ์ ช่างประจำ</td>
+                <td><span class="badge neutral" data-role="staff">เจ้าหน้าที่</span></td>
+                <td><span class="badge neutral ars-mk"><span class="ann" style="top:-13px;left:-13px">6</span>ปิดใช้งาน</span></td><td>3 ก.ย. 2026</td>
+                <td><a class="btn ghost sm">เปิดใช้งาน</a> <a class="btn ghost sm">ตั้งรหัสผ่านใหม่</a></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="notice ars-mk" style="margin:12px 0 0"><span class="ann" style="top:-9px;left:-9px">7</span><b>ทำไมลบบัญชีไม่ได้</b>ทุกใบเสร็จอ้างถึงผู้รับเงิน ทุกรายการจดมิเตอร์อ้างถึงผู้บันทึก และทุกอัตราอ้างถึงผู้ตั้งค่า · ปิดใช้งานแล้วเข้าระบบไม่ได้ แต่ประวัติทั้งหมดยังอ้างชื่อเดิมได้ถูกต้อง</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+</div>
+</div>
+
+<ol class="annotations">
+  <li><span class="ann">1</span><b>ชื่อผู้ใช้ — unique, immutable, no email anywhere (D-46).</b> <code>UNIQUE(username)</code> is the database's word on it; the form checks on blur and shows the duplicate error inline. There is no email column, so there is no self-service reset and no invitation flow to build.</li>
+  <li><span class="ann">2</span><b>ชื่อที่แสดง is not decoration — it prints on receipts.</b> This is the string that appears as ผู้รับเงิน on every A5 receipt this user issues (D-27), which is why the hint says so on the create form rather than in a manual nobody reads.</li>
+  <li><span class="ann">3</span><b>Two roles, no third, no per-user permissions (D-36).</b> The select carries <code>data-role="admin|staff"</code> so tests assert on the English identifier while the operator reads Thai. The hint states the Staff scope in full, because choosing the wrong role here is how a meter reader ends up seeing the building's revenue — and Staff restrictions are enforced in the API payload, not by hiding fields.</li>
+  <li><span class="ann">4</span><b>ตั้งรหัสผ่านใหม่ is the only recovery path in v1 (D-37, D-46).</b> It reopens the card above in edit mode with only the password field enabled. An Admin can reset their own password here; if the last Admin account is lost, recovery is a database operation documented in the runbook, not a screen.</li>
+  <li><span class="ann">5</span><b>Deactivation uses an inline two-step, not a seventh dialog.</b> D-39's six confirmation dialogs are the complete set and all six guard something irreversible — cash or a LINE message. Deactivating a user is reversible by the button in the row below it, so it gets the cheapest honest confirmation: the row's action area swaps to a question and a red ยืนยัน. Cancel restores the row untouched.</li>
+  <li><span class="ann">6</span><b>Inactive, never deleted.</b> <code>users.status = 'Inactive'</code> blocks login on the next attempt and kills the session on the next request; every historical attribution survives. เปิดใช้งาน restores access with the same password.</li>
+  <li><span class="ann">7</span><b>The reason is on the page.</b> Three foreign keys — <code>payments.received_by_user_id</code>, <code>meter_readings.recorded_by</code>, <code>rates.created_by</code> — make deletion a data-integrity problem, not a policy preference. Saying so once here prevents the “can we just delete the old account” request during the demo.</li>
+</ol>
+
+<h4>Settings and Users — states</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>State</th><th>Page</th><th>What renders</th><th>Thai copy</th></tr></thead>
+<tbody>
+<tr><td><b>Empty</b></td><td>ตั้งค่า</td><td>Cannot occur — <code>settings</code> has exactly one row (<code>CHECK (id = 1)</code>) and the seed inserts the three rates. A missing settings row is a 500, not an empty state.</td><td>—</td></tr>
+<tr><td><b>Empty</b></td><td>ตั้งค่า · ประวัติอัตรา</td><td>Only reachable on a database built without the seed</td><td>ยังไม่มีการตั้งอัตรา — กรุณาบันทึกอัตราแรกก่อนสร้างบิล</td></tr>
+<tr><td><b>Empty</b></td><td>ผู้ใช้งานระบบ</td><td>Cannot occur — you are logged in, so at least your own row exists</td><td>—</td></tr>
+<tr><td><b>Loading</b></td><td>both</td><td>Form skeletons for the cards; the sidebar and topbar render immediately</td><td>—</td></tr>
+<tr><td><b>Saving</b></td><td>both</td><td>Only the submitted card's primary button goes <code>.is-loading</code>; the other three forms stay usable</td><td>(label hidden by the spinner)</td></tr>
+<tr><td><b>Validation error</b></td><td>both</td><td><code>.field.invalid</code> + inline message; every typed value preserved; no redirect (D-40)</td><td>see the copy table below</td></tr>
+<tr><td><b>Conflict (409/422)</b></td><td>ตั้งค่า</td><td>Duplicate <code>(utility_type, effective_from)</code> caught by the unique key and rendered as a field error</td><td>มีอัตราค่าไฟของวันที่นี้อยู่แล้ว กรุณาเลือกวันอื่น</td></tr>
+<tr><td><b>Conflict (409/422)</b></td><td>ผู้ใช้งานระบบ</td><td>Duplicate username caught by <code>UNIQUE(username)</code></td><td>ชื่อผู้ใช้นี้มีอยู่แล้ว</td></tr>
+<tr><td><b>Failed save</b></td><td>both</td><td><code>.notice.bad</code> above the affected card, values preserved, ลองอีกครั้ง offered</td><td>บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง</td></tr>
+<tr><td><b>Success</b></td><td>ตั้งค่า · rates</td><td>Inline <code>.notice.ok</code> plus the new history row; the Draft warning appears when it applies</td><td>บันทึกอัตราใหม่แล้ว</td></tr>
+<tr><td><b>Success</b></td><td>ตั้งค่า · profile, due day, LINE</td><td>Toast, no dialog, no undo</td><td>บันทึกข้อมูลอพาร์ตเมนต์แล้ว · บันทึกการตั้งค่าแล้ว</td></tr>
+<tr><td><b>Success</b></td><td>ตั้งค่า · manual job</td><td>Inline notice reporting exactly what was sent (D-32)</td><td>ส่งแจ้งเตือนก่อนครบกำหนด 9 ราย · เลยกำหนด 7 ราย · ส่งซ้ำที่ล้มเหลว 1 ราย</td></tr>
+<tr><td><b>Success</b></td><td>ผู้ใช้งานระบบ</td><td>Row appears / updates in place with a toast</td><td>สร้างผู้ใช้งานแล้ว · ปิดใช้งานบัญชีแล้ว · ตั้งรหัสผ่านใหม่แล้ว</td></tr>
+<tr><td><b>Blocked action</b></td><td>ผู้ใช้งานระบบ</td><td>Deactivating the last Active Admin is refused server-side before the two-step even commits</td><td>ต้องมีผู้ดูแลระบบที่ใช้งานอยู่อย่างน้อย 1 บัญชี</td></tr>
+<tr><td><b>Permission denied</b></td><td>both</td><td>Thai 403 page (frame in the Reports section); the JSON error code is <code>FORBIDDEN_ROLE</code></td><td>ไม่มีสิทธิ์เข้าถึงหน้านี้ · บัญชีของคุณเป็นเจ้าหน้าที่ กรุณาติดต่อนิติบุคคล</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>Settings and Users — exact Thai copy</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Element</th><th>Thai copy</th><th>Rule</th></tr></thead>
+<tbody>
+<tr><td>Page titles / nav</td><td>ตั้งค่า · ผู้ใช้งานระบบ</td><td>D-02 mapping (Users added by D-46)</td></tr>
+<tr><td>Card titles</td><td>อัตราค่าบริการ · ประวัติอัตรา · การเรียกเก็บและการแจ้งเตือน · ข้อมูลอพาร์ตเมนต์ · ตัวอย่างหัวใบเสร็จ · โหมดทดสอบ LINE · เพิ่มผู้ใช้งาน · ผู้ใช้งานทั้งหมด</td><td>—</td></tr>
+<tr><td>Rate labels</td><td>💧 ค่าน้ำ (บาท/หน่วย) · ⚡ ค่าไฟ (บาท/หน่วย) · 🏢 ค่าส่วนกลาง (บาท/ตร.ม.) · มีผลตั้งแต่วันที่</td><td>Units written out; area is ตร.ม. (D-03)</td></tr>
+<tr><td>Rate status badges</td><td>ใช้อยู่ · มีผลในอนาคต</td><td>—</td></tr>
+<tr><td>Due-date label and hint</td><td>วันครบกำหนดชำระ — วันที่ 1–28 ของงวดนั้น · เมื่ออนุมัติ ระบบใช้วันที่ช้ากว่าระหว่าง “วันครบกำหนดของงวด” กับ “วันอนุมัติ + 3 วัน”</td><td>D-20</td></tr>
+<tr><td>Reminder schedule</td><td>ก่อนครบกำหนด 2 วันก่อนวันครบกำหนด · เลยกำหนด วันที่ 1, 8 และ 15 หลังครบกำหนด · เวลาส่ง 09:00 น. ทุกวัน · สูงสุดต่อบิล 4 ข้อความ</td><td>D-33, read-only (A-D3)</td></tr>
+<tr><td>Quota line</td><td>ส่งข้อความเดือนนี้ (LINE ฟรี 500 ข้อความ/เดือน) 195/500</td><td>D-34; warn colour above 450</td></tr>
+<tr><td>Buttons (Settings)</td><td>บันทึกอัตราใหม่ · บันทึก · ยกเลิก · คำนวณบิลฉบับร่างใหม่ · รันงานแจ้งเตือนตอนนี้</td><td>Save verbs are specific; ตกลง is never used</td></tr>
+<tr><td>Buttons (Users)</td><td>+ เพิ่มผู้ใช้งาน · สร้างผู้ใช้งาน · ตั้งรหัสผ่านใหม่ · ปิดใช้งาน · เปิดใช้งาน · ยืนยัน · ยกเลิก</td><td>—</td></tr>
+<tr><td>Role labels</td><td>ผู้ดูแลระบบ (<code>data-role="admin"</code>) · เจ้าหน้าที่ (<code>data-role="staff"</code>)</td><td>D-36; the test hook mirrors D-02's status hook</td></tr>
+<tr><td>User status labels</td><td>ใช้งานอยู่ · ปิดใช้งาน</td><td><code>users.status = Active | Inactive</code> (D-46)</td></tr>
+<tr><td>Draft-rate warning</td><td>มีบิลฉบับร่าง 67 ใบในรอบนี้ ยังใช้อัตราเดิมอยู่</td><td>D-17 verbatim; braces are {N}</td></tr>
+<tr><td>Manual job result</td><td>ส่งแจ้งเตือนก่อนครบกำหนด 9 ราย · เลยกำหนด 7 ราย · ส่งซ้ำที่ล้มเหลว 1 ราย</td><td>D-32 verbatim; braces are {a} {b} {c}</td></tr>
+<tr><td>Validation — rate not positive</td><td>อัตราต้องมากกว่า 0</td><td>zod, 422</td></tr>
+<tr><td>Validation — rate decimals</td><td>กรอกทศนิยมได้ไม่เกิน 2 ตำแหน่ง</td><td><code>DECIMAL(8,2)</code></td></tr>
+<tr><td>Validation — duplicate effective date</td><td>มีอัตราค่าไฟของวันที่นี้อยู่แล้ว กรุณาเลือกวันอื่น</td><td><code>UNIQUE(utility_type, effective_from)</code></td></tr>
+<tr><td>Validation — due day range</td><td>วันครบกำหนดต้องอยู่ระหว่าง 1–28</td><td><code>CHECK (due_day BETWEEN 1 AND 28)</code></td></tr>
+<tr><td>Validation — apartment name empty</td><td>กรุณากรอกชื่ออพาร์ตเมนต์</td><td>zod, 422</td></tr>
+<tr><td>Validation — phone format</td><td>กรอกเบอร์โทรศัพท์ให้ถูกต้อง</td><td>zod, 422</td></tr>
+<tr><td>Validation — tax ID length</td><td>เลขประจำตัวผู้เสียภาษีต้องมี 13 หลัก</td><td>Optional field; validated only when filled</td></tr>
+<tr><td>Validation — test mode on, no test ID</td><td>กรุณากรอก LINE User ID สำหรับทดสอบ</td><td>Service rule, 422</td></tr>
+<tr><td>Validation — username taken</td><td>ชื่อผู้ใช้นี้มีอยู่แล้ว</td><td><code>UNIQUE(username)</code></td></tr>
+<tr><td>Validation — username format</td><td>ชื่อผู้ใช้ใช้ได้เฉพาะ a–z 0–9 . _ ความยาว 3–50 ตัวอักษร</td><td>zod, 422</td></tr>
+<tr><td>Validation — display name empty</td><td>กรุณากรอกชื่อที่แสดง</td><td>Prints on the receipt, so it is required</td></tr>
+<tr><td>Validation — password too short</td><td>รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร</td><td>D-37, bcrypt cost 10</td></tr>
+<tr><td>Validation — last Admin</td><td>ต้องมีผู้ดูแลระบบที่ใช้งานอยู่อย่างน้อย 1 บัญชี</td><td>Service rule, 422</td></tr>
+<tr><td>Inline deactivation confirm</td><td>ปิดใช้งานบัญชีนี้? · ยืนยัน / ยกเลิก</td><td>Not a D-39 dialog — the action is reversible</td></tr>
+<tr><td>Confirmation dialogs</td><td><b>none on either page</b></td><td>D-39's six call sites are Approve &amp; Send (single and bulk), Confirm Cash Payment, send announcement, void payment, and end tenancy / deactivate room. Settings and Users are not among them, and no seventh dialog is added.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout note">
+<div class="title">Cross-checks a reviewer can run on this section</div>
+<ul>
+  <li><b>September reconciles:</b> 12,240.00 + 38,976.00 + 70,350.00 = 121,566.00 billed; 98,420.00 collected + 23,146.00 outstanding = 121,566.00; 55 paid + 12 overdue = 67 occupied rooms.</li>
+  <li><b>The common fee is the seed's headline:</b> 67 × 30 ตร.ม. × 35 = 70,350.00 every month, PRD §16's only reproducible figure (D-44).</li>
+  <li><b>Room 205 is PRD §28, unchanged:</b> 10 × 18 = 180.00, 70 × 8 = 560.00, 30 × 35 = 1,050.00, total 1,790.00, due 5 ก.ย. 2026, paid 3 ก.ย. 2026, REC-202609-000852 — the same row in the monthly, top-usage and room-history reports.</li>
+  <li><b>Announcement counts add up:</b> every history row's ส่งแล้ว + ไม่มี LINE + ส่งไม่สำเร็จ equals its ห้อง column, because <code>notifications</code> holds one row per recipient (D-30).</li>
+  <li><b>The seed's 54:</b> 67 occupied rooms, 54 linked tenants — the number D-35's preview sentence quotes for a building-wide send, and the number the arrears report's phone column exists to cover.</li>
+  <li><b>Nothing out of scope appears:</b> no rent, no lease, no payment gateway, no slip upload, no QR, no PDF export, no report builder, no editable reminder schedule, no third role, no recall button.</li>
+</ul>
+</div>
+
+</section>

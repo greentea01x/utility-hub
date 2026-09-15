@@ -1,0 +1,652 @@
+<section id="overview"><h2>System Overview & Requirements</h2>
+
+<p><strong>Juristic Platform</strong> is a server-rendered web application that lets the juristic person of a single apartment building charge each room for <strong>water</strong>, <strong>electricity</strong> and the <strong>common area fee</strong>, collect the money in cash at the office counter, issue a numbered receipt, and keep every tenant informed through a <strong>LINE Official Account</strong>. It does not charge rent and it holds no lease data (PRD §24, D-05).</p>
+
+<p>This section fixes <em>what</em> the system must do and <em>how well</em>, in terms a sibling section can implement, test or draw against without asking a question. Names, stack, table names, enum values and conventions are taken from <strong>ADR-001</strong> and are not restated here where the ADR already binds them; every rule that comes from the product decision log cites its decision id (<code>D-xx</code>).</p>
+
+<h3 id="overview-purpose">1.1 Purpose and operating model</h3>
+
+<p>The building runs on a monthly rhythm. Staff walk the meters in the first days of a month, the office generates and approves that month's bills, LINE delivers them, tenants pay cash at the counter, and the Dashboard and reports explain the month afterwards. One calendar month is one <strong>billing period</strong> — a plain <code>YYYY-MM</code> string, with no open/close state machine anywhere in the system (D-11).</p>
+
+<div class="kv">
+  <dt>Product name</dt><dd>Juristic Platform (English identifier). The running app's header shows the apartment name from Settings; the receipt letterhead carries only the apartment's own identity (D-01).</dd>
+  <dt>Scale</dt><dd>One property, one building, 80–300 rooms (D-04). The seeded demo is 80 rooms — 67 Occupied, 13 Vacant (D-44).</dd>
+  <dt>Users</dt><dd>Two staffed roles (<code>admin</code>, <code>staff</code>) plus tenants who never log in (D-36).</dd>
+  <dt>Money</dt><dd>THB only, <code>DECIMAL</code> only, cash only. <code>1,790.00</code> in tables and on the receipt, <code>1,790 บาท</code> in LINE and sentence text (D-03, D-16, D-24).</dd>
+  <dt>Time</dt><dd>Asia/Bangkok everywhere, Gregorian years (2026), ISO 8601 in every payload (D-03).</dd>
+  <dt>Language</dt><dd>Thai UI, English identifiers. No i18n framework, no language switcher (D-02).</dd>
+  <dt>Delivery target</dt><dd>3–4 students, one semester, free-tier hosting, one deployable process, zero build steps (ADR §1, D-43).</dd>
+</div>
+
+<p>The system's reason to exist is the arithmetic and the audit trail around it. Everything else is a screen over it:</p>
+
+<div class="formula">units = current_reading − previous_reading &nbsp;·&nbsp; amount = ROUND(quantity × unit_price, 2) &nbsp;·&nbsp; total = SUM(three bill items)</div>
+
+<p>Worked once, with the numbers this document set uses everywhere (PRD §28, D-44):</p>
+
+<div class="formula">
+ค่าน้ำ &nbsp; 1,260 − 1,250 = 10 หน่วย × 18.00 = <strong>180.00</strong><br>
+ค่าไฟ &nbsp; 5,350 − 5,280 = 70 หน่วย × 8.00 = <strong>560.00</strong><br>
+ค่าส่วนกลาง &nbsp; 30.00 ตร.ม. × 35.00 = <strong>1,050.00</strong><br>
+ยอดรวม &nbsp; 180.00 + 560.00 + 1,050.00 = <strong>1,790.00 บาท</strong> &nbsp;·&nbsp; ห้อง 205 &nbsp;·&nbsp; กำหนดชำระ 5 ก.ย. 2026
+</div>
+
+<div class="callout decision"><div class="title">Binding: the arithmetic is reproducible, the calendar is not</div>
+<p>Every document uses the PRD §28 values verbatim in examples — including <code>5 ก.ย. 2026</code>, <code>3 ก.ย. 2026</code> and <code>REC-202609-000852</code>. The live demo reproduces the <em>arithmetic</em> (10 หน่วย, 70 หน่วย, 180, 560, 1,050, 1,790), never the dates, because the due date, the Overdue display and the receipt number are all functions of the run date (D-20, D-21, D-27, D-44). PRD §16's 18,500 and 62,500 and PRD §19's 35 ตร.ม. row are illustrative and are never used as expected values.</p></div>
+
+<h3 id="overview-actors">1.2 Actors</h3>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Actor</th><th>Thai label</th><th>Channel &amp; device</th><th>Authenticated by</th><th>May do</th><th>Never sees</th></tr></thead>
+<tbody>
+<tr>
+  <td><strong>Admin</strong><br><span class="badge info">role <code>admin</code></span></td>
+  <td>นิติบุคคล</td>
+  <td>Web app, desktop Chrome/Edge ≥ 1280 px</td>
+  <td>Session cookie, MySQL-backed store, rolling 8 h (D-37)</td>
+  <td>Every page and every action: rooms, tenants, users, rates, generation, approval, revert to Draft, cash payment, void payment, receipts, announcements, reports, settings, manual job trigger (D-36)</td>
+  <td>—</td>
+</tr>
+<tr>
+  <td><strong>Staff</strong><br><span class="badge neutral">role <code>staff</code></span></td>
+  <td>เจ้าหน้าที่ / ช่าง</td>
+  <td>Web app, Chrome for Android, 360 × 640 minimum</td>
+  <td>Same session mechanism, different role column</td>
+  <td>Reduced ภาพรวม (room counts and this period's reading progress), read-only ห้องพัก, จดมิเตอร์ create/edit incl. meter replacement, ส่งให้นิติตรวจสอบ, a room's reading history (D-36, D-13, D-18)</td>
+  <td>Any amount, any rate, any payment, any receipt, ผู้เช่า, ผู้ใช้งานระบบ, ตั้งค่า — <em>absent from the response body</em>, not hidden in the template (D-36)</td>
+</tr>
+<tr>
+  <td><strong>Tenant</strong></td>
+  <td>ผู้เช่า / ลูกบ้าน</td>
+  <td>LINE app only — no login, no web account, no mobile app (PRD §4, D-05)</td>
+  <td>LINE <code>userId</code> bound to one tenant row by the one-time link code (D-29)</td>
+  <td>Receive BILL, BILL_CORRECTED, PRE_DUE, OVERDUE, PAID and ANNOUNCEMENT messages; send the 6-character link code once</td>
+  <td>Everything else — the Official Account is not a chatbot; any other inbound message gets one fixed auto-reply (D-29)</td>
+</tr>
+<tr>
+  <td><strong>Scheduler</strong><br><span class="badge neutral">machine</span></td>
+  <td>—</td>
+  <td>cron-job.org, two schedules</td>
+  <td><code>X-Job-Token</code> header on the daily job; <code>/healthz</code> is public (D-32, D-43)</td>
+  <td><code>POST /internal/jobs/daily</code> at 09:00 Asia/Bangkok; <code>GET /healthz</code> every 10 minutes</td>
+  <td>No session, no pages</td>
+</tr>
+<tr>
+  <td><strong>LINE platform</strong><br><span class="badge neutral">machine</span></td>
+  <td>—</td>
+  <td>Webhook → the app's one fixed HTTPS origin</td>
+  <td><code>X-Line-Signature</code> validated on the raw bytes; a bad signature is 401 and nothing else happens (D-29)</td>
+  <td>Deliver <code>follow</code> and <code>message</code> events</td>
+  <td>No session, no pages</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout warn"><div class="title">One place a decision overrides literal PRD text</div>
+<p>PRD §12 says เจ้าหน้าที่ presses <strong>Confirm Cash Payment</strong>. That contradicts PRD §4, which grants รับชำระเงิน and ออกใบเสร็จ to Admin only. §4 wins: <strong>the counter is operated by an Admin login</strong> (D-36, assumption A-13.7). Every document flags this; the test plan asserts a 403 for Staff on <code>POST /payments</code>.</p></div>
+
+<h3 id="overview-context">1.3 System context</h3>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart TB
+  A["Admin, juristic person"]
+  S["Staff, technician"]
+  T["Tenant, no login"]
+  SYS["Juristic Platform, web application, one Node process"]
+  LP["LINE Messaging API, Official Account"]
+  CJ["External scheduler, cron-job.org"]
+  PRN["Office printer, A5 portrait"]
+
+  A -->|"rooms, tenants, rates, approve bills, take cash, announcements, reports"| SYS
+  S -->|"water and electricity readings, on a phone"| SYS
+  SYS -->|"push and multicast, after commit"| LP
+  LP -->|"webhook: follow and message events"| SYS
+  LP -->|"bill, reminders, payment confirmation, announcements"| T
+  T -->|"adds the OA as a friend, sends a 6 character link code"| LP
+  T -->|"cash at the counter"| A
+  CJ -->|"daily 09:00 job, plus a 10 minute health ping"| SYS
+  SYS -->|"browser print dialog, receipt and invoice"| PRN
+</pre>
+<div class="caption">C4 context. Three human actors, two machine actors, one printer. There is no tenant-facing web surface and no second system of record.</div>
+</div>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart TB
+  AB["Admin browser, desktop 1280px"]
+  SB["Staff browser, phone 360px"]
+  CDN["cdnjs, Chart.js 4.5, dashboard only"]
+  LP["LINE Messaging API"]
+  CJ["cron-job.org, two schedules"]
+
+  subgraph PROC["Render free web service, one Node 24 process"]
+    WEB["EJS page routes, POST-Redirect-GET"]
+    API["JSON routes under /api, seven endpoints"]
+    HOOK["POST /line/webhook, ACK 200 first"]
+    OPS["POST /internal/jobs/daily and GET /healthz"]
+    SVC["Services: billing, payment, notify, linking, jobs, reports"]
+  end
+
+  DB[("MySQL 8.4 managed: 18 tables plus the session store")]
+
+  AB --> WEB
+  AB --> API
+  SB --> WEB
+  SB --> API
+  AB -.-> CDN
+  WEB --> SVC
+  API --> SVC
+  HOOK --> SVC
+  OPS --> SVC
+  SVC --> DB
+  SVC -->|"push and multicast"| LP
+  LP --> HOOK
+  CJ --> OPS
+</pre>
+<div class="caption">C4 container. One deployable, one database, no build step, no cache, no queue broker — the notification queue is a table (ADR §1, §2.1).</div>
+</div>
+
+<h3 id="overview-cycle">1.4 The monthly cycle, and where each requirement sits</h3>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart LR
+  P1["Reading round, FR-10 FR-11, staff on a phone"]
+  P2["Auto units and amounts, FR-12 to FR-16, computed in SQL"]
+  P3["Generation, FR-17, one Draft bill per billable room"]
+  P4["Approval, FR-18, Admin only, one gate"]
+  P5["Delivery, FR-19, queue then drain"]
+  P6["Reminders, FR-20 FR-21, daily job at 09:00"]
+  P7["Cash at the counter, FR-22 FR-23"]
+  P8["Receipt, FR-24, number allocated in the transaction"]
+  P9["Dashboard and reports, FR-28 to FR-30"]
+  P10["Settlement, FR-36, end of tenancy"]
+
+  P1 --> P2 --> P3 --> P4 --> P5 --> P7 --> P8 --> P9
+  P5 --> P6 --> P7
+  P8 --> P10
+  P4 -.->|"correction: revert to Draft, FR-34"| P3
+  P8 -.->|"correction: void payment, FR-35"| P7
+</pre>
+<div class="caption">Nine forward phases and two sanctioned correction paths. Both corrections are Admin-only, both require a Thai reason of at least 10 characters, and both are audited inside the transaction that makes the change (D-22, D-25, D-38).</div>
+</div>
+
+<h3 id="overview-fr">1.5 Functional requirements</h3>
+
+<p><strong>FR-01 … FR-30 map one-to-one, in order, to the thirty functions of PRD §18.</strong> FR-31 and above are requirements the decision log adds that PRD §18 does not name. Each acceptance criterion is one sentence a tester can execute against the D-44 seed; "Module" is the file that owns the behaviour under ADR §5.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>ID</th><th>PRD §18 function</th><th>Acceptance criterion — one testable sentence</th><th>Module</th><th>Sources</th></tr></thead>
+<tbody>
+
+<tr><td><strong>FR-01</strong></td><td>1. Login</td>
+<td>Correct credentials create a session row and land Admin on ภาพรวม and Staff on จดมิเตอร์; the 11th failed attempt from one IP within 15 minutes is refused without touching the password hash.</td>
+<td><code>routes/auth.js</code></td><td>D-37, D-36, D-02</td></tr>
+
+<tr><td><strong>FR-02</strong></td><td>2. Role Management</td>
+<td>For every Admin-only route a Staff session receives HTTP 403 and the Thai 403 page, and no amount, rate or total appears anywhere in a Staff response body.</td>
+<td><code>middleware/auth.js</code></td><td>D-36, D-40</td></tr>
+
+<tr><td><strong>FR-03</strong></td><td>3. จัดการผู้ใช้งานระบบ</td>
+<td>Admin creates a <code>staff</code> user with a unique ชื่อผู้ใช้; setting สถานะ = <code>Inactive</code> blocks login while an existing receipt still prints that user's ชื่อที่แสดง as ผู้รับเงิน; ตั้งรหัสผ่านใหม่ is the only recovery path.</td>
+<td><code>routes/users.js</code></td><td>D-46, D-37</td></tr>
+
+<tr><td><strong>FR-04</strong></td><td>4. จัดการข้อมูลห้อง</td>
+<td>Creating room <code>205</code> with floor 2, area 30.00 ตร.ม. and baselines 1,250 / 5,280 persists and lists under ห้องพัก; a duplicate <code>room_code</code> is refused with an inline Thai field error; a room referenced by any bill offers ปิดใช้งานห้อง and no delete.</td>
+<td><code>routes/rooms.js</code></td><td>D-47, D-04, D-06</td></tr>
+
+<tr><td><strong>FR-05</strong></td><td>5. จัดการข้อมูลผู้เช่า</td>
+<td>A second <code>Active</code> tenant on room 205 is refused by the database, not by a service; เบอร์โทรศัพท์ must match <code>0XXXXXXXXX</code>; LINE User ID is read-only on the form in every state.</td>
+<td><code>routes/tenants.js</code></td><td>D-10, D-29, D-36</td></tr>
+
+<tr><td><strong>FR-06</strong></td><td>6. บันทึกขนาดพื้นที่ห้อง</td>
+<td>Area is <code>DECIMAL(6,2)</code>, Admin-only, and every change writes a <code>ROOM_AREA_CHANGE</code> audit row; a bill approved at 30.00 ตร.ม. still prints 30.00 × 35.00 = 1,050.00 after the room is later changed to 32.00.</td>
+<td><code>routes/rooms.js</code></td><td>D-09, D-47, D-38</td></tr>
+
+<tr><td><strong>FR-07</strong></td><td>7. ตั้งอัตราค่าน้ำ</td>
+<td>Saving น้ำ 18.00 INSERTs a <code>rates</code> row and never UPDATEs one; two saves on the same day for the same utility are refused by <code>uq_rates(utility_type, effective_from)</code>.</td>
+<td><code>routes/settings.js</code></td><td>D-17, D-16</td></tr>
+
+<tr><td><strong>FR-08</strong></td><td>8. ตั้งอัตราค่าไฟ</td>
+<td>Same rule for ไฟ 8.00; generation for period <code>2026-09</code> resolves the row with the greatest <code>effective_from ≤ 2026-09-01</code>, so a rate saved on 20 Sep never disturbs a September bill already approved.</td>
+<td><code>routes/settings.js</code></td><td>D-17</td></tr>
+
+<tr><td><strong>FR-09</strong></td><td>9. ตั้งอัตราค่าส่วนกลาง</td>
+<td>Same rule for ส่วนกลาง 35.00 บาท/ตร.ม.; if Draft bills exist for a period a back-dated rate touches, Settings shows <code>มีบิลฉบับร่าง {N} ใบในรอบนี้ ยังใช้อัตราเดิมอยู่</code> with a คำนวณบิลฉบับร่างใหม่ button.</td>
+<td><code>routes/settings.js</code></td><td>D-17, D-18</td></tr>
+
+<tr><td><strong>FR-10</strong></td><td>10. กรอกเลขมิเตอร์น้ำ</td>
+<td>Saving water current 1,260 for room 205 period <code>2026-09</code> stores previous 1,250 (read-only on screen), <code>previous_period</code> and units 10 in one row, and a double-submitted save UPSERTs to the same row rather than creating a second.</td>
+<td><code>routes/readings.js</code></td><td>D-12, D-14, D-15</td></tr>
+
+<tr><td><strong>FR-11</strong></td><td>11. กรอกเลขมิเตอร์ไฟ</td>
+<td>Same for electricity 5,350 over 5,280 = 70 units; the room counts as จดแล้ว and increments the sticky counter (จดแล้ว 42/67) only once <em>both</em> utilities are saved for that period.</td>
+<td><code>routes/readings.js</code></td><td>D-15, D-12</td></tr>
+
+<tr><td><strong>FR-12</strong></td><td>12. คำนวณหน่วยน้ำอัตโนมัติ</td>
+<td>Units are computed and stored at save time as a snapshot: 1,260 − 1,250 = 10; a current below previous is refused 422 <code>READING_BELOW_PREVIOUS</code> for every role unless the meter-replacement branch is used, and <code>CHECK (units &gt;= 0)</code> holds regardless.</td>
+<td><code>services/billing.js</code></td><td>D-13, D-14, D-16</td></tr>
+
+<tr><td><strong>FR-13</strong></td><td>13. คำนวณหน่วยไฟอัตโนมัติ</td>
+<td>Same path for electricity: 5,350 − 5,280 = 70 units; with no earlier reading the room's <code>baseline_electric</code> applies and <code>previous_period</code> stores the literal <code>'baseline'</code>.</td>
+<td><code>services/billing.js</code></td><td>D-06, D-14</td></tr>
+
+<tr><td><strong>FR-14</strong></td><td>14. คำนวณค่าน้ำ</td>
+<td>The water bill item stores quantity 10, unit_price 18.00 and amount <code>ROUND(10 × 18.00, 2)</code> = 180.00, computed in SQL — no JavaScript multiplies money anywhere in the path.</td>
+<td><code>services/billing.js</code></td><td>D-16, D-17</td></tr>
+
+<tr><td><strong>FR-15</strong></td><td>15. คำนวณค่าไฟ</td>
+<td>The electricity bill item stores 70 × 8.00 = 560.00 by the same expression, with the rate copied onto the item so every later screen renders the snapshot and never joins live to <code>rates</code>.</td>
+<td><code>services/billing.js</code></td><td>D-16, D-17</td></tr>
+
+<tr><td><strong>FR-16</strong></td><td>16. คำนวณค่าส่วนกลางตามขนาดห้อง</td>
+<td>The common item stores quantity = the bill's snapshotted area 30.00 and unit_price 35.00, amount 1,050.00; a Vacant room produces no common item and no bill at all.</td>
+<td><code>services/billing.js</code></td><td>D-07, D-09, D-16</td></tr>
+
+<tr><td><strong>FR-17</strong></td><td>17. สร้างบิลรายเดือน</td>
+<td>A run creates one <code>Draft</code> bill per billable room with exactly three items and total 1,790.00 for room 205; running it a second time returns <code>สร้างบิลใหม่ 0 ใบ</code>, recalculates Drafts in place and leaves every Unpaid and Paid bill untouched.</td>
+<td><code>services/billing.js</code></td><td>D-18, D-07, D-23</td></tr>
+
+<tr><td><strong>FR-18</strong></td><td>18. ตรวจสอบและอนุมัติบิล</td>
+<td>อนุมัติและส่งบิล (Admin only) moves the bill <code>Draft → Unpaid</code>, freezes every snapshot, sets <code>due_date = MAX(5 Sep 2026, approval + 3 days)</code> and writes a <code>BILL_APPROVE</code> audit row in the same transaction; a second approve affects 0 rows and changes nothing.</td>
+<td><code>routes/bills.js</code></td><td>D-19, D-20, D-22, D-38</td></tr>
+
+<tr><td><strong>FR-19</strong></td><td>19. ส่งบิลผ่าน LINE OA</td>
+<td>Approval queues exactly one <code>notifications</code> row per bill inside the transaction and sends only after commit; the result screen drains at most 20 pushes per call and reports <code>อนุมัติ {N} ใบ · ส่ง LINE สำเร็จ {x} · ยังไม่ได้ส่ง (ไม่มี LINE) {y} · ส่งไม่สำเร็จ {z}</code>.</td>
+<td><code>services/notify.js</code></td><td>D-19, D-30, D-31, D-34</td></tr>
+
+<tr><td><strong>FR-20</strong></td><td>20. แจ้งเตือนวันครบกำหนด</td>
+<td>The 09:00 job queues one <code>PRE_DUE</code> per Unpaid bill whose <code>due_date − today = 2</code> (3 Sep 2026 for a 5 Sep due date) and nothing else, and a second run the same day sends nothing.</td>
+<td><code>services/jobs.js</code></td><td>D-32, D-33</td></tr>
+
+<tr><td><strong>FR-21</strong></td><td>21. แจ้งเตือนยอดค้างชำระ</td>
+<td>The job queues <code>OVERDUE</code> only when <code>days_overdue IN (1, 8, 15)</code> — 6, 13 and 20 Sep 2026 for a 5 Sep due date — skipping Paid bills and bills whose latest payment was voided, so a bill receives at most four automatic messages in its entire life.</td>
+<td><code>services/jobs.js</code></td><td>D-33, D-25, D-21</td></tr>
+
+<tr><td><strong>FR-22</strong></td><td>22. รับชำระเงินสด</td>
+<td>ยืนยันรับเงินสด (Admin only) records one payment of exactly the bill total 1,790.00 — never an input field — with <code>method='cash'</code> and <code>received_by_user_id</code>; a double click produces one payment and the second call returns 409 <code>บิลนี้ถูกชำระไปแล้ว</code>.</td>
+<td><code>services/payment.js</code></td><td>D-24, D-26, D-36</td></tr>
+
+<tr><td><strong>FR-23</strong></td><td>23. เปลี่ยนสถานะ Paid / Unpaid</td>
+<td>The status change is <code>UPDATE bills SET status='Paid' WHERE id=? AND status='Unpaid'</code>; <code>Overdue</code> is never written by anything, and voiding a payment returns the bill to <code>Unpaid</code>, which then displays as เกินกำหนด if the due date has passed.</td>
+<td><code>services/payment.js</code></td><td>D-21, D-25, D-26</td></tr>
+
+<tr><td><strong>FR-24</strong></td><td>24. ออกใบเสร็จ</td>
+<td>The receipt number is allocated inside the payment transaction and renders as <code>REC-202609-000852</code>; the A5 view carries the letterhead, ห้อง 205, the three line items, ยอดรวม 1,790.00 บาท, the Thai amount in words, ชำระโดย เงินสด and ผู้รับเงิน, and fits one page.</td>
+<td><code>routes/receipts.js</code></td><td>D-26, D-27, D-28</td></tr>
+
+<tr><td><strong>FR-25</strong></td><td>25. ดูประวัติการชำระ</td>
+<td>A room's history lists every bill with its period, total, display status, payment date and receipt number — including bills belonging to a previous, now Inactive tenant — and a voided payment still appears, stamped ยกเลิก.</td>
+<td><code>services/reports.js</code></td><td>D-08, D-25, D-42</td></tr>
+
+<tr><td><strong>FR-26</strong></td><td>26. ดูประวัติมิเตอร์</td>
+<td>A room's reading history lists each period's previous, current and units per utility, shows <code>'baseline'</code> as the source for the first period, and renders a skipped month as a gap rather than as a zero row.</td>
+<td><code>services/reports.js</code></td><td>D-14, D-06, D-42</td></tr>
+
+<tr><td><strong>FR-27</strong></td><td>27. ส่งประกาศผ่าน LINE OA</td>
+<td>An announcement (หัวข้อ ≤ 60, เนื้อหา ≤ 400) sent to ทุกห้องที่มีผู้เช่า writes one <code>notifications</code> row per recipient tenant, is delivered by multicast in chunks of at most 500 userIds, and is thereafter immutable — no edit, no resend, no recall.</td>
+<td><code>routes/announcements.js</code></td><td>D-35, D-30, D-34</td></tr>
+
+<tr><td><strong>FR-28</strong></td><td>28. Dashboard</td>
+<td>For the selected period the tiles reconcile on screen: ยอดเรียกเก็บทั้งหมด − รับชำระแล้ว = ค้างชำระ, money figures counting only bills whose stored status is <code>Unpaid</code> or <code>Paid</code>; against the seed ห้องทั้งหมด 80, มีผู้เช่า 67, ห้องว่าง 13 and ค่าส่วนกลาง 70,350.00.</td>
+<td><code>services/reports.js</code></td><td>D-41, D-44</td></tr>
+
+<tr><td><strong>FR-29</strong></td><td>29. รายงาน</td>
+<td>Exactly four reports exist, each with a CSV export (UTF-8 with BOM, <code>report-{name}-{period}.csv</code>); in รายการค้างชำระ the four ageing bucket counts sum to the row count and the four bucket amounts to the report total.</td>
+<td><code>routes/reports.js</code></td><td>D-42</td></tr>
+
+<tr><td><strong>FR-30</strong></td><td>30. ดูข้อมูลการใช้น้ำและไฟย้อนหลัง</td>
+<td>Twelve-month water-unit and electricity-unit charts render for the building and a 12-period table renders for one room; a period with no reading is plotted as a gap, never as 0.</td>
+<td><code>services/reports.js</code></td><td>D-41, D-42, D-14</td></tr>
+
+<tr><td colspan="5"><strong>Additional requirements the decision log creates — not named in PRD §18</strong></td></tr>
+
+<tr><td><strong>FR-31</strong></td><td>LINE account linking</td>
+<td>Admin issues a printable 6-character code (alphabet <code>ABCDEFGHJKLMNPQRSTUVWXYZ23456789</code>, 7 days, single use); the tenant sends it to the OA and the webhook binds the <code>userId</code> to that tenant, expires the code, audits <code>TENANT_LINE_LINK</code> and replies naming ห้อง 205 — a wrong or expired code gets LINK_FAIL and binds nothing.</td>
+<td><code>services/linking.js</code></td><td>D-29</td></tr>
+
+<tr><td><strong>FR-32</strong></td><td>Notification log and delivery state</td>
+<td>Every intended message is one row carrying type, recipient, <code>status</code>, <code>attempt_count</code>, <code>http_status</code> and <code>last_error</code>; the same message type for the same bill and tenant on the same day can never produce two rows, and Monthly Billing badges each bill ส่งแล้ว / ยังไม่ได้ส่ง — ไม่มี LINE / ส่งไม่สำเร็จ.</td>
+<td><code>services/notify.js</code></td><td>D-30, ADR §7.6</td></tr>
+
+<tr><td><strong>FR-33</strong></td><td>Meter replacement</td>
+<td>With เปลี่ยนมิเตอร์ในรอบนี้ ticked, both roles may enter old_final and new_start with a required Thai reason; units = (old_final − previous_reading) + (current_reading − new_start), validated as <code>old_final ≥ previous_reading AND current_reading ≥ new_start</code>, and the row is audited as <code>METER_REPLACEMENT</code>.</td>
+<td><code>routes/readings.js</code></td><td>D-13, D-38</td></tr>
+
+<tr><td><strong>FR-34</strong></td><td>Revert a bill to Draft</td>
+<td>ตีกลับเป็นฉบับร่าง (Admin, reason ≥ 10 Thai characters) returns an Unpaid or Overdue bill to <code>Draft</code> and unfreezes its readings, and is refused server-side — not merely disabled — when a later bill exists for that room.</td>
+<td><code>routes/bills.js</code></td><td>D-22, D-12</td></tr>
+
+<tr><td><strong>FR-35</strong></td><td>Void a payment</td>
+<td>ยกเลิกการชำระเงิน (Admin, reason ≥ 10 characters) marks payment and receipt voided without deleting either — the number 000852 stays taken — returns the bill to <code>Unpaid</code>, sends no LINE message, and suppresses that bill from automatic PRE_DUE and OVERDUE sends with the badge ระงับการแจ้งเตือนอัตโนมัติ.</td>
+<td><code>services/payment.js</code></td><td>D-25, D-33</td></tr>
+
+<tr><td><strong>FR-36</strong></td><td>End of tenancy as a settlement</td>
+<td>สิ้นสุดสัญญาเช่า is blocked unless a final reading exists for both utilities and the bill covering it is <code>Paid</code>; the successful action sets the tenant Inactive, stamps วันที่ย้ายออก, clears the LINE binding and sets the room <code>Vacant</code> in one transaction, audited as <code>TENANCY_END</code> with the reason.</td>
+<td><code>routes/tenants.js</code></td><td>D-08, D-10, ADR ENG-5</td></tr>
+
+<tr><td><strong>FR-37</strong></td><td>Scheduled job and manual trigger</td>
+<td><code>POST /internal/jobs/daily</code> with a valid <code>X-Job-Token</code> writes one <code>job_runs</code> row per day and is a no-op on a repeat; Settings' รันงานแจ้งเตือนตอนนี้ runs the identical code as <code>daily_manual</code>, skips that guard, and reports <code>ส่งแจ้งเตือนก่อนครบกำหนด {a} ราย · เลยกำหนด {b} ราย · ส่งซ้ำที่ล้มเหลว {c} ราย</code>.</td>
+<td><code>routes/internal.js</code></td><td>D-32, D-33</td></tr>
+
+<tr><td><strong>FR-38</strong></td><td>Printable ใบแจ้งค่าใช้จ่าย</td>
+<td>Any non-Draft bill offers พิมพ์ใบแจ้งหนี้ on the same A5 route as the receipt, carrying the letterhead, ห้อง, ชื่อผู้เช่า, รอบบิล, กำหนดชำระ and the same three line items — and no receipt number, no payment date, no ผู้รับเงิน and no signature line.</td>
+<td><code>routes/bills.js</code></td><td>D-28, D-30</td></tr>
+
+<tr><td><strong>FR-39</strong></td><td>Audit trail and bill timeline</td>
+<td>Each of the thirteen audited actions writes an <code>audit_log</code> row on the same connection as the change it records; Bill Detail's Admin-only timeline is one indexed query on <code>(bill_id, created_at)</code> with no join.</td>
+<td><code>lib/audit.js</code></td><td>D-38, ADR §3.3</td></tr>
+
+<tr><td><strong>FR-40</strong></td><td>LINE test mode and quota display</td>
+<td>โหมดทดสอบ LINE defaults ON in every environment and redirects every outbound message to one whitelisted <code>userId</code> while still recording the intended recipient; Settings shows <code>ส่งข้อความเดือนนี้: {N}/500</code> counting only <code>sent</code> rows this month, in warn colour above 450, and throttles nothing.</td>
+<td><code>services/notify.js</code></td><td>D-34, D-05</td></tr>
+
+<tr><td><strong>FR-41</strong></td><td>Opening readings on the room</td>
+<td>เลขมิเตอร์น้ำเริ่มต้น, เลขมิเตอร์ไฟเริ่มต้น and วันที่เริ่มต้น are mandatory on the Rooms form, are Admin-only, are editable only while the room has no reading row at all, and never produce a synthetic <code>meter_readings</code> row.</td>
+<td><code>routes/rooms.js</code></td><td>D-06, D-14</td></tr>
+
+<tr><td><strong>FR-42</strong></td><td>Missing-reading visibility</td>
+<td>Monthly Billing shows a persistent warn callout listing every billable room with no bill — <code>ยังไม่ได้จดมิเตอร์ 3 ห้อง: 108, 312, 405</code>, each code linking to that room's reading form — approval is not blocked, and the count must reach 0 for the period to be complete.</td>
+<td><code>routes/bills.js</code></td><td>D-23, D-11</td></tr>
+
+<tr><td><strong>FR-43</strong></td><td>CSV export</td>
+<td>All four reports export through one helper producing UTF-8 with a BOM so Excel opens Thai correctly, with already-shaped rows and the filename pattern <code>report-{name}-{period}.csv</code>.</td>
+<td><code>lib/csv.js</code></td><td>D-42</td></tr>
+
+<tr><td><strong>FR-44</strong></td><td>Soft usage flags</td>
+<td>ใช้สูงผิดปกติ appears only when the room's previous-period usage for that utility was ≥ 10 units and the current usage exceeds 3× it; ไม่มีการใช้งาน appears on 0 units for a room with an Active tenant; neither ever blocks a save, a generation run or an approval.</td>
+<td><code>routes/readings.js</code></td><td>D-13</td></tr>
+
+<tr><td><strong>FR-45</strong></td><td>Room deactivation</td>
+<td>A room referenced by any bill can only be deactivated, not deleted; a deactivated room is excluded from billing and from every list except an explicit ปิดใช้งาน filter, and the action is audited as <code>ROOM_DEACTIVATE</code>.</td>
+<td><code>routes/rooms.js</code></td><td>D-47, D-09</td></tr>
+
+<tr><td><strong>FR-46</strong></td><td>Confirmation dialogs</td>
+<td>All six irreversible actions use the one shared dialog — never the browser's <code>confirm()</code> — stating the exact effect with counts in Thai and repeating the verb on the primary button; the void and end-of-tenancy dialogs keep that button disabled until a reason of at least 10 characters is typed.</td>
+<td><code>public/js/confirm-dialog.js</code></td><td>D-39</td></tr>
+
+<tr><td><strong>FR-47</strong></td><td>Health endpoint</td>
+<td><code>GET /healthz</code> is public, runs one <code>SELECT 1</code>, returns 200 with no session and no rate limiting, and is pinged on its own 10-minute schedule that is separate from the daily job.</td>
+<td><code>routes/internal.js</code></td><td>D-43, D-32</td></tr>
+
+<tr><td><strong>FR-48</strong></td><td>Standard failure treatment</td>
+<td>A failed save re-renders the form with every typed value preserved and an inline Thai error plus ลองอีกครั้ง — never a redirect and never a full-page reload on the phone reading screen; every empty list renders the shared empty state with its specified Thai sentence.</td>
+<td><code>middleware/errors.js</code></td><td>D-40, D-15</td></tr>
+
+</tbody>
+</table>
+</div>
+
+<h3 id="overview-nfr">1.6 Non-functional requirements</h3>
+
+<p>Every number below is committed and measurable. Where a target came from the decision log it cites it; the three marked <span class="badge info">authored</span> are added by this specification and are recorded as assumptions in §1.9.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>ID</th><th>Quality</th><th>Requirement, with the number</th><th>How it is verified</th><th>Source</th></tr></thead>
+<tbody>
+
+<tr><td><strong>NFR-01</strong></td><td>Capacity</td>
+<td>One building, 80–300 rooms, 12 periods of history — the seed is 80 rooms × 12 periods ≈ 800 bills. No property scoping, no building column, no sharding.</td>
+<td>Every list page and report is exercised against the full seed.</td><td>D-04, D-44</td></tr>
+
+<tr><td><strong>NFR-02</strong></td><td>Capacity ceiling</td>
+<td>The free LINE allowance of 500 messages/month binds first: roughly 3 messages per occupied room per month (bill + one reminder + payment confirmation) means about <strong>160 occupied rooms</strong> is the ceiling before delivery silently stops. Above that the office needs a paid LINE plan; the software is unchanged.</td>
+<td>Settings' <code>{N}/500</code> counter; listed limitation.</td><td>D-34, D-05</td></tr>
+
+<tr><td><strong>NFR-03</strong></td><td>Performance</td>
+<td>Any list page renders in <strong>≤ 2 s</strong> against the full seed.</td><td>Stopwatch against the seed.</td><td>D-45 (2)</td></tr>
+
+<tr><td><strong>NFR-04</strong></td><td>Performance</td>
+<td>A 67-room reading round completes on a phone in <strong>≤ 15 min</strong>, measured from opening จดมิเตอร์ to the counter reading 67/67.</td><td>Stopwatch, one operator, one phone.</td><td>D-45 (1), D-15</td></tr>
+
+<tr><td><strong>NFR-05</strong></td><td>Performance</td>
+<td>A single อนุมัติและส่งบิล delivers the LINE bill in <strong>≤ 30 s</strong>.</td><td>Stopwatch on the demo path, test mode ON.</td><td>D-45 (3)</td></tr>
+
+<tr><td><strong>NFR-06</strong></td><td>Performance</td>
+<td>A 67-bill bulk approval <strong>commits in ≤ 5 s</strong> and is <strong>fully delivered within ≤ 3 min</strong> — two numbers, measured separately, because approval and delivery are two round trips.</td><td>Stopwatch on each half.</td><td>D-45 (4), D-19</td></tr>
+
+<tr><td><strong>NFR-07</strong></td><td>Performance</td>
+<td>ยืนยันรับเงินสด to a printable receipt on screen in <strong>≤ 5 s</strong>.</td><td>Stopwatch on the demo path.</td><td>D-45 (5)</td></tr>
+
+<tr><td><strong>NFR-08</strong></td><td>Availability</td>
+<td><strong>No uptime commitment is made.</strong> The free instance sleeps after roughly 15 minutes of inactivity; a 10-minute <code>GET /healthz</code> ping on its own schedule keeps it awake, and <code>POST /line/webhook</code> answers 200 before doing any work so a cold start still ACKs inside LINE's timeout.</td>
+<td>Cron history; a cold-start webhook delivery.</td><td>D-43, D-32, D-45</td></tr>
+
+<tr><td><strong>NFR-09</strong></td><td>Security — sessions</td>
+<td>Server-side sessions in MySQL, cookie <code>httpOnly</code> + <code>SameSite=Lax</code> + <code>Secure</code> in production, rolling 8 h; logout deletes the row. No JWT, no token in <code>localStorage</code>.</td>
+<td>Restart the instance mid-session and stay logged in.</td><td>D-37</td></tr>
+
+<tr><td><strong>NFR-10</strong></td><td>Security — credentials</td>
+<td>bcrypt cost 10; no self-service reset; the seeded admin password comes from <code>SEED_ADMIN_PASSWORD</code> and seeding fails if it is unset; no secret is ever committed.</td>
+<td>Grep the repo; seed with the variable unset.</td><td>D-37, D-43</td></tr>
+
+<tr><td><strong>NFR-11</strong></td><td>Security — request integrity</td>
+<td>A CSRF token on every POST except the two machine endpoints; <strong>10 failed logins per IP per 15 minutes</strong> with <code>trust proxy</code> set so the limiter keys on the real client IP; <code>helmet</code> CSP allowing only cdnjs and Google Fonts.</td>
+<td>Unit test on the token compare; 11 scripted logins.</td><td>D-37</td></tr>
+
+<tr><td><strong>NFR-12</strong></td><td>Security — machine endpoints</td>
+<td>The webhook is authenticated by <code>X-Line-Signature</code> over the raw bytes (bad signature → 401, nothing processed), the daily job by <code>X-Job-Token</code>; the login limiter never applies to either, nor to <code>/healthz</code>.</td>
+<td>Replay with a mangled signature and with no token.</td><td>D-29, D-32, D-37</td></tr>
+
+<tr><td><strong>NFR-13</strong></td><td>Data integrity — money</td>
+<td><code>DECIMAL</code> only; <code>FLOAT</code> and <code>DOUBLE</code> appear nowhere in the schema; JavaScript never multiplies, sums or rounds money; the printed total always equals the sum of the printed lines (180.00 + 560.00 + 1,050.00 = 1,790.00) with no second rounding.</td>
+<td>Unit test on the PRD §28 arithmetic; grep the schema.</td><td>D-16, ADR A-4</td></tr>
+
+<tr><td><strong>NFR-14</strong></td><td>Data integrity — constraints</td>
+<td>Correctness is enforced by <strong>11 unique keys, 3 stored generated columns and 3 CHECKs</strong>, so it holds under a race, under a handler that forgot a check, and under a hand-typed UPDATE.</td>
+<td>Integration tests that fire the races concurrently.</td><td>ADR §6.8, D-26, D-10</td></tr>
+
+<tr><td><strong>NFR-15</strong></td><td>Data integrity — idempotency</td>
+<td>A repeated action never produces a second bill, a second live payment, a second receipt number, a second job run or a second message: one guard per case, each in the database.</td>
+<td>The named integration tier — double confirm, double approve, double generation, double job run, same-day resend.</td><td>D-18, D-26, D-30, D-32</td></tr>
+
+<tr><td><strong>NFR-16</strong></td><td>Data integrity — no destructive deletes</td>
+<td>Users, tenants, payments, receipts and rooms with bills are never deleted, only Inactive / voided / deactivated, so every historical attribution and every receipt number stays resolvable forever.</td>
+<td>Reprint an old receipt after the room, tenant and cashier have all changed.</td><td>D-09, D-25, D-46, D-47</td></tr>
+
+<tr><td><strong>NFR-17</strong></td><td>Auditability</td>
+<td>Thirteen action types write an <code>audit_log</code> row on the same connection as the change; approvals, reverts, payments, voids and Draft-period reading edits also carry <code>bill_id</code> so one bill's whole history is one indexed query.</td>
+<td>Approve → revert → re-approve → pay → void and read the timeline.</td><td>D-38</td></tr>
+
+<tr><td><strong>NFR-18</strong></td><td>Mobile usability (staff)</td>
+<td>Chrome for Android at <strong>360 × 640 minimum</strong>, tap targets <strong>≥ 44 × 44 px</strong>, <code>inputmode="numeric"</code> on every meter field, one save per room so a dropped connection loses at most the room being typed, and a sticky progress counter.</td>
+<td>The reading round performed on a real 360 px phone.</td><td>D-45, D-15, D-40</td></tr>
+
+<tr><td><strong>NFR-19</strong></td><td>Desktop usability (admin)</td>
+<td>Current Chrome and Edge at <strong>≥ 1280 px</strong>. The Admin surface is explicitly not required to be usable below 768 px.</td>
+<td>Visual check at 1280 px.</td><td>D-45</td></tr>
+
+<tr><td><strong>NFR-20</strong></td><td>Thai language</td>
+<td>Every visible string is Thai, written directly in the templates — no i18n framework, no language switcher. English survives only as identifiers, and every element rendering a status carries <code>data-status="Draft|Unpaid|Paid|Overdue"</code>. Text renders in Noto Sans Thai with a system fallback.</td>
+<td>Grep the templates for English copy; assert on the test hook.</td><td>D-02, D-45</td></tr>
+
+<tr><td><strong>NFR-21</strong></td><td>Format correctness</td>
+<td>Asia/Bangkok everywhere, Gregorian years only, ISO 8601 in every payload, <code>1,790.00</code> in tables, <code>1,790 บาท</code> in LINE, <code>3 ก.ย. 2026</code> in lists, <code>3 กันยายน 2026</code> in LINE and on the receipt, <code>14:30 น.</code> for times. No UTC ever reaches a user and no date arithmetic happens in the browser.</td>
+<td>Unit tests on the date and money helpers.</td><td>D-03</td></tr>
+
+<tr><td><strong>NFR-22</strong></td><td>Observability</td>
+<td>JSON lines to stdout captured by the host; one <code>job_runs</code> row per scheduled run with a summary; every notification row carries status, attempt count, HTTP status and last error; Settings surfaces the monthly message count; <code>/healthz</code> proves the database is reachable.</td>
+<td>Read the log after a failed push and after a job run.</td><td>D-30, D-32, D-34, D-43</td></tr>
+
+<tr><td><strong>NFR-23</strong></td><td>Backup and restore</td>
+<td><code>db/schema.sql</code> + <code>db/seed.sql</code> rebuild the entire graded dataset from an <em>empty</em> database in one command; a <code>mysqldump</code> is committed before every milestone and the day before the defence. <span class="badge info">authored</span> Recovery target: a working demo database is back <strong>within 10 minutes</strong> from a committed dump, using the documented local fallback (local app, local MySQL, webhook disabled, test mode ON).</td>
+<td>Drop the schema and rebuild, timed.</td><td>D-43, D-44</td></tr>
+
+<tr><td><strong>NFR-24</strong></td><td>Print output</td>
+<td>A5 portrait through the browser's own dialog, <code>@page { size: A5 portrait; margin: 10mm }</code>; the receipt fits <strong>exactly one A5 page</strong> with three line items, the total and the number. Verified on a real office printer by week 9.</td>
+<td>Printed page, measured.</td><td>D-28, ADR A-13.5</td></tr>
+
+<tr><td><strong>NFR-25</strong></td><td>Accessibility basics <span class="badge info">authored</span></td>
+<td>Every input has a bound label; focus is always visible; status is conveyed by the badge's Thai text and never by colour alone; the confirm dialog traps focus and closes on Escape.</td>
+<td>Keyboard-only pass over the demo path.</td><td>authored (§1.9)</td></tr>
+
+<tr><td><strong>NFR-26</strong></td><td>Maintainability <span class="badge info">authored</span></td>
+<td>Zero build steps; <code>npm ci &amp;&amp; npm run lint &amp;&amp; npm test</code> is the whole pipeline, run in CI against a MySQL 8.4 service container. No coverage gate. The PRD §28 arithmetic test must never go red.</td>
+<td>CI on every push.</td><td>ADR §1, §6.9</td></tr>
+
+</tbody>
+</table>
+</div>
+
+<h3 id="overview-scope">1.7 Out of scope — restated and absolute</h3>
+
+<div class="callout bad"><div class="title">PRD §24 exclusions — never reintroduced in any document, mockup, test case or seed row (D-05)</div>
+<ul class="checklist">
+<li>ค่าเช่าห้อง — <strong>no rent</strong> of any kind, in any table, on any screen</li>
+<li>ระบบสัญญาเช่า — <strong>no lease contracts</strong>, no contract dates that drive money</li>
+<li><strong>No mobile application</strong> — tenants use LINE, staff use the mobile web</li>
+<li><strong>No payment gateway</strong></li>
+<li><strong>No credit or debit cards</strong></li>
+<li><strong>No online banking</strong></li>
+<li><strong>No slip upload</strong></li>
+<li><strong>No QR payment</strong> (no PromptPay, no QR of any kind)</li>
+<li><strong>No IoT meters</strong> and <strong>no automatic meter reading</strong> — a human types every number</li>
+<li><strong>No AI</strong> and <strong>no machine learning</strong> — the anomaly flags of FR-44 are two fixed arithmetic thresholds, and calling them anything else in any document is a defect</li>
+</ul>
+</div>
+
+<p>The decision log adds twelve v1 limitations that are equally binding and must appear verbatim in every document with a Limitations section (D-05):</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>#</th><th>Limitation</th><th>Consequence in practice</th><th>Source</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>No proration for mid-period move-in or move-out</td><td>The tenant Active on the generation date owes the whole period — full water, full electricity, full 1,050.00 common fee</td><td>D-08</td></tr>
+<tr><td>2</td><td>No partial payment</td><td>1,790.00 is paid in full or the bill stays รอชำระ; a tenant who is short returns later</td><td>D-24</td></tr>
+<tr><td>3</td><td>No late fee, interest or penalty</td><td>Overdue changes the badge and the reminder text, never the amount</td><td>D-21</td></tr>
+<tr><td>4</td><td>No refund, credit note or balance in the system</td><td>A mis-keyed payment is voided and the cash goes back across the counter</td><td>D-25</td></tr>
+<tr><td>5</td><td>No multi-building support</td><td>One Settings profile, no building column, no property filter</td><td>D-04</td></tr>
+<tr><td>6</td><td>No VAT and no tax invoice</td><td>The document is a non-tax ใบเสร็จรับเงิน; the tax ID line is optional on the letterhead</td><td>D-27</td></tr>
+<tr><td>7</td><td>No tenant-facing web login</td><td>Tenants only ever receive LINE messages; there is no tenant portal to design or secure</td><td>D-05</td></tr>
+<tr><td>8</td><td>No email and no SMS channel</td><td>An unlinked tenant is handed paper — ใบแจ้งค่าใช้จ่าย (FR-38)</td><td>D-30</td></tr>
+<tr><td>9</td><td>A blocked Official Account is indistinguishable from a delivered message</td><td>LINE reports both as success, so the word "blocked" appears in no badge, report or test</td><td>D-30</td></tr>
+<tr><td>10</td><td>Receipt numbers are unique and monotonic but <strong>not gapless</strong></td><td>A rolled-back transaction consumes a number; no document or test may claim gaplessness</td><td>D-26, D-27</td></tr>
+<tr><td>11</td><td>A receipt printed from the browser's own menu carries no สำเนา mark</td><td>The copy mark is driven by the พิมพ์ใบเสร็จ button, which is the only hookable event</td><td>D-27</td></tr>
+<tr><td>12</td><td>The 500-message monthly allowance is displayed but never enforced</td><td>Exhausting it silently stops delivery; see NFR-02</td><td>D-34</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout note"><div class="title">Also deliberately absent from v1</div>
+<p>No period open/close state and no "closed" anywhere (D-11) · no reading status column or state machine (ADR §3.4) · no third role and no per-user permission table (D-36) · no <code>Cancelled</code> or <code>Void</code> bill status, no adjustment line item, no credit carried forward (D-22) · no per-bill editable due date (D-20) · no per-room announcement audience, no scheduling, no recall (D-35) · no global audit browser screen (D-38) · no PDF export and no report builder (D-42) · no staging environment (ADR §2.2).</p></div>
+
+<h3 id="overview-glossary">1.8 Domain glossary and enums</h3>
+
+<p>These terms are used with exactly these meanings in every sibling section. Where a term maps to a column or a helper, the code identifier is given.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Term (Thai where it is user-facing)</th><th>Meaning</th><th>Where it lives</th></tr></thead>
+<tbody>
+<tr><td><strong>Billing period</strong> · รอบบิล</td><td>One calendar month, the string <code>YYYY-MM</code> (<code>2026-09</code>, displayed กันยายน 2026). String order is chronological. There is no periods table and no open/close state.</td><td><code>bills.period</code>, <code>meter_readings.period</code> (D-11)</td></tr>
+<tr><td><strong>Billable room</strong></td><td>A room that is <code>Occupied</code> <em>and</em> has exactly one <code>Active</code> tenant on the generation date. Only billable rooms are billed, drive the reading counter, or receive a message.</td><td>derived in <code>services/billing.js</code> (D-07)</td></tr>
+<tr><td><strong>Baseline</strong> · เลขมิเตอร์เริ่มต้น</td><td>A room's opening water and electricity readings, stored on the room, never as a reading row. Editable only while the room has no readings at all.</td><td><code>rooms.baseline_water</code>, <code>baseline_electric</code>, <code>baseline_date</code> (D-06)</td></tr>
+<tr><td><strong>Previous reading</strong></td><td>The <code>current_reading</code> of the row with the greatest period <em>strictly earlier</em> than the one being saved, for the same room and utility; the room's baseline when none exists.</td><td><code>meter_readings.previous_reading</code> (D-14)</td></tr>
+<tr><td><strong>previous_period</strong></td><td>Where that previous value came from: a period (<code>2026-08</code>) or the literal <code>'baseline'</code> — hence <code>VARCHAR(8)</code>, never 7.</td><td><code>meter_readings.previous_period</code> (ADR §6.7)</td></tr>
+<tr><td><strong>Units</strong> · หน่วย</td><td>Whole integer consumption for one room, period and utility, snapshotted at save time. 10 หน่วย water, 70 หน่วย electricity for room 205.</td><td><code>meter_readings.units</code> (D-16)</td></tr>
+<tr><td><strong>Reading round</strong></td><td>One walk of the building for one period. Complete when the sticky counter reads Y/Y — 67/67 against the seed.</td><td>จดมิเตอร์ page (D-15, D-45)</td></tr>
+<tr><td><strong>Meter replacement</strong> · เปลี่ยนมิเตอร์ในรอบนี้</td><td>The single branch in unit arithmetic: <code>units = (old_final − previous_reading) + (current_reading − new_start)</code>, with a required Thai reason. A rolled dial is entered this way; there is no rollover detection.</td><td><code>meter_readings.meter_replaced</code> (D-13)</td></tr>
+<tr><td><strong>Generation run</strong></td><td>One idempotent pass over a period creating Draft bills and recalculating existing Drafts in place. Triggered by ส่งให้นิติตรวจสอบ or สร้าง/อัปเดตบิลฉบับร่าง.</td><td><code>services/billing.js</code> (D-18)</td></tr>
+<tr><td><strong>Bill item</strong></td><td>One of exactly three rows per bill — <code>water</code>, <code>electric</code>, <code>common</code> — always all three, even at 0 units and 0.00. Each carries quantity, the snapshotted unit price and the rounded amount.</td><td><code>bill_items</code> (D-18, D-41)</td></tr>
+<tr><td><strong>Snapshot</strong></td><td>A value copied onto a bill or reading at write time and rendered from there forever: room code, area, tenant name, unit prices, previous readings, units, amounts. Nothing on a bill joins live to <code>rooms</code>, <code>tenants</code> or <code>rates</code>.</td><td><code>bills.*_snapshot</code>, <code>bill_items</code> (D-09, D-17)</td></tr>
+<tr><td><strong>Frozen</strong></td><td>The state of a bill from approval onward: readings, units, prices, area, tenant name, amounts, total and due date are all immutable through every endpoint. The only way back is a revert.</td><td>(D-22)</td></tr>
+<tr><td><strong>Display status</strong></td><td>The four-value status a human sees, produced by one SQL <code>CASE</code> and one JS helper. <code>Overdue</code> is derived from <code>Unpaid</code> + a past due date and is never stored.</td><td><code>lib/billStatus.js</code> (D-21)</td></tr>
+<tr><td><strong>Due date</strong> · กำหนดชำระ</td><td>Frozen at approval as <code>MAX(due day of the period month, approval date + 3 days)</code>, clamped to the month's last day. Never hand-editable. 5 ก.ย. 2026 in the worked example.</td><td><code>bills.due_date</code> (D-20)</td></tr>
+<tr><td><strong>Revert</strong> · ตีกลับเป็นฉบับร่าง</td><td>Admin returns an Unpaid or Overdue bill to Draft with a reason, unfreezing its readings. Allowed only on a room's most recent bill.</td><td><code>routes/bills.js</code> (D-22)</td></tr>
+<tr><td><strong>Void</strong> · ยกเลิกการชำระเงิน</td><td>Admin marks a payment and its receipt voided — never deleted, so the receipt number stays taken — after the cash has gone back across the counter. The bill returns to Unpaid and is suppressed from automatic reminders.</td><td><code>payments.voided_at</code> (D-25)</td></tr>
+<tr><td><strong>Receipt number</strong></td><td><code>REC-YYYYMM-NNNNNN</code> from one continuous counter that never resets, allocated inside the payment transaction. <code>REC-202609-000852</code>. Unique and monotonic, <em>not</em> gapless.</td><td><code>receipts.receipt_no</code> (D-26, D-27)</td></tr>
+<tr><td><strong>Link code</strong> · รหัสผูก LINE</td><td>A 6-character single-use code, valid 7 days, from the alphabet <code>ABCDEFGHJKLMNPQRSTUVWXYZ23456789</code>, handed to a tenant on a printed slip with the OA QR code.</td><td><code>link_codes</code> (D-29)</td></tr>
+<tr><td><strong>Binding</strong></td><td>The link between one LINE <code>userId</code> and one tenant row. Unique per <em>tenant</em>, not per LINE account — one account may hold two rooms, and every message names its room.</td><td><code>tenants.line_user_id</code> (D-29)</td></tr>
+<tr><td><strong>Notification row</strong></td><td>One row per intended recipient per message — never one per API call. A multicast to 54 tenants writes 54 rows.</td><td><code>notifications</code> (D-30)</td></tr>
+<tr><td><strong>Dedupe key</strong></td><td>The stored generated column that makes "one message type per bill or announcement per tenant per day" a database fact rather than a convention.</td><td><code>notifications.dedupe_key</code> (ADR ENG-3)</td></tr>
+<tr><td><strong>Retry key</strong></td><td>A UUID stored on the notification row at enqueue time and reused on every attempt, so LINE deduplicates a retry whose first result was lost.</td><td><code>notifications.retry_key</code> (ADR §7.6)</td></tr>
+<tr><td><strong>Drain</strong></td><td>One call that pushes at most 20 queued notifications and returns running counts. Bulk approval drains repeatedly; the daily job drains whatever is left.</td><td><code>services/notify.js</code> (D-19)</td></tr>
+<tr><td><strong>Test mode</strong> · โหมดทดสอบ LINE</td><td>Redirects every outbound message to one whitelisted userId while still recording the intended recipient. Defaults ON in every environment.</td><td><code>settings.line_test_mode</code> (D-34)</td></tr>
+<tr><td><strong>Job run</strong></td><td>One recorded execution of the daily reminder job. <code>daily</code> is guarded to once per date; <code>daily_manual</code> deliberately is not.</td><td><code>job_runs</code> (D-32)</td></tr>
+<tr><td><strong>Settlement</strong> · สิ้นสุดสัญญาเช่า</td><td>Ending a tenancy: blocked until the final reading exists and its bill is Paid, then one transaction sets the tenant Inactive, stamps the move-out date, clears the binding and sets the room Vacant.</td><td><code>routes/tenants.js</code> (D-08)</td></tr>
+<tr><td><strong>Arrears</strong> · ค้างชำระ</td><td>Bills whose stored status is <code>Unpaid</code>, aged into the non-overlapping buckets 1-7 / 8-30 / 31-60 / 61+ วัน in report 2.</td><td><code>services/reports.js</code> (D-42)</td></tr>
+<tr><td><strong>Soft flag</strong></td><td>A non-blocking warn badge on a reading: ใช้สูงผิดปกติ or ไม่มีการใช้งาน. Never blocks a save, a run or an approval.</td><td>(D-13)</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4 id="overview-enums">Enum values — exhaustive and binding</h4>
+
+<p>Casing is verbatim from the decision log and is deliberately not normalised: the <code>data-status</code> test hook and the notification template keys are already written this way.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Enum</th><th>Column</th><th>Values</th></tr></thead>
+<tbody>
+<tr><td>Role</td><td><code>users.role</code></td><td><code>admin</code>, <code>staff</code> — no third role, no permission table (D-36)</td></tr>
+<tr><td>User status</td><td><code>users.status</code></td><td><code>Active</code>, <code>Inactive</code> (D-46)</td></tr>
+<tr><td>Room status</td><td><code>rooms.status</code></td><td><code>Occupied</code>, <code>Vacant</code> — maintained by the tenant transaction, never independently editable (D-07)</td></tr>
+<tr><td>Tenant status</td><td><code>tenants.status</code></td><td><code>Active</code>, <code>Inactive</code> (D-10)</td></tr>
+<tr><td>Bill status (stored)</td><td><code>bills.status</code></td><td><span class="badge draft">Draft</span> <span class="badge unpaid">Unpaid</span> <span class="badge paid">Paid</span> (D-21)</td></tr>
+<tr><td>Bill status (display)</td><td>derived, never stored</td><td><span class="badge draft">Draft</span> <span class="badge unpaid">Unpaid</span> <span class="badge paid">Paid</span> <span class="badge overdue">Overdue</span> — Thai: ฉบับร่าง / รอชำระ / ชำระแล้ว / เกินกำหนด (D-02, D-21)</td></tr>
+<tr><td>Reading utility</td><td><code>meter_readings.utility_type</code></td><td><code>water</code>, <code>electric</code></td></tr>
+<tr><td>Rate utility</td><td><code>rates.utility_type</code></td><td><code>water</code>, <code>electric</code>, <code>common</code></td></tr>
+<tr><td>Bill item type</td><td><code>bill_items.item_type</code></td><td><code>water</code>, <code>electric</code>, <code>common</code> — exactly these three per bill, always</td></tr>
+<tr><td>Payment method</td><td><code>payments.method</code></td><td><code>cash</code> — one value; the column exists because the receipt names วิธีชำระเงิน (D-24, D-27)</td></tr>
+<tr><td>Notification type</td><td><code>notifications.type</code></td><td><code>BILL</code>, <code>BILL_CORRECTED</code>, <code>PRE_DUE</code>, <code>OVERDUE</code>, <code>PAID</code>, <code>ANNOUNCEMENT</code> (D-31)</td></tr>
+<tr><td>Notification status</td><td><code>notifications.status</code></td><td><code>queued</code>, <code>sent</code>, <code>failed</code>, <code>skipped_no_line</code> (D-30)</td></tr>
+<tr><td>Announcement audience</td><td><code>announcements.audience</code></td><td><code>all</code>, <code>floors</code> (D-35)</td></tr>
+<tr><td>Job name</td><td><code>job_runs.job_name</code></td><td><code>daily</code>, <code>daily_manual</code> (D-32)</td></tr>
+<tr><td>Audit action</td><td><code>audit_log.action</code></td><td><code>BILL_APPROVE</code>, <code>BILL_REVERT</code>, <code>PAYMENT_CONFIRM</code>, <code>PAYMENT_VOID</code>, <code>RATE_CHANGE</code>, <code>ROOM_CREATE</code>, <code>ROOM_EDIT</code>, <code>ROOM_AREA_CHANGE</code>, <code>ROOM_DEACTIVATE</code>, <code>READING_CREATE</code>, <code>READING_EDIT</code>, <code>METER_REPLACEMENT</code>, <code>TENANT_LINE_LINK</code>, <code>TENANT_LINE_UNLINK</code>, <code>TENANCY_END</code>, <code>ANNOUNCEMENT_SEND</code> (D-38, ADR ENG-5)</td></tr>
+<tr><td>LINE reply key (no row written)</td><td>—</td><td><code>LINK_OK</code>, <code>LINK_FAIL</code>, plus one fixed auto-reply — sent with the Reply API, writing no <code>notifications</code> row (ADR ENG-4, D-29)</td></tr>
+<tr><td>JSON error code</td><td>response body</td><td><code>UPPER_SNAKE</code>, stable, asserted by tests — e.g. <code>READING_BELOW_PREVIOUS</code>; the human reads <code>message</code>, which is Thai (ADR §6.3)</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4 id="overview-pages">Page identifiers</h4>
+
+<p>English in routes, code, payloads and tests; Thai on screen. The full mapping (D-02, D-46):</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Identifier</th><th>Thai</th><th>Route</th><th>Roles</th></tr></thead>
+<tbody>
+<tr><td>Login</td><td>เข้าสู่ระบบ</td><td><code>/login</code></td><td>public</td></tr>
+<tr><td>Dashboard</td><td>ภาพรวม</td><td><code>/</code></td><td>admin · staff (reduced)</td></tr>
+<tr><td>Rooms</td><td>ห้องพัก</td><td><code>/rooms</code>, <code>/rooms/:id</code></td><td>admin · staff (read-only, no money)</td></tr>
+<tr><td>Tenants</td><td>ผู้เช่า</td><td><code>/tenants</code></td><td>admin</td></tr>
+<tr><td>Meter Reading</td><td>จดมิเตอร์</td><td><code>/readings</code></td><td>admin · staff</td></tr>
+<tr><td>Monthly Billing</td><td>บิลประจำเดือน</td><td><code>/bills</code></td><td>admin</td></tr>
+<tr><td>Bill Detail</td><td>รายละเอียดบิล</td><td><code>/bills/:id</code></td><td>admin</td></tr>
+<tr><td>Payment</td><td>รับชำระเงิน</td><td><code>/payments</code></td><td>admin</td></tr>
+<tr><td>Receipt</td><td>ใบเสร็จ</td><td><code>/receipts/:id</code></td><td>admin</td></tr>
+<tr><td>Announcements</td><td>ประกาศ</td><td><code>/announcements</code></td><td>admin</td></tr>
+<tr><td>Reports</td><td>รายงาน</td><td><code>/reports</code></td><td>admin</td></tr>
+<tr><td>Settings</td><td>ตั้งค่า</td><td><code>/settings</code></td><td>admin</td></tr>
+<tr><td>Users</td><td>ผู้ใช้งานระบบ</td><td><code>/users</code></td><td>admin</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3 id="overview-assumptions">1.9 Assumptions recorded by this section</h3>
+
+<div class="callout note"><div class="title">Authored here, not inherited</div>
+<ol>
+<li><strong>The 80–300 room range</strong> comes from the project brief, not from the PRD; the PRD and the seed both describe an 80-room building. Nothing in the schema or the queries is room-count dependent, so the range costs nothing — but the LINE allowance ceiling of NFR-02 is real and is stated rather than hidden.</li>
+<li><strong>NFR-23's 10-minute recovery target</strong> is authored. The decision log commits to a committed seed and periodic dumps (D-43, D-44) but names no recovery time; ten minutes is what a <code>mysql &lt; seed.sql</code> against a local instance actually takes, and it is the number the runbook should be held to.</li>
+<li><strong>NFR-25 (accessibility basics)</strong> is authored. No decision covers keyboard access or non-colour status conveyance; both are cheap here because the UI is server-rendered HTML with real form controls, and dropping them would be a regression no later section could recover.</li>
+<li><strong>NFR-26 (maintainability)</strong> restates ADR §1 and §6.9 as a committed requirement so the test plan has an ID to reference.</li>
+<li><strong>The FR / NFR identifier scheme</strong> (<code>FR-01…FR-48</code>, <code>NFR-01…NFR-26</code>) is introduced by this section. FR-01…FR-30 are pinned to PRD §18's order and must never be renumbered; FR-31 and above may be appended to but not reordered, because the test plan and the traceability matrix key on these ids.</li>
+<li><strong>The nine cycle phase names</strong> of §1.4 — Reading round, Generation, Approval, Delivery, Reminders, Collection, Receipt, Settlement, Reporting — are authored labels for grouping requirements. They are documentation vocabulary only: no column, route or enum uses them.</li>
+</ol>
+</div>
+
+<div class="callout warn"><div class="title">Two places where a document must not "tidy up" what looks like an inconsistency</div>
+<ul>
+<li><code>previous_period</code> is <code>VARCHAR(8)</code>, not <code>VARCHAR(7)</code>, because it holds the literal <code>'baseline'</code> as well as a <code>YYYY-MM</code> period.</li>
+<li>Enum casing is mixed on purpose — <code>Draft</code>/<code>Unpaid</code>/<code>Paid</code> and <code>Active</code>/<code>Inactive</code> are capitalised, <code>admin</code>/<code>staff</code>, <code>water</code>/<code>electric</code>/<code>common</code> and <code>queued</code>/<code>sent</code>/<code>failed</code>/<code>skipped_no_line</code> are lowercase, and notification types are upper snake. Test selectors and template keys already depend on it.</li>
+</ul>
+</div>
+
+</section>

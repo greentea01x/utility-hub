@@ -1,0 +1,1404 @@
+<section id="meter-reading">
+<h2>Meter Reading (Staff, mobile)</h2>
+
+<p>Meter Reading (<b>จดมิเตอร์</b>, route <code>/readings</code>) is the only screen a Staff account
+uses to do real work, and it is the only screen in the product designed phone-first. Everything on
+these four screens is derived from four binding decisions: the round mechanics (D-15), the reading
+row and its edit window (D-12), the below-previous block and the meter-replacement branch (D-13),
+and the Staff permission boundary (D-36).</p>
+
+<div class="callout decision">
+  <div class="title">Binding constraints these screens obey</div>
+  <ul>
+    <li><b>D-36 — no money on the Staff surface.</b> Staff never see a rate, an amount or a bill
+      total; the figures are absent from the API response, not merely hidden by CSS. The live
+      calculation Staff see is <b>units only</b> (10 หน่วย, 70 หน่วย). The 180 / 560 / 1,050 / 1,790 THB
+      preview exists on the same route for an <b>Admin</b> session and is shown here as a clearly
+      labelled variant frame.</li>
+    <li><b>D-15 — per-room save.</b> One card per room, one <span class="badge neutral">บันทึก</span>
+      button per card, one request per room. A room counts as จดแล้ว only when <b>both</b> water and
+      electricity are stored for the period. Four filter chips, default <b>ยังไม่จด</b>. Rooms grouped
+      by <code>rooms.floor</code> under a sticky floor header, ordered by room code.</li>
+    <li><b>D-13 — hard block, not a rollover guess.</b> There is <b>no automatic rollover detection</b>.
+      A current reading below the previous one is a hard block with Save disabled; a rolled dial or a
+      swapped meter is entered through the explicit <b>เปลี่ยนมิเตอร์ในรอบนี้</b> branch, which both
+      roles may use because Staff are the ones standing at the meter.</li>
+    <li><b>D-11 / D-12 — no period lock, no submitted state.</b> Nothing is ever "closed". A reading is
+      editable exactly while its room's bill for that period is Draft or does not yet exist, and frozen
+      the moment the bill is approved: <b>บิลอนุมัติแล้ว แก้ไขไม่ได้</b>. The only way back is Admin
+      reverting the bill to ฉบับร่าง (D-22).</li>
+    <li><b>D-18 — one submit button.</b> <b>ส่งให้นิติตรวจสอบ</b> runs bill generation for the period.
+      It is not one of the six confirmation dialogs in D-39, so the review screen <em>is</em> its
+      confirmation step.</li>
+  </ul>
+</div>
+
+<style>
+/* Layout specifics unique to the Meter Reading screens. Every selector is scoped
+   inside #meter-reading .screen so nothing can reach the document stylesheet. */
+#meter-reading .screen{position:relative}
+#meter-reading .screen .app{min-height:inherit}
+#meter-reading .screen .main{min-height:inherit}
+#meter-reading .screen .page{flex:1}
+/* annotation anchors: the marker positions against its own element, never against
+   guessed pixel offsets inside the frame */
+#meter-reading .screen .anch{position:relative}
+#meter-reading .screen .ann{z-index:9}
+/* room card = one .card holding two tinted .meter-card blocks; drop the inner shadow */
+#meter-reading .screen .card .meter-card{box-shadow:none;margin-bottom:var(--ui-sp-2)}
+#meter-reading .screen .meter-row{margin-bottom:var(--ui-sp-1)}
+#meter-reading .screen .meter-row .field{margin-bottom:0}
+/* the live units read-out under each meter row */
+#meter-reading .screen .units-out{display:flex;align-items:baseline;flex-wrap:wrap;gap:var(--ui-sp-2);
+  margin:var(--ui-sp-1) 0 0 34px;font-size:var(--ui-fs-sm);color:var(--ui-text-2)}
+#meter-reading .screen .units-out b{font-size:var(--ui-fs-xl);font-weight:var(--ui-fw-semi);
+  font-variant-numeric:tabular-nums;line-height:1.1}
+#meter-reading .screen .units-out.muted b{color:var(--ui-muted)}
+/* the sticky round bar: X/Y counter plus the one page action, parked above the tab bar */
+#meter-reading .screen .round-bar{position:sticky;bottom:var(--ui-tabbar-h);z-index:6;
+  display:flex;align-items:center;gap:var(--ui-sp-3);padding:var(--ui-sp-2) var(--ui-sp-3);
+  background:var(--ui-surface);border-top:1px solid var(--ui-border);
+  box-shadow:0 -2px 10px rgba(16,24,40,.07)}
+#meter-reading .screen .round-bar .count-line{flex:1;min-width:0}
+#meter-reading .screen .round-bar .count-line b{font-variant-numeric:tabular-nums}
+#meter-reading .screen .sub-head{display:flex;align-items:baseline;justify-content:space-between;
+  gap:var(--ui-sp-2);margin:var(--ui-sp-4) 0 var(--ui-sp-2);font-size:var(--ui-fs-sm);
+  font-weight:var(--ui-fw-semi);color:var(--ui-text-2)}
+</style>
+
+
+<h3>1 · Reading round — period and room list <code>GET /readings?period=2026-09</code></h3>
+
+<p class="screen-meta">
+  <span><b>Role</b> staff (admin sees the same page)</span>
+  <span><b>Entry</b> tab จดมิเตอร์ · login redirect for staff · D-23 room links from Monthly Billing</span>
+  <span><b>Primary action</b> ส่งให้นิติตรวจสอบ</span>
+  <span><b>Reads</b> rooms, tenants, meter_readings, bills.status</span>
+</p>
+
+<div class="device phone">
+  <div class="screen">
+    <div class="app">
+      <div class="main">
+        <div class="topbar">
+          <div class="title">จดมิเตอร์</div>
+          <div class="actions"><button class="btn ghost sm">ออกจากระบบ</button></div>
+        </div>
+        <div class="page">
+
+          <div class="toolbar anch">
+            <span class="ann" style="top:-10px;left:-8px">1</span>
+            <span class="month-picker"><span class="arrow">‹</span> กันยายน 2026 <span class="arrow">›</span></span>
+            <span class="ui-sub">อ่านรอบวันที่ 1–3</span>
+          </div>
+
+          <div class="search anch" style="margin-bottom:12px">
+            <span class="ann" style="top:-10px;left:-8px">2</span>
+            <span class="ui-muted" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.4 10.4 14 14"></path></svg></span>
+            <input type="text" placeholder="ค้นหาเลขห้อง หรือชื่อผู้เช่า">
+          </div>
+
+          <div class="chip-row anch">
+            <span class="ann" style="top:-10px;left:-8px">3</span>
+            <span class="chip">ทั้งหมด <span class="count">67</span></span>
+            <span class="chip active">ยังไม่จด <span class="count">25</span></span>
+            <span class="chip">จดแล้ว <span class="count">42</span></span>
+            <span class="chip">ห้องว่าง <span class="count">13</span></span>
+          </div>
+
+          <div class="anch" style="margin-bottom:4px">
+            <span class="ann" style="top:-8px;right:2px">4</span>
+            <div class="progress-label"><span>จดแล้ว 42/67 ห้อง</span><span>63%</span></div>
+            <div class="progress"><div class="bar" style="width:63%"></div></div>
+          </div>
+
+          <div class="group-head anch">
+            <span class="ann" style="top:-8px;left:-8px">5</span>
+            ชั้น 1 · เหลือ 6 ห้อง
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div><b>108</b> <span class="ui-sub">ธนกฤต มั่นคง</span></div>
+              <span class="badge warn">ยังไม่จด</span>
+            </div>
+            <div class="meter-card water">
+              <div class="meter-row">
+                <div class="ico" aria-hidden="true">💧</div>
+                <div class="field">
+                  <label class="label" for="r108-wp">น้ำ · ครั้งก่อน</label>
+                  <input class="input readonly" id="r108-wp" readonly value="2,104">
+                </div>
+                <div class="field">
+                  <label class="label" for="r108-wc">ครั้งนี้ <span class="req">*</span></label>
+                  <input class="input" id="r108-wc" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="0">
+                </div>
+              </div>
+              <div class="units-out muted"><b>—</b> หน่วย <span class="ui-sub">รอกรอกเลขมิเตอร์</span></div>
+            </div>
+            <div class="meter-card elec">
+              <div class="meter-row">
+                <div class="ico" aria-hidden="true">⚡</div>
+                <div class="field">
+                  <label class="label" for="r108-ep">ไฟ · ครั้งก่อน</label>
+                  <input class="input readonly" id="r108-ep" readonly value="9,830">
+                </div>
+                <div class="field">
+                  <label class="label" for="r108-ec">ครั้งนี้ <span class="req">*</span></label>
+                  <input class="input" id="r108-ec" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="0">
+                </div>
+              </div>
+              <div class="units-out muted"><b>—</b> หน่วย <span class="ui-sub">รอกรอกเลขมิเตอร์</span></div>
+            </div>
+            <label class="check"><input type="checkbox"> เปลี่ยนมิเตอร์ในรอบนี้</label>
+            <div class="card-foot"><button class="btn primary lg block is-disabled">บันทึก</button></div>
+          </div>
+
+          <div class="group-head">ชั้น 2 · เหลือ 4 ห้อง</div>
+
+          <div class="card anch">
+            <span class="ann" style="top:-10px;left:-8px">6</span>
+            <div class="card-head">
+              <div><b>205</b> <span class="ui-sub">สุภาพร ใจดี</span></div>
+              <span class="badge warn">ยังไม่จด</span>
+            </div>
+            <div class="meter-card water">
+              <div class="meter-row">
+                <div class="ico" aria-hidden="true">💧</div>
+                <div class="field">
+                  <label class="label" for="r205-wp">น้ำ · ครั้งก่อน</label>
+                  <input class="input readonly" id="r205-wp" readonly value="1,250">
+                </div>
+                <div class="field">
+                  <label class="label" for="r205-wc">ครั้งนี้ <span class="req">*</span></label>
+                  <input class="input" id="r205-wc" type="text" inputmode="numeric" pattern="[0-9]*" value="1260">
+                </div>
+              </div>
+              <div class="units-out anch">
+                <span class="ann" style="top:-6px;left:-26px">7</span>
+                <b>10</b> หน่วย <span class="ui-sub">1,250 → 1,260</span>
+              </div>
+            </div>
+            <div class="meter-card elec">
+              <div class="meter-row">
+                <div class="ico" aria-hidden="true">⚡</div>
+                <div class="field">
+                  <label class="label" for="r205-ep">ไฟ · ครั้งก่อน</label>
+                  <input class="input readonly" id="r205-ep" readonly value="5,280">
+                </div>
+                <div class="field">
+                  <label class="label" for="r205-ec">ครั้งนี้ <span class="req">*</span></label>
+                  <input class="input" id="r205-ec" type="text" inputmode="numeric" pattern="[0-9]*" value="5350">
+                </div>
+              </div>
+              <div class="units-out"><b>70</b> หน่วย <span class="ui-sub">5,280 → 5,350</span></div>
+            </div>
+            <label class="check"><input type="checkbox"> เปลี่ยนมิเตอร์ในรอบนี้</label>
+            <div class="card-foot"><button class="btn primary lg block">บันทึก</button></div>
+          </div>
+
+        </div>
+
+        <div class="round-bar anch">
+          <span class="ann" style="top:-10px;left:6px">8</span>
+          <div class="count-line">
+            <div><b>จดแล้ว 42/67 ห้อง</b></div>
+            <div class="ui-sub">เหลืออีก 25 ห้อง</div>
+          </div>
+          <button class="btn primary">ส่งให้นิติตรวจสอบ</button>
+        </div>
+
+        <nav class="bottom-tabs">
+          <a class="tab"><span class="ico" aria-hidden="true">🏠</span>ภาพรวม</a>
+          <a class="tab"><span class="ico" aria-hidden="true">🚪</span>ห้องพัก</a>
+          <a class="tab active"><span class="ico" aria-hidden="true">🔢</span>จดมิเตอร์</a>
+        </nav>
+      </div>
+    </div>
+  </div>
+</div>
+
+<ol class="annotations">
+  <li><span class="ann">1</span><b>Month picker</b> — defaults to the current calendar month in
+    Asia/Bangkok and is displayed as "กันยายน 2026" (D-03); the value on the wire is the period key
+    <code>2026-09</code>. The arrows step one month and reload the page with
+    <code>?period=</code>. There is no open/close state and no lock (D-11): stepping back to
+    สิงหาคม 2026 shows that month's rooms, editable only where the bill is still ฉบับร่าง or absent.</li>
+  <li><span class="ann">2</span><b>Search</b> — filters the visible list client-side on room code and
+    tenant name; it does not change the chip counts or the X/Y counter, which always describe the whole
+    period. Clearing it restores the active chip's full list. 44 px tall, 16 px text, so iOS does not
+    zoom the page on focus.</li>
+  <li><span class="ann">3</span><b>Filter chips (D-15)</b> — ทั้งหมด / ยังไม่จด / จดแล้ว / ห้องว่าง,
+    defaulting to <b>ยังไม่จด</b> because that is the working set of a round. The first three cover
+    billable rooms only, so 67 = 25 + 42; ห้องว่าง lists the 13 vacant rooms with the badge
+    <span class="badge neutral">ไม่ออกบิล</span> for a voluntary reading (D-07) and never enters the
+    counter. Selecting a chip re-renders the list without losing typed, unsaved values in a card that
+    stays visible.</li>
+  <li><span class="ann">4</span><b>Round progress</b> — "จดแล้ว 42/67 ห้อง". A room counts as จดแล้ว
+    only when both water and electricity are stored for the period (D-15). The value is recomputed from
+    the server's response after every per-room save, never incremented client-side, so a failed save can
+    never inflate it. The bar turns <span class="badge ok">green</span> at 67/67, the state the ≤ 15 min
+    acceptance target in D-45 is measured against.</li>
+  <li><span class="ann">5</span><b>Sticky floor header</b> — groups come from <code>rooms.floor</code>,
+    a real column, never parsed from the room code (D-47), and rooms are ordered by room code inside a
+    group. The header stays pinned while the floor scrolls, so the walker always knows which floor the
+    card on screen belongs to.</li>
+  <li><span class="ann">6</span><b>Room card</b> — one card per room holding Previous (read-only) and
+    Current for both utilities plus its own บันทึก button, saved alone through one
+    <code>POST /api/readings</code> (D-15). Nothing else on the page is submitted with it, so losing
+    signal in a stairwell loses at most the room being typed.</li>
+  <li><span class="ann">7</span><b>Live units</b> — <code>current − previous</code>, recomputed on every
+    keystroke, integer only. Units are the <em>only</em> derived figure a Staff session sees: no rate,
+    no amount, no total (D-36). Previous is read-only text resolved by D-14 (the greatest earlier period
+    for that room and utility, otherwise the room's baseline); the hint line names the source period so
+    a catch-up entry after a skipped month is explained rather than disputed.</li>
+  <li><span class="ann">8</span><b>Sticky round bar</b> — carries the counter and the single page action
+    <b>ส่งให้นิติตรวจสอบ</b>, which is enabled as soon as one room in the period has both readings
+    (D-18). It opens the review screen (§3); it never posts directly, because the review screen is this
+    action's confirmation step. The bar sits above the tab bar, so neither ever covers the other.</li>
+</ol>
+
+<p><b>Alternate state — round complete, filter ทั้งหมด.</b> Saved rooms collapse to a จดแล้ว summary row
+(D-15) with an แก้ไข affordance that re-expands the card while the bill is still ฉบับร่าง or absent.</p>
+
+<div class="device phone">
+  <div class="screen">
+    <div class="app">
+      <div class="main">
+        <div class="topbar">
+          <div class="title">จดมิเตอร์</div>
+          <div class="actions"><button class="btn ghost sm">ออกจากระบบ</button></div>
+        </div>
+        <div class="page">
+          <div class="toolbar">
+            <span class="month-picker"><span class="arrow">‹</span> กันยายน 2026 <span class="arrow">›</span></span>
+          </div>
+          <div class="search" style="margin-bottom:12px">
+            <span class="ui-muted" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.4 10.4 14 14"></path></svg></span>
+            <input type="text" placeholder="ค้นหาเลขห้อง หรือชื่อผู้เช่า">
+          </div>
+          <div class="chip-row">
+            <span class="chip active">ทั้งหมด <span class="count">67</span></span>
+            <span class="chip">ยังไม่จด <span class="count">0</span></span>
+            <span class="chip">จดแล้ว <span class="count">67</span></span>
+            <span class="chip">ห้องว่าง <span class="count">13</span></span>
+          </div>
+          <div style="margin-bottom:4px">
+            <div class="progress-label"><span>จดแล้ว 67/67 ห้อง</span><span>100%</span></div>
+            <div class="progress ok"><div class="bar" style="width:100%"></div></div>
+          </div>
+          <div class="notice ok"><b>จดครบทุกห้องแล้ว</b>กด ส่งให้นิติตรวจสอบ เพื่อสร้างบิลฉบับร่างของรอบนี้</div>
+
+          <div class="group-head">ชั้น 1</div>
+          <div class="list-item is-done">
+            <div>
+              <div class="lead">112 · ณิชา บุญมี</div>
+              <div class="meta">💧 1,412 → 1,424 · 12 หน่วย &nbsp;·&nbsp; ⚡ 6,180 → 6,264 · 84 หน่วย</div>
+            </div>
+            <div class="end"><span class="badge ok">จดแล้ว</span><button class="btn ghost sm">แก้ไข</button></div>
+          </div>
+          <div class="list-item is-done">
+            <div>
+              <div class="lead">116 · ศิริพร ทองเปลว</div>
+              <div class="meta">💧 980 → 1,076 · 96 หน่วย &nbsp;·&nbsp; ⚡ 4,455 → 4,532 · 77 หน่วย</div>
+            </div>
+            <div class="end"><span class="badge warn">ใช้สูงผิดปกติ</span><button class="btn ghost sm">แก้ไข</button></div>
+          </div>
+
+          <div class="group-head">ชั้น 2</div>
+          <div class="list-item is-done">
+            <div>
+              <div class="lead">205 · สุภาพร ใจดี</div>
+              <div class="meta">💧 1,250 → 1,260 · 10 หน่วย &nbsp;·&nbsp; ⚡ 5,280 → 5,350 · 70 หน่วย</div>
+            </div>
+            <div class="end"><span class="badge ok">จดแล้ว</span><button class="btn ghost sm">แก้ไข</button></div>
+          </div>
+          <div class="list-item is-done">
+            <div>
+              <div class="lead">210 · กมลชนก แสงทอง</div>
+              <div class="meta">💧 1,808 → 1,819 · 11 หน่วย &nbsp;·&nbsp; ⚡ เปลี่ยนมิเตอร์ · 192 หน่วย</div>
+            </div>
+            <div class="end"><span class="badge info">เปลี่ยนมิเตอร์</span><button class="btn ghost sm">แก้ไข</button></div>
+          </div>
+        </div>
+
+        <div class="round-bar">
+          <div class="count-line">
+            <div><b>จดแล้ว 67/67 ห้อง</b></div>
+            <div class="ui-sub">ครบทุกห้องที่มีผู้เช่า</div>
+          </div>
+          <button class="btn primary">ส่งให้นิติตรวจสอบ</button>
+        </div>
+
+        <nav class="bottom-tabs">
+          <a class="tab"><span class="ico" aria-hidden="true">🏠</span>ภาพรวม</a>
+          <a class="tab"><span class="ico" aria-hidden="true">🚪</span>ห้องพัก</a>
+          <a class="tab active"><span class="ico" aria-hidden="true">🔢</span>จดมิเตอร์</a>
+        </nav>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h4>States — reading round list</h4>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>State</th><th>Trigger</th><th>What the screen shows</th></tr></thead>
+  <tbody>
+    <tr><td><span class="badge neutral">Empty</span></td>
+      <td>No billable room in the period, or the active chip matches nothing</td>
+      <td>Shared empty-state component (D-40): muted icon, <b>ยังไม่มีห้องที่ต้องจดในรอบนี้</b>, no primary
+        action. Search returning nothing shows <b>ไม่พบห้องที่ค้นหา</b> with a ล้างการค้นหา ghost button.
+        The round bar stays, showing 0/0 with ส่งให้นิติตรวจสอบ disabled.</td></tr>
+    <tr><td><span class="badge info">Loading</span></td>
+      <td>First paint of <code>/readings</code></td>
+      <td>Chips and month picker render immediately from the URL; the list is six
+        <code>.skeleton.row</code> blocks under one skeleton floor header. The progress bar renders at 0
+        with the label replaced by a skeleton. Target ≤ 2 s (D-45).</td></tr>
+    <tr><td><span class="badge bad">Error</span></td>
+      <td>List request fails (5xx, or the free instance was asleep)</td>
+      <td><code>.notice.bad</code> above the list: <b>โหลดรายการห้องไม่สำเร็จ</b> plus a
+        <b>ลองอีกครั้ง</b> button. Never a redirect and never a blank page.</td></tr>
+    <tr><td><span class="badge paid">Success</span></td>
+      <td>A per-room save returns 200</td>
+      <td>The card collapses to a <code>.list-item.is-done</code> summary row, the chip counts and the
+        X/Y counter are replaced from the response, and one toast appears:
+        <b>บันทึกห้อง 205 แล้ว</b>. No undo (D-39) — the row's แก้ไข button is the correction path.</td></tr>
+    <tr><td><span class="badge overdue">Permission denied</span></td>
+      <td>An admin-only URL reached from this page, or a stale session</td>
+      <td>Full Thai 403 page (D-40), never a silent redirect —
+        <b>ไม่มีสิทธิ์เข้าถึงหน้านี้ · บัญชีของคุณเป็นเจ้าหน้าที่ กรุณาติดต่อนิติบุคคล</b> with a
+        <b>กลับไปหน้าจดมิเตอร์</b> button. An expired session on the JSON save returns 401 and the page
+        shows <b>เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่</b> with the typed values preserved.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h4>Thai copy — reading round list</h4>
+<div class="table-wrap">
+<table class="compact">
+  <thead><tr><th>Element</th><th>Thai copy</th><th>Note</th></tr></thead>
+  <tbody>
+    <tr><td>Page title / tab</td><td>จดมิเตอร์</td><td>D-02 mapping for Meter Reading</td></tr>
+    <tr><td>Period</td><td>กันยายน 2026</td><td>period key <code>2026-09</code>, Gregorian (D-03)</td></tr>
+    <tr><td>Search placeholder</td><td>ค้นหาเลขห้อง หรือชื่อผู้เช่า</td><td>—</td></tr>
+    <tr><td>Filter chips</td><td>ทั้งหมด · ยังไม่จด · จดแล้ว · ห้องว่าง</td><td>verbatim D-15, default ยังไม่จด</td></tr>
+    <tr><td>Counter</td><td>จดแล้ว 42/67 ห้อง</td><td>verbatim D-15</td></tr>
+    <tr><td>Counter sub-line</td><td>เหลืออีก 25 ห้อง</td><td>—</td></tr>
+    <tr><td>Floor header</td><td>ชั้น 2 · เหลือ 4 ห้อง</td><td>the tail drops on the ทั้งหมด / จดแล้ว chips</td></tr>
+    <tr><td>Row badges</td><td>ยังไม่จด · จดแล้ว · ไม่ออกบิล · ใช้สูงผิดปกติ · ไม่มีการใช้งาน · เปลี่ยนมิเตอร์ · แก้ไขไม่ได้</td><td>—</td></tr>
+    <tr><td>Buttons</td><td>บันทึก · แก้ไข · ส่งให้นิติตรวจสอบ · ออกจากระบบ · ลองอีกครั้ง · ล้างการค้นหา</td><td>—</td></tr>
+    <tr><td>Round complete notice</td><td>จดครบทุกห้องแล้ว — กด ส่งให้นิติตรวจสอบ เพื่อสร้างบิลฉบับร่างของรอบนี้</td><td>—</td></tr>
+    <tr><td>Empty state</td><td>ยังไม่มีห้องที่ต้องจดในรอบนี้</td><td>verbatim D-40</td></tr>
+    <tr><td>Toast</td><td>บันทึกห้อง 205 แล้ว</td><td>no undo (D-39)</td></tr>
+  </tbody>
+</table>
+</div>
+
+
+<h3>2 · Reading entry — Room 205 <code>GET /readings?period=2026-09&amp;room=205</code></h3>
+
+<p class="screen-meta">
+  <span><b>Role</b> staff (and admin)</span>
+  <span><b>Entry</b> tapping a card in the round · the D-23 room links · the returned-for-correction notice</span>
+  <span><b>Primary action</b> บันทึก → <code>POST /api/readings</code></span>
+  <span><b>Writes</b> one meter_readings row per utility, UPSERT on <code>(room_id, period, utility_type)</code></span>
+</p>
+
+<p>Same page, same card component, scoped to a single room so the deep links in D-23 and the
+returned-for-correction notice land somewhere useful. This is the PRD §28 room: water 1,250 → 1,260
+(10 units), electricity 5,280 → 5,350 (70 units).</p>
+
+<div class="device phone">
+  <div class="screen">
+    <div class="app">
+      <div class="main">
+        <div class="topbar">
+          <button class="btn ghost sm">‹ กลับ</button>
+          <div class="title">ห้อง 205</div>
+        </div>
+        <div class="page">
+
+          <div class="notice anch">
+            <span class="ann" style="top:-10px;left:-8px">1</span>
+            <b>รอบ กันยายน 2026 · ชั้น 2</b>ผู้เช่า สุภาพร ใจดี · แก้ไขได้จนกว่านิติบุคคลจะอนุมัติบิล
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div><b>205</b> <span class="ui-sub">สุภาพร ใจดี</span></div>
+              <span class="badge warn">ยังไม่จด</span>
+            </div>
+
+            <div class="meter-card water anch">
+              <span class="ann" style="top:-10px;left:-8px">2</span>
+              <div class="meter-row">
+                <div class="ico" aria-hidden="true">💧</div>
+                <div class="field">
+                  <label class="label" for="d205-wp">น้ำ · ครั้งก่อน</label>
+                  <input class="input readonly" id="d205-wp" readonly value="1,250">
+                  <span class="hint">รอบ ส.ค. 2026</span>
+                </div>
+                <div class="field anch">
+                  <span class="ann" style="top:-10px;right:-8px">3</span>
+                  <label class="label" for="d205-wc">ครั้งนี้ <span class="req">*</span></label>
+                  <input class="input" id="d205-wc" type="text" inputmode="numeric" pattern="[0-9]*" value="1260">
+                </div>
+              </div>
+              <div class="units-out"><b>10</b> หน่วย <span class="ui-sub">1,250 → 1,260</span></div>
+            </div>
+
+            <div class="meter-card elec">
+              <div class="meter-row">
+                <div class="ico" aria-hidden="true">⚡</div>
+                <div class="field">
+                  <label class="label" for="d205-ep">ไฟ · ครั้งก่อน</label>
+                  <input class="input readonly" id="d205-ep" readonly value="5,280">
+                  <span class="hint">รอบ ส.ค. 2026</span>
+                </div>
+                <div class="field">
+                  <label class="label" for="d205-ec">ครั้งนี้ <span class="req">*</span></label>
+                  <input class="input" id="d205-ec" type="text" inputmode="numeric" pattern="[0-9]*" value="5350">
+                </div>
+              </div>
+              <div class="units-out anch">
+                <span class="ann" style="top:-6px;left:-26px">4</span>
+                <b>70</b> หน่วย <span class="ui-sub">5,280 → 5,350</span>
+              </div>
+            </div>
+
+            <label class="check anch">
+              <span class="ann" style="top:2px;left:-10px">5</span>
+              <input type="checkbox"> เปลี่ยนมิเตอร์ในรอบนี้
+            </label>
+
+            <div class="card-foot anch">
+              <span class="ann" style="top:-2px;left:2px">6</span>
+              <button class="btn primary lg block">บันทึก</button>
+            </div>
+          </div>
+
+          <div class="sub-head anch">
+            <span class="ann" style="top:-8px;left:-8px">7</span>
+            <span>ประวัติการจด 3 รอบล่าสุด</span>
+          </div>
+          <div class="table-scroll">
+            <table class="compact zebra">
+              <thead><tr><th>รอบ</th><th class="num">น้ำ</th><th class="num">ไฟ</th></tr></thead>
+              <tbody>
+                <tr><td>ส.ค. 2026</td><td class="num">11 หน่วย</td><td class="num">64 หน่วย</td></tr>
+                <tr><td>ก.ค. 2026</td><td class="num">9 หน่วย</td><td class="num">71 หน่วย</td></tr>
+                <tr><td>มิ.ย. 2026</td><td class="num">12 หน่วย</td><td class="num">58 หน่วย</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <nav class="bottom-tabs">
+          <a class="tab"><span class="ico" aria-hidden="true">🏠</span>ภาพรวม</a>
+          <a class="tab"><span class="ico" aria-hidden="true">🚪</span>ห้องพัก</a>
+          <a class="tab active"><span class="ico" aria-hidden="true">🔢</span>จดมิเตอร์</a>
+        </nav>
+      </div>
+    </div>
+  </div>
+</div>
+
+<ol class="annotations">
+  <li><span class="ann">1</span><b>Context banner</b> — period, floor and tenant, plus the one sentence
+    that explains the edit window without inventing a state machine: แก้ไขได้จนกว่านิติบุคคลจะอนุมัติบิล
+    (D-11, D-12). When the bill is already approved this banner is replaced by the frozen notice (see
+    §3, alternate B).</li>
+  <li><span class="ann">2</span><b>Previous reading, read-only</b> — a dashed read-only input carrying
+    the value resolved by D-14: the current reading of the greatest earlier period for this room and
+    utility, otherwise the room's <code>baseline_water</code> / <code>baseline_electric</code> (D-06).
+    The hint names the source period. When it is not the immediately preceding month the hint reads
+    <b>ครอบคลุมการใช้ตั้งแต่รอบ มิ.ย. 2026</b>; when it is the room's opening value it reads
+    <b>ค่าเริ่มต้นของห้อง</b>. Staff can never edit it — baselines are Admin-only and only before the
+    room's first reading exists.</li>
+  <li><span class="ann">3</span><b>Current reading input</b> — 44 px tall, 16 px text,
+    <code>inputmode="numeric"</code> so Android raises the numeric keypad (D-45).
+    <code>INT UNSIGNED</code>, whole units only (D-16): a decimal point, a minus sign and any non-digit
+    are rejected on input, and the server re-validates with <code>zod</code>. The field shows raw digits
+    (<code>1260</code>) while every read-only figure on the page is formatted with a thousands separator
+    (1,250) — a separator inside a numeric field fights the keypad.</li>
+  <li><span class="ann">4</span><b>Live units</b> — <code>5,350 − 5,280 = 70</code>, recomputed on every
+    keystroke and cleared to <b>—</b> while the field is empty. Units, not money: the Staff API response
+    contains no rate and no amount (D-36).</li>
+  <li><span class="ann">5</span><b>เปลี่ยนมิเตอร์ในรอบนี้</b> — available to both roles because Staff are
+    the ones at the meter (D-13). Ticking it reveals the replacement branch (alternate B) and suspends
+    the below-previous block. There is deliberately <b>no automatic rollover detection</b>: a dial that
+    has rolled past its maximum is entered here, with the old meter's final number and the new meter's
+    start number, so the arithmetic is recorded rather than guessed.</li>
+  <li><span class="ann">6</span><b>บันทึก</b> — saves this room alone through one
+    <code>POST /api/readings</code> carrying both utilities, and returns the room's saved state plus the
+    round's X/Y counter (D-15). The write is an UPSERT on
+    <code>UNIQUE(room_id, period, utility_type)</code>, so a double tap is a no-op rather than a
+    duplicate (D-12); the button shows <code>.btn.is-loading</code> and is disabled for the duration.
+    Saving recalculates that room's Draft bill in place immediately (D-18).</li>
+  <li><span class="ann">7</span><b>Reading history</b> — the three most recent periods for this room,
+    units only. It is what lets a walker sanity-check a reading on the spot and is the same data D-13's
+    soft usage flag is computed from. A missed month appears as a gap, never as a zero row (D-14).</li>
+</ol>
+
+<p><b>Alternate A — current below previous (hard block, D-13).</b> The walker typed 1,180 into a meter
+whose previous reading was 1,250.</p>
+
+<div class="device phone">
+  <div class="screen">
+    <div class="app">
+      <div class="main">
+        <div class="topbar">
+          <button class="btn ghost sm">‹ กลับ</button>
+          <div class="title">ห้อง 205</div>
+        </div>
+        <div class="page">
+          <div class="notice bad anch">
+            <span class="ann" style="top:-10px;left:-8px">8</span>
+            <b>บันทึกไม่ได้ 1 รายการ</b>เลขมิเตอร์น้ำน้อยกว่ารอบก่อน ตรวจสอบเลขที่หน้ามิเตอร์อีกครั้ง หรือถ้าเปลี่ยนมิเตอร์ใหม่ ให้ติ๊ก เปลี่ยนมิเตอร์ในรอบนี้
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div><b>205</b> <span class="ui-sub">สุภาพร ใจดี</span></div>
+              <span class="badge bad">ตรวจสอบ</span>
+            </div>
+
+            <div class="meter-card water">
+              <div class="meter-row">
+                <div class="ico" aria-hidden="true">💧</div>
+                <div class="field">
+                  <label class="label" for="e205-wp">น้ำ · ครั้งก่อน</label>
+                  <input class="input readonly" id="e205-wp" readonly value="1,250">
+                </div>
+                <div class="field invalid anch">
+                  <span class="ann" style="top:-10px;right:-8px">9</span>
+                  <label class="label" for="e205-wc">ครั้งนี้ <span class="req">*</span></label>
+                  <input class="input" id="e205-wc" type="text" inputmode="numeric" pattern="[0-9]*" value="1180" aria-invalid="true">
+                  <span class="error">เลขมิเตอร์ปัจจุบันน้อยกว่าเดือนก่อน (1,250) กรุณาตรวจสอบ</span>
+                </div>
+              </div>
+              <div class="units-out muted"><b>—</b> หน่วย <span class="ui-sub">คำนวณไม่ได้</span></div>
+            </div>
+
+            <div class="meter-card elec">
+              <div class="meter-row">
+                <div class="ico" aria-hidden="true">⚡</div>
+                <div class="field">
+                  <label class="label" for="e205-ep">ไฟ · ครั้งก่อน</label>
+                  <input class="input readonly" id="e205-ep" readonly value="5,280">
+                </div>
+                <div class="field invalid">
+                  <label class="label" for="e205-ec">ครั้งนี้ <span class="req">*</span></label>
+                  <input class="input" id="e205-ec" type="text" inputmode="numeric" pattern="[0-9]*" value="" aria-invalid="true">
+                  <span class="error">กรุณากรอกเลขมิเตอร์</span>
+                </div>
+              </div>
+              <div class="units-out muted"><b>—</b> หน่วย</div>
+            </div>
+
+            <label class="check anch">
+              <span class="ann" style="top:2px;left:-10px">10</span>
+              <input type="checkbox"> เปลี่ยนมิเตอร์ในรอบนี้
+            </label>
+
+            <div class="card-foot anch">
+              <span class="ann" style="top:-2px;left:2px">11</span>
+              <button class="btn primary lg block is-disabled">บันทึก</button>
+            </div>
+          </div>
+        </div>
+
+        <nav class="bottom-tabs">
+          <a class="tab"><span class="ico" aria-hidden="true">🏠</span>ภาพรวม</a>
+          <a class="tab"><span class="ico" aria-hidden="true">🚪</span>ห้องพัก</a>
+          <a class="tab active"><span class="ico" aria-hidden="true">🔢</span>จดมิเตอร์</a>
+        </nav>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p><b>Alternate B — meter replacement branch (D-13).</b> Room 210's electricity meter was swapped
+mid-round. The previous reading was 1,830, the old meter finished at 1,926, the new meter started at 0
+and now reads 96, so <code>units = (1,926 − 1,830) + (96 − 0) = 96 + 96 = 192</code>. The form renders
+that arithmetic line by line, so the walker can check it against the two dials in front of them before
+saving.</p>
+
+<div class="device phone">
+  <div class="screen">
+    <div class="app">
+      <div class="main">
+        <div class="topbar">
+          <button class="btn ghost sm">‹ กลับ</button>
+          <div class="title">ห้อง 210</div>
+        </div>
+        <div class="page">
+          <div class="card">
+            <div class="card-head">
+              <div><b>210</b> <span class="ui-sub">กมลชนก แสงทอง</span></div>
+              <span class="badge info">เปลี่ยนมิเตอร์</span>
+            </div>
+
+            <div class="meter-card elec">
+              <div class="meter-row">
+                <div class="ico" aria-hidden="true">⚡</div>
+                <div class="field">
+                  <label class="label" for="m210-ep">ไฟ · ครั้งก่อน</label>
+                  <input class="input readonly" id="m210-ep" readonly value="1,830">
+                </div>
+                <div class="field">
+                  <label class="label" for="m210-ec">ครั้งนี้ <span class="req">*</span></label>
+                  <input class="input" id="m210-ec" type="text" inputmode="numeric" pattern="[0-9]*" value="96">
+                </div>
+              </div>
+              <div class="units-out"><b>192</b> หน่วย <span class="ui-sub">รวมมิเตอร์เดิมและมิเตอร์ใหม่</span></div>
+            </div>
+
+            <label class="check anch">
+              <span class="ann" style="top:2px;left:-10px">12</span>
+              <input type="checkbox" checked> เปลี่ยนมิเตอร์ในรอบนี้
+            </label>
+
+            <div class="notice warn anch" style="margin-top:8px">
+              <span class="ann" style="top:-10px;right:-8px">13</span>
+              <b>โหมดเปลี่ยนมิเตอร์</b>ระบบจะไม่ตรวจว่าเลขปัจจุบันน้อยกว่ารอบก่อน แต่จะคิดหน่วยจากมิเตอร์เดิมบวกมิเตอร์ใหม่
+            </div>
+
+            <div class="field-row anch" style="margin-top:12px">
+              <span class="ann" style="top:-10px;left:-8px">14</span>
+              <div class="field">
+                <label class="label" for="m210-old">เลขสุดท้ายของมิเตอร์เดิม <span class="req">*</span></label>
+                <input class="input" id="m210-old" type="text" inputmode="numeric" pattern="[0-9]*" value="1926">
+                <span class="hint">ต้องไม่น้อยกว่า 1,830</span>
+              </div>
+              <div class="field">
+                <label class="label" for="m210-new">เลขเริ่มต้นของมิเตอร์ใหม่ <span class="req">*</span></label>
+                <input class="input" id="m210-new" type="text" inputmode="numeric" pattern="[0-9]*" value="0">
+                <span class="hint">ปกติเป็น 0</span>
+              </div>
+            </div>
+
+            <div class="field anch">
+              <span class="ann" style="top:-10px;left:-8px">15</span>
+              <label class="label" for="m210-reason">เหตุผลที่เปลี่ยนมิเตอร์ <span class="req">*</span></label>
+              <textarea class="textarea" id="m210-reason">มิเตอร์ไฟตัวเดิมชำรุด ช่างเปลี่ยนตัวใหม่เมื่อ 1 ก.ย. 2026</textarea>
+              <span class="hint">นิติบุคคลจะเห็นเหตุผลนี้ตอนอนุมัติบิล</span>
+            </div>
+
+            <div class="anch" style="margin-bottom:12px">
+              <span class="ann" style="top:-10px;left:-8px">16</span>
+              <div class="amount-rows">
+                <div aria-hidden="true">⚡</div><div>มิเตอร์เดิม</div><div class="amt">96</div>
+                <div class="calc">1,926 − 1,830</div>
+                <div aria-hidden="true">⚡</div><div>มิเตอร์ใหม่</div><div class="amt">96</div>
+                <div class="calc">96 − 0</div>
+              </div>
+              <div class="amount-total"><span>รวมหน่วยที่คิด</span><span>192 หน่วย</span></div>
+            </div>
+
+            <div class="card-foot"><button class="btn primary lg block">บันทึก</button></div>
+          </div>
+        </div>
+
+        <nav class="bottom-tabs">
+          <a class="tab"><span class="ico" aria-hidden="true">🏠</span>ภาพรวม</a>
+          <a class="tab"><span class="ico" aria-hidden="true">🚪</span>ห้องพัก</a>
+          <a class="tab active"><span class="ico" aria-hidden="true">🔢</span>จดมิเตอร์</a>
+        </nav>
+      </div>
+    </div>
+  </div>
+</div>
+
+<ol class="annotations" start="8">
+  <li><span class="ann">8</span><b>Inline failure banner</b> — a failed save never redirects and never
+    reloads the phone screen; every typed value survives (D-40). The banner summarises how many rows
+    were refused and points at the one legitimate escape hatch, the meter-replacement checkbox.</li>
+  <li><span class="ann">9</span><b>Below-previous hard block</b> — the exact Thai string is
+    <b>เลขมิเตอร์ปัจจุบันน้อยกว่าเดือนก่อน (1,250) กรุณาตรวจสอบ</b>, identical in the form and in the
+    API envelope (error code <code>READING_BELOW_PREVIOUS</code>, HTTP 422) so one string is testable on
+    both surfaces. The field takes <code>.field.invalid</code> and <code>aria-invalid="true"</code>; the
+    units read-out clears rather than showing a negative, and <code>CHECK (units &gt;= 0)</code> in the
+    schema is the last word. The electricity field beside it shows the empty-field message
+    <b>กรุณากรอกเลขมิเตอร์</b>: both utilities are required, because a room is only จดแล้ว with both.</li>
+  <li><span class="ann">10</span><b>The escape hatch stays visible</b> — the checkbox is not hidden
+    behind the error. Ticking it clears the block for this room immediately and re-validates against the
+    replacement rules instead.</li>
+  <li><span class="ann">11</span><b>Save disabled</b> — while any field on the card is invalid the button
+    is <code>.is-disabled</code>. This is presentation only: the API rejects the same payload with 422
+    for every role, so a disabled button is never the security boundary.</li>
+  <li><span class="ann">12</span><b>Checkbox ticked</b> — reveals three required fields and switches the
+    validation rules. Unticking it hides them, discards their values and restores the below-previous
+    block.</li>
+  <li><span class="ann">13</span><b>Mode warning</b> — states plainly that the ordinary guard is off, so
+    nobody uses this branch to force a bad number through. The row will carry
+    <code>meter_replaced = 1</code> and be flagged for Admin at the approval gate that already exists.</li>
+  <li><span class="ann">14</span><b>Replacement fields</b> — เลขสุดท้ายของมิเตอร์เดิม
+    (<code>old_final</code>) and เลขเริ่มต้นของมิเตอร์ใหม่ (<code>new_start</code>, defaulting to 0).
+    Validation: <code>old_final ≥ previous_reading</code> — <b>เลขสุดท้ายของมิเตอร์เดิมต้องไม่น้อยกว่า
+    1,830</b> — and <code>current_reading ≥ new_start</code> — <b>เลขปัจจุบันต้องไม่น้อยกว่าเลขเริ่มต้นของมิเตอร์ใหม่
+    (0)</b>. Both keep <code>units ≥ 0</code>.</li>
+  <li><span class="ann">15</span><b>Reason, required</b> — free Thai text stored on the reading row and
+    written to <code>audit_log</code> with action <code>METER_REPLACEMENT</code> and the entering user's
+    name (D-38). Empty reason blocks the save with <b>กรุณาระบุเหตุผลการเปลี่ยนมิเตอร์</b>.</li>
+  <li><span class="ann">16</span><b>Arithmetic shown, not hidden</b> —
+    <code>units = (old_final − previous_reading) + (current_reading − new_start)</code>, rendered as two
+    lines and a total so the walker can check it against the two physical dials before saving. This is
+    the same expression the service computes; the screen never sends a units value.</li>
+</ol>
+
+<p><b>Admin variant of the same route.</b> An Admin session on <code>/readings</code> additionally sees
+the Draft bill preview, because Admin may see rates and amounts (D-36). This is the PRD §28 arithmetic
+and it is the only place amounts appear anywhere in this section.</p>
+
+<div class="device phone">
+  <div class="screen">
+    <div class="app">
+      <div class="main">
+        <div class="topbar">
+          <div class="title">ห้อง 205</div>
+          <div class="actions"><span class="badge info">นิติบุคคล</span></div>
+        </div>
+        <div class="page">
+          <div class="card">
+            <div class="card-head">
+              <div class="card-title">ยอดบิลฉบับร่าง · กันยายน 2026</div>
+              <span class="badge draft" data-status="Draft">ฉบับร่าง</span>
+            </div>
+            <div class="amount-rows">
+              <div aria-hidden="true">💧</div><div>ค่าน้ำ</div><div class="amt">180.00</div>
+              <div class="calc">10 หน่วย × 18.00 บาท</div>
+              <div aria-hidden="true">⚡</div><div>ค่าไฟ</div><div class="amt">560.00</div>
+              <div class="calc">70 หน่วย × 8.00 บาท</div>
+              <div aria-hidden="true">🏢</div><div>ค่าส่วนกลาง</div><div class="amt">1,050.00</div>
+              <div class="calc">30 ตร.ม. × 35.00 บาท</div>
+            </div>
+            <div class="amount-total"><span>รวม</span><span>1,790.00 บาท</span></div>
+            <div class="card-foot">
+              <span class="ui-sub">กำหนดชำระ 5 ก.ย. 2026</span>
+            </div>
+          </div>
+          <div class="notice">
+            <b>เจ้าหน้าที่ไม่เห็นการ์ดนี้</b>บัญชีเจ้าหน้าที่เห็นเฉพาะจำนวนหน่วย ค่าบริการและอัตราไม่ถูกส่งมาใน API (D-36)
+          </div>
+        </div>
+        <nav class="bottom-tabs">
+          <a class="tab"><span class="ico" aria-hidden="true">🏠</span>ภาพรวม</a>
+          <a class="tab"><span class="ico" aria-hidden="true">🚪</span>ห้องพัก</a>
+          <a class="tab active"><span class="ico" aria-hidden="true">🔢</span>จดมิเตอร์</a>
+        </nav>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h4>States — reading entry</h4>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>State</th><th>Trigger</th><th>What the screen shows</th></tr></thead>
+  <tbody>
+    <tr><td><span class="badge neutral">Empty</span></td>
+      <td>A room with no reading yet for the period</td>
+      <td>Both Current fields empty with placeholder <code>0</code>, both units read-outs showing
+        <b>—</b>, บันทึก disabled until both fields hold a valid integer. A room with no earlier reading
+        at all shows its baseline as Previous with the hint <b>ค่าเริ่มต้นของห้อง</b> (D-06).</td></tr>
+    <tr><td><span class="badge info">Loading</span></td>
+      <td>บันทึก pressed</td>
+      <td>The button becomes <code>.btn.is-loading</code> (spinner, label hidden) and is disabled; the
+        inputs stay enabled and keep their values so a slow network never blocks re-reading them.</td></tr>
+    <tr><td><span class="badge bad">Error</span></td>
+      <td>Validation (422) or transport failure</td>
+      <td><b>Validation:</b> per-field <code>.field.invalid</code> plus the exact Thai message from the
+        API's <code>fields</code> map; the summary banner counts the failures.
+        <b>Transport:</b> <code>.notice.bad</code> — <b>บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง</b> with a
+        <b>ลองอีกครั้ง</b> button that re-posts the values already on screen. No reload, no lost typing
+        (D-40).</td></tr>
+    <tr><td><span class="badge paid">Success</span></td>
+      <td>200 from <code>POST /api/readings</code></td>
+      <td>Card collapses to the จดแล้ว summary row, the counter and chip counts are replaced from the
+        response, toast <b>บันทึกห้อง 205 แล้ว</b>. A double tap is an UPSERT on the unique key and
+        produces the identical row (D-12). If the room's bill for the period is already ฉบับร่าง, it is
+        recalculated in place on the same request (D-18).</td></tr>
+    <tr><td><span class="badge overdue">Permission denied</span></td>
+      <td>The bill for this room and period is approved (Unpaid / Paid / displaying Overdue)</td>
+      <td>Both Current fields render as read-only inputs, the checkbox is removed, บันทึก is gone, and a
+        <code>.notice.warn</code> states <b>บิลอนุมัติแล้ว แก้ไขไม่ได้</b> (verbatim D-12) with the
+        sub-line <b>ต้องให้นิติบุคคลตีกลับเป็นฉบับร่างก่อน</b>. A staff account that reaches an admin URL
+        gets the Thai 403 page instead (D-40).</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h4>Thai copy — reading entry, validation and dialogs</h4>
+<div class="table-wrap">
+<table class="compact">
+  <thead><tr><th>Where</th><th>Thai copy</th><th>Rule / code</th></tr></thead>
+  <tbody>
+    <tr><td>Field labels</td><td>น้ำ · ครั้งก่อน / ไฟ · ครั้งก่อน / ครั้งนี้</td><td>Previous is always read-only (D-06)</td></tr>
+    <tr><td>Previous hints</td><td>รอบ ส.ค. 2026 · ค่าเริ่มต้นของห้อง · ครอบคลุมการใช้ตั้งแต่รอบ มิ.ย. 2026</td><td>D-06, D-14</td></tr>
+    <tr><td>Units read-out</td><td>10 หน่วย · 70 หน่วย · — หน่วย</td><td>units only for staff (D-36)</td></tr>
+    <tr><td>Checkbox</td><td>เปลี่ยนมิเตอร์ในรอบนี้</td><td>verbatim D-13, both roles</td></tr>
+    <tr><td>Replacement fields</td><td>เลขสุดท้ายของมิเตอร์เดิม · เลขเริ่มต้นของมิเตอร์ใหม่ · เหตุผลที่เปลี่ยนมิเตอร์</td><td>verbatim D-13</td></tr>
+    <tr><td>Buttons</td><td>บันทึก · ลองอีกครั้ง · ‹ กลับ</td><td>D-02 Save = บันทึก</td></tr>
+    <tr><td>Validation — below previous</td><td>เลขมิเตอร์ปัจจุบันน้อยกว่าเดือนก่อน (1,250) กรุณาตรวจสอบ</td><td><code>READING_BELOW_PREVIOUS</code>, 422, verbatim D-13</td></tr>
+    <tr><td>Validation — empty</td><td>กรุณากรอกเลขมิเตอร์</td><td>required, both utilities</td></tr>
+    <tr><td>Validation — non-integer</td><td>กรอกได้เฉพาะตัวเลขจำนวนเต็ม ไม่มีจุดทศนิยม</td><td><code>INT UNSIGNED</code> (D-16)</td></tr>
+    <tr><td>Validation — too long</td><td>เลขมิเตอร์ยาวเกินไป กรุณาตรวจสอบ</td><td>guards a mistyped extra digit</td></tr>
+    <tr><td>Validation — old_final</td><td>เลขสุดท้ายของมิเตอร์เดิมต้องไม่น้อยกว่า 1,830</td><td><code>old_final ≥ previous_reading</code></td></tr>
+    <tr><td>Validation — new_start</td><td>เลขปัจจุบันต้องไม่น้อยกว่าเลขเริ่มต้นของมิเตอร์ใหม่ (0)</td><td><code>current_reading ≥ new_start</code></td></tr>
+    <tr><td>Validation — reason</td><td>กรุณาระบุเหตุผลการเปลี่ยนมิเตอร์</td><td>audited, <code>METER_REPLACEMENT</code></td></tr>
+    <tr><td>Save failed</td><td>บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง</td><td>D-40, values preserved</td></tr>
+    <tr><td>Frozen</td><td>บิลอนุมัติแล้ว แก้ไขไม่ได้ — ต้องให้นิติบุคคลตีกลับเป็นฉบับร่างก่อน</td><td>verbatim D-12, then D-22</td></tr>
+    <tr><td>Confirmation dialog</td><td colspan="2"><b>None.</b> Saving a reading is not one of the six
+      confirmed actions in D-39, and it is fully reversible while the bill is ฉบับร่าง. Adding a dialog
+      here would put a modal between a walker and 67 rooms.</td></tr>
+  </tbody>
+</table>
+</div>
+
+
+<h3>3 · Review &amp; submit the period <code>GET /readings?period=2026-09&amp;view=review</code></h3>
+
+<p class="screen-meta">
+  <span><b>Role</b> staff (and admin)</span>
+  <span><b>Entry</b> ส่งให้นิติตรวจสอบ in the round bar</span>
+  <span><b>Primary action</b> ส่งให้นิติตรวจสอบ → <code>POST /api/bills/generate</code></span>
+  <span><b>Effect</b> creates / recalculates ฉบับร่าง bills — no LINE message, nothing irreversible</span>
+</p>
+
+<p>D-18 puts bill generation behind one button, and D-39 deliberately does <em>not</em> give it a
+confirmation dialog. This screen is therefore the confirmation: it states what will and will not be
+generated, surfaces the two soft flags from D-13 while they can still be re-walked, and lists the rooms
+that will simply be skipped (D-23).</p>
+
+<div class="device phone">
+  <div class="screen">
+    <div class="app">
+      <div class="main">
+        <div class="topbar">
+          <button class="btn ghost sm">‹ กลับ</button>
+          <div class="title">ตรวจทานก่อนส่ง</div>
+        </div>
+        <div class="page">
+
+          <div class="stepper anch">
+            <span class="ann" style="top:-10px;left:-8px">1</span>
+            <span class="step done" data-step="1">จดมิเตอร์</span>
+            <span class="step current" data-step="2">ตรวจทาน</span>
+            <span class="step" data-step="3">นิติอนุมัติ</span>
+          </div>
+
+          <div class="kpi-grid anch">
+            <span class="ann" style="top:-10px;left:-8px">2</span>
+            <div class="kpi paid"><div class="label">จดแล้ว</div><div class="value">42</div><div class="sub">จาก 67 ห้อง</div></div>
+            <div class="kpi neutral"><div class="label">ยังไม่จด</div><div class="value">25</div><div class="sub">จะยังไม่สร้างบิล</div></div>
+            <div class="kpi overdue"><div class="label">ควรตรวจสอบ</div><div class="value">3</div><div class="sub">ห้องที่ระบบสงสัย</div></div>
+            <div class="kpi neutral"><div class="label">เปลี่ยนมิเตอร์</div><div class="value">1</div><div class="sub">ห้อง 210</div></div>
+          </div>
+
+          <div class="notice warn anch">
+            <span class="ann" style="top:-10px;left:-8px">3</span>
+            <b>ยังไม่ได้จดมิเตอร์ 25 ห้อง: 101, 106, 108 … — ยังไม่ได้สร้างบิล</b>
+            ส่งได้เลย ห้องที่เหลือจดทีหลังแล้วกดส่งซ้ำได้ ระบบจะสร้างเฉพาะบิลที่ยังไม่มี
+          </div>
+
+          <div class="sub-head anch">
+            <span class="ann" style="top:-8px;left:-8px">4</span>
+            <span>ห้องที่ควรตรวจสอบ</span><span class="ui-sub">ไม่บล็อกการส่ง</span>
+          </div>
+
+          <div class="list-item">
+            <div>
+              <div class="lead">312 · วีรยุทธ สายทอง</div>
+              <div class="meta">⚡ 8,455 → 8,700 · 245 หน่วย · รอบก่อน 62 หน่วย</div>
+            </div>
+            <div class="end"><span class="badge warn">ใช้สูงผิดปกติ</span><button class="btn ghost sm">แก้ไข</button></div>
+          </div>
+          <div class="list-item">
+            <div>
+              <div class="lead">116 · ศิริพร ทองเปลว</div>
+              <div class="meta">💧 980 → 1,076 · 96 หน่วย · รอบก่อน 11 หน่วย</div>
+            </div>
+            <div class="end"><span class="badge warn">ใช้สูงผิดปกติ</span><button class="btn ghost sm">แก้ไข</button></div>
+          </div>
+          <div class="list-item">
+            <div>
+              <div class="lead">409 · พรทิพย์ เกษมสุข</div>
+              <div class="meta">💧 1,344 → 1,344 · 0 หน่วย · มีผู้เช่าอยู่</div>
+            </div>
+            <div class="end"><span class="badge warn">ไม่มีการใช้งาน</span><button class="btn ghost sm">แก้ไข</button></div>
+          </div>
+
+          <div class="sub-head">
+            <span>ห้องที่แจ้งเปลี่ยนมิเตอร์</span>
+          </div>
+          <div class="list-item">
+            <div>
+              <div class="lead">210 · กมลชนก แสงทอง</div>
+              <div class="meta">⚡ 192 หน่วย · มิเตอร์เดิม 96 + มิเตอร์ใหม่ 96</div>
+            </div>
+            <div class="end"><span class="badge info">เปลี่ยนมิเตอร์</span><button class="btn ghost sm">แก้ไข</button></div>
+          </div>
+
+          <div class="notice anch" style="margin-top:16px">
+            <span class="ann" style="top:-10px;left:-8px">5</span>
+            <b>กดส่งแล้วเกิดอะไรขึ้น</b>ระบบสร้างบิล<b>ฉบับร่าง</b>ให้ห้องที่จดครบ ยังไม่มีการส่ง LINE และยังไม่มีการเรียกเก็บเงิน แก้ไขเลขมิเตอร์ได้จนกว่านิติบุคคลจะอนุมัติ
+          </div>
+        </div>
+
+        <div class="round-bar anch">
+          <span class="ann" style="top:-10px;left:6px">6</span>
+          <div class="count-line">
+            <div><b>จะสร้างบิล 42 ห้อง</b></div>
+            <div class="ui-sub">ข้าม 25 ห้องที่ยังไม่จด</div>
+          </div>
+          <button class="btn primary">ส่งให้นิติตรวจสอบ</button>
+        </div>
+
+        <nav class="bottom-tabs">
+          <a class="tab"><span class="ico" aria-hidden="true">🏠</span>ภาพรวม</a>
+          <a class="tab"><span class="ico" aria-hidden="true">🚪</span>ห้องพัก</a>
+          <a class="tab active"><span class="ico" aria-hidden="true">🔢</span>จดมิเตอร์</a>
+        </nav>
+      </div>
+    </div>
+  </div>
+</div>
+
+<ol class="annotations">
+  <li><span class="ann">1</span><b>Three-step stepper</b> — จดมิเตอร์ → ตรวจทาน → นิติอนุมัติ. It shows
+    where the round sits without implying a stored state: there is no submitted state and no period
+    lock (D-11, D-18). Step 3 is another person's job and is never marked done on this screen.</li>
+  <li><span class="ann">2</span><b>Round summary</b> — the four figures a walker is accountable for. All
+    of them are counts of rooms; none is money (D-36). ควรตรวจสอบ is the sum of the two soft flags and
+    is advisory only.</li>
+  <li><span class="ann">3</span><b>Skipped rooms (D-23)</b> — the exact banner sentence used on Monthly
+    Billing, so the office reads one string in two places:
+    <b>ยังไม่ได้จดมิเตอร์ 25 ห้อง: 101, 106, 108 … — ยังไม่ได้สร้างบิล</b>. Codes link to
+    <code>/readings?period=2026-09&amp;room=101</code>. Submission is <b>not</b> blocked: a re-run after
+    the stragglers are read creates only their bills, at the same rate for the period (D-17).</li>
+  <li><span class="ann">4</span><b>Soft flags, non-blocking (D-13)</b> —
+    <span class="badge warn">ใช้สูงผิดปกติ</span> fires only when the room's previous-period usage for
+    the same utility was ≥ 10 units <em>and</em> current usage exceeds 3× it (312: 62 → 245; 116:
+    11 → 96). <span class="badge warn">ไม่มีการใช้งาน</span> fires on 0 units for a room with an Active
+    tenant. Neither disables anything; each row's แก้ไข jumps straight to that room's card while the
+    bill is still ฉบับร่าง. The floor of 10 units is what keeps the flag from firing on every room
+    coming back from a vacant month.</li>
+  <li><span class="ann">5</span><b>Effect statement</b> — this paragraph is the confirmation. It names
+    exactly what the button does and, more usefully, what it does not do: no LINE message, no charge,
+    nothing frozen. Approval and delivery are Admin's single gate (D-19), not this one.</li>
+  <li><span class="ann">6</span><b>ส่งให้นิติตรวจสอบ</b> — posts to <code>/api/bills/generate</code> for
+    the period. Enabled once at least one room has both readings (D-18); pressing it twice is harmless
+    because bills carry <code>UNIQUE(room_id, period)</code> and a re-run recalculates Drafts and never
+    touches an approved bill. No <code>confirm()</code>, no dialog (D-39).</li>
+</ol>
+
+<p><b>Alternate A — result of the generation run.</b> The exact summary string from D-18, rendered where
+the walker is standing rather than on an Admin screen they cannot open.</p>
+
+<div class="device phone">
+  <div class="screen">
+    <div class="app">
+      <div class="main">
+        <div class="topbar">
+          <button class="btn ghost sm">‹ กลับ</button>
+          <div class="title">ส่งให้นิติแล้ว</div>
+        </div>
+        <div class="page">
+          <div class="stepper">
+            <span class="step done" data-step="1">จดมิเตอร์</span>
+            <span class="step done" data-step="2">ตรวจทาน</span>
+            <span class="step current" data-step="3">นิติอนุมัติ</span>
+          </div>
+
+          <div class="notice ok">
+            <b>ส่งให้นิติบุคคลตรวจสอบแล้ว</b>
+            สร้างบิลใหม่ 42 ใบ · อัปเดต 0 ใบ · ข้าม (อนุมัติแล้ว) 0 ใบ · ยังไม่ได้จด 25 ห้อง
+          </div>
+
+          <div class="card">
+            <div class="card-head"><div class="card-title">สถานะรอบ กันยายน 2026</div>
+              <span class="badge draft" data-status="Draft">ฉบับร่าง</span></div>
+            <div class="spread"><span class="ui-muted">ห้องที่มีผู้เช่า</span><span class="num">67</span></div>
+            <hr class="divider">
+            <div class="spread"><span class="ui-muted">จดครบและสร้างบิลแล้ว</span><span class="num">42</span></div>
+            <hr class="divider">
+            <div class="spread"><span class="ui-muted">ยังไม่ได้จด</span><span class="num">25</span></div>
+          </div>
+
+          <div class="notice warn">
+            <b>ยังจดต่อได้</b>รอบนี้ยังไม่ปิด จดห้องที่เหลือแล้วกด ส่งให้นิติตรวจสอบ ซ้ำได้ ระบบจะสร้างเฉพาะบิลที่ยังไม่มี และคำนวณบิลฉบับร่างเดิมใหม่ให้อัตโนมัติ
+          </div>
+
+          <button class="btn secondary lg block">กลับไปจดห้องที่เหลือ</button>
+        </div>
+
+        <nav class="bottom-tabs">
+          <a class="tab"><span class="ico" aria-hidden="true">🏠</span>ภาพรวม</a>
+          <a class="tab"><span class="ico" aria-hidden="true">🚪</span>ห้องพัก</a>
+          <a class="tab active"><span class="ico" aria-hidden="true">🔢</span>จดมิเตอร์</a>
+        </nav>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p><b>Alternate B — frozen rooms and a room Admin returned for correction (D-12, D-22).</b> Both states
+live in the same list, which is why they are drawn in one frame: room 205's bill was approved and is now
+untouchable; room 312's bill was reverted to ฉบับร่าง with a reason, and is editable again.</p>
+
+<div class="device phone">
+  <div class="screen">
+    <div class="app">
+      <div class="main">
+        <div class="topbar">
+          <div class="title">จดมิเตอร์</div>
+          <div class="actions"><button class="btn ghost sm">ออกจากระบบ</button></div>
+        </div>
+        <div class="page">
+          <div class="toolbar">
+            <span class="month-picker"><span class="arrow">‹</span> กันยายน 2026 <span class="arrow">›</span></span>
+          </div>
+
+          <div class="notice warn anch">
+            <span class="ann" style="top:-10px;left:-8px">7</span>
+            <b>นิติบุคคลส่งกลับให้แก้ไข 1 ห้อง</b>
+            ห้อง 312 · “เลขมิเตอร์ไฟสูงผิดปกติ ขอให้ขึ้นไปอ่านซ้ำที่หน้างานก่อนอนุมัติ”
+            <div class="row" style="margin-top:8px"><button class="btn secondary sm">ไปที่ห้อง 312</button></div>
+          </div>
+
+          <div class="chip-row">
+            <span class="chip active">ทั้งหมด <span class="count">67</span></span>
+            <span class="chip">ยังไม่จด <span class="count">0</span></span>
+            <span class="chip">จดแล้ว <span class="count">67</span></span>
+            <span class="chip">ห้องว่าง <span class="count">13</span></span>
+          </div>
+
+          <div class="group-head">ชั้น 2</div>
+          <div class="list-item is-done anch">
+            <span class="ann" style="top:-8px;left:-8px">8</span>
+            <div>
+              <div class="lead">205 · สุภาพร ใจดี</div>
+              <div class="meta">💧 10 หน่วย · ⚡ 70 หน่วย · บิลอนุมัติแล้ว แก้ไขไม่ได้</div>
+            </div>
+            <div class="end"><span class="badge neutral">แก้ไขไม่ได้</span></div>
+          </div>
+
+          <div class="group-head">ชั้น 3</div>
+          <div class="card anch">
+            <span class="ann" style="top:-10px;left:-8px">9</span>
+            <div class="card-head">
+              <div><b>312</b> <span class="ui-sub">วีรยุทธ สายทอง</span></div>
+              <span class="badge warn">ส่งกลับให้แก้ไข</span>
+            </div>
+            <div class="notice warn">
+              <b>เหตุผลจากนิติบุคคล</b>เลขมิเตอร์ไฟสูงผิดปกติ ขอให้ขึ้นไปอ่านซ้ำที่หน้างานก่อนอนุมัติ
+              <span class="ui-sub" style="display:block;margin-top:4px">นิติบุคคล · 4 ก.ย. 2026 09:12 น.</span>
+            </div>
+            <div class="meter-card elec">
+              <div class="meter-row">
+                <div class="ico" aria-hidden="true">⚡</div>
+                <div class="field">
+                  <label class="label" for="b312-ep">ไฟ · ครั้งก่อน</label>
+                  <input class="input readonly" id="b312-ep" readonly value="8,455">
+                </div>
+                <div class="field">
+                  <label class="label" for="b312-ec">ครั้งนี้ <span class="req">*</span></label>
+                  <input class="input" id="b312-ec" type="text" inputmode="numeric" pattern="[0-9]*" value="8700">
+                </div>
+              </div>
+              <div class="units-out"><b>245</b> หน่วย <span class="ui-sub">รอบก่อน 62 หน่วย</span></div>
+            </div>
+            <div class="card-foot"><button class="btn primary lg block">บันทึกและส่งตรวจอีกครั้ง</button></div>
+          </div>
+        </div>
+
+        <div class="round-bar">
+          <div class="count-line">
+            <div><b>จดแล้ว 67/67 ห้อง</b></div>
+            <div class="ui-sub">รอแก้ไข 1 ห้อง</div>
+          </div>
+          <button class="btn primary">ส่งให้นิติตรวจสอบ</button>
+        </div>
+
+        <nav class="bottom-tabs">
+          <a class="tab"><span class="ico" aria-hidden="true">🏠</span>ภาพรวม</a>
+          <a class="tab"><span class="ico" aria-hidden="true">🚪</span>ห้องพัก</a>
+          <a class="tab active"><span class="ico" aria-hidden="true">🔢</span>จดมิเตอร์</a>
+        </nav>
+      </div>
+    </div>
+  </div>
+</div>
+
+<ol class="annotations" start="7">
+  <li><span class="ann">7</span><b>Returned-for-correction banner</b> — appears whenever a bill for the
+    selected period was reverted from Unpaid to ฉบับร่าง by Admin (D-22). It quotes the Admin's required
+    reason (minimum 10 Thai characters) verbatim, because a returned room without a reason is a walk up
+    five floors for nothing. The banner is derived from the <code>audit_log</code> row with action
+    <code>BILL_REVERT</code>, so no new column and no new table is needed (D-38).</li>
+  <li><span class="ann">8</span><b>Frozen room</b> — room 205's bill is approved, so its readings are
+    frozen for everyone including Admin (D-12). The row keeps the จดแล้ว styling but loses its แก้ไข
+    button and carries <span class="badge neutral">แก้ไขไม่ได้</span>; the meta line states the reason
+    in the exact D-12 words, <b>บิลอนุมัติแล้ว แก้ไขไม่ได้</b>. Tapping the row opens the read-only
+    variant of §2, never an editable form that would fail on save.</li>
+  <li><span class="ann">9</span><b>Returned room, editable again</b> — the revert unfroze this room's
+    readings, so the card is live once more with the reason pinned inside it. The button reads
+    <b>บันทึกและส่งตรวจอีกครั้ง</b>: saving recalculates the room's Draft bill immediately (D-18), and
+    the room re-enters the ordinary flow. Nothing about "returned" is stored on the reading — the room
+    is editable simply because its bill is ฉบับร่าง again, which is the one rule the whole screen runs
+    on.</li>
+</ol>
+
+<h4>States — review &amp; submit</h4>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>State</th><th>Trigger</th><th>What the screen shows</th></tr></thead>
+  <tbody>
+    <tr><td><span class="badge neutral">Empty</span></td>
+      <td>No room in the period has both readings</td>
+      <td>The KPI row still renders (0 / 67 / 0 / 0), the anomaly and replacement sections are omitted
+        entirely rather than shown empty, and the round bar reads <b>ยังไม่มีห้องที่จดครบ</b> with
+        ส่งให้นิติตรวจสอบ disabled (D-18 enables it at one complete room).</td></tr>
+    <tr><td><span class="badge info">Loading</span></td>
+      <td>ส่งให้นิติตรวจสอบ pressed</td>
+      <td>Button becomes <code>.btn.is-loading</code>; the page is not replaced until
+        <code>/api/bills/generate</code> returns, because the summary counts are the whole point of the
+        next screen. Generation over 67 rooms is one transaction and is expected well inside the
+        five-second budget in D-45.</td></tr>
+    <tr><td><span class="badge bad">Error</span></td>
+      <td>Generation fails</td>
+      <td><code>.notice.bad</code> — <b>ส่งไม่สำเร็จ ยังไม่มีการสร้างบิล กรุณาลองอีกครั้ง</b> with a
+        retry button. The transaction is all-or-nothing, so a failed run leaves no half-built period and
+        a retry is always safe.</td></tr>
+    <tr><td><span class="badge paid">Success</span></td>
+      <td>200 from <code>/api/bills/generate</code></td>
+      <td>Alternate A, carrying the D-18 string verbatim: <b>สร้างบิลใหม่ 42 ใบ · อัปเดต 0 ใบ ·
+        ข้าม (อนุมัติแล้ว) 0 ใบ · ยังไม่ได้จด 25 ห้อง</b>. Bills are ฉบับร่าง; no LINE message is sent
+        at this step (that is D-19's Admin gate).</td></tr>
+    <tr><td><span class="badge overdue">Permission denied</span></td>
+      <td>Every bill in the period is already approved</td>
+      <td>The run is still permitted and simply reports <b>ข้าม (อนุมัติแล้ว) 42 ใบ</b> — approved bills
+        are never touched (D-18). Individually, each approved room shows as frozen (alternate B). A
+        staff account opening <code>/bills</code> or <code>/bills/:id</code> gets the Thai 403 page with
+        the <b>กลับไปหน้าจดมิเตอร์</b> button, and the response body carries no amount at all
+        (D-36, D-40).</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h4>Thai copy — review, submit and correction</h4>
+<div class="table-wrap">
+<table class="compact">
+  <thead><tr><th>Where</th><th>Thai copy</th><th>Rule</th></tr></thead>
+  <tbody>
+    <tr><td>Title</td><td>ตรวจทานก่อนส่ง</td><td>—</td></tr>
+    <tr><td>Stepper</td><td>จดมิเตอร์ · ตรวจทาน · นิติอนุมัติ</td><td>display only, no stored state (D-11)</td></tr>
+    <tr><td>KPI labels</td><td>จดแล้ว · ยังไม่จด · ควรตรวจสอบ · เปลี่ยนมิเตอร์</td><td>counts of rooms, never money</td></tr>
+    <tr><td>Skipped-rooms banner</td><td>ยังไม่ได้จดมิเตอร์ 25 ห้อง: 101, 106, 108 … — ยังไม่ได้สร้างบิล</td><td>verbatim D-23</td></tr>
+    <tr><td>Soft flags</td><td>ใช้สูงผิดปกติ · ไม่มีการใช้งาน</td><td>verbatim D-13, non-blocking</td></tr>
+    <tr><td>Effect statement</td><td>ระบบสร้างบิลฉบับร่างให้ห้องที่จดครบ ยังไม่มีการส่ง LINE และยังไม่มีการเรียกเก็บเงิน แก้ไขเลขมิเตอร์ได้จนกว่านิติบุคคลจะอนุมัติ</td><td>this replaces a D-39 dialog</td></tr>
+    <tr><td>Primary button</td><td>ส่งให้นิติตรวจสอบ</td><td>verbatim D-18, PRD §4</td></tr>
+    <tr><td>Result</td><td>สร้างบิลใหม่ 42 ใบ · อัปเดต 0 ใบ · ข้าม (อนุมัติแล้ว) 0 ใบ · ยังไม่ได้จด 25 ห้อง</td><td>verbatim D-18</td></tr>
+    <tr><td>Result follow-up</td><td>กลับไปจดห้องที่เหลือ</td><td>—</td></tr>
+    <tr><td>Submit failed</td><td>ส่งไม่สำเร็จ ยังไม่มีการสร้างบิล กรุณาลองอีกครั้ง</td><td>D-40</td></tr>
+    <tr><td>Returned banner</td><td>นิติบุคคลส่งกลับให้แก้ไข 1 ห้อง — ห้อง 312 · “{reason}”</td><td>reason from <code>BILL_REVERT</code> (D-22, D-38)</td></tr>
+    <tr><td>Returned buttons</td><td>ไปที่ห้อง 312 · บันทึกและส่งตรวจอีกครั้ง</td><td>—</td></tr>
+    <tr><td>Frozen row</td><td>แก้ไขไม่ได้ — บิลอนุมัติแล้ว แก้ไขไม่ได้</td><td>verbatim D-12</td></tr>
+    <tr><td>Empty</td><td>ยังไม่มีห้องที่จดครบ</td><td>—</td></tr>
+    <tr><td>Confirmation dialog</td><td colspan="2"><b>None.</b> D-39 fixes the confirmed actions at six
+      and this is not one of them: generation creates ฉบับร่าง bills only, sends nothing and freezes
+      nothing. The Admin gate that <em>is</em> irreversible — อนุมัติและส่งบิล — carries its own dialog
+      on a screen Staff cannot open.</td></tr>
+  </tbody>
+</table>
+</div>
+
+
+<h3>4 · Staff bottom tab navigation and the reduced ภาพรวม <code>GET /dashboard</code></h3>
+
+<p class="screen-meta">
+  <span><b>Role</b> staff only (admin uses the desktop sidebar)</span>
+  <span><b>Entry</b> every staff page; login lands here</span>
+  <span><b>Primary action</b> จดมิเตอร์</span>
+  <span><b>Shown under</b> <code>@container app (max-width:767px)</code></span>
+</p>
+
+<p>The tab bar is not a screen of its own — it is the persistent chrome under every Staff page, produced
+by the container query in the design system, which is why a phone frame inside this desktop-width
+document still renders the phone layout. It carries exactly the three pages the D-36 matrix grants
+Staff. Anything else is a 403, not a hidden link.</p>
+
+<div class="device phone">
+  <div class="screen">
+    <div class="app">
+      <div class="main">
+        <div class="topbar anch">
+          <span class="ann" style="top:6px;right:6px">1</span>
+          <div class="title">ภาพรวม</div>
+          <div class="actions">
+            <span class="ui-sub">เจ้าหน้าที่ · สมชาย</span>
+            <button class="btn ghost sm">ออกจากระบบ</button>
+          </div>
+        </div>
+        <div class="page">
+          <div class="notice">
+            <b>ศุภาลัย เรสซิเดนซ์</b>รอบปัจจุบัน กันยายน 2026 · วันนี้ 4 ก.ย. 2026
+          </div>
+
+          <div class="kpi-grid anch">
+            <span class="ann" style="top:-10px;left:-8px">2</span>
+            <div class="kpi neutral"><div class="label">ห้องทั้งหมด</div><div class="value">80</div><div class="sub">5 ชั้น</div></div>
+            <div class="kpi"><div class="label">มีผู้เช่า</div><div class="value">67</div><div class="sub">ต้องจดมิเตอร์</div></div>
+            <div class="kpi neutral"><div class="label">ห้องว่าง</div><div class="value">13</div><div class="sub">ไม่ออกบิล</div></div>
+            <div class="kpi paid"><div class="label">จดแล้ว</div><div class="value">42</div><div class="sub">จาก 67 ห้อง</div></div>
+          </div>
+
+          <div class="card anch">
+            <span class="ann" style="top:-10px;left:-8px">3</span>
+            <div class="card-head"><div class="card-title">ความคืบหน้ารอบนี้</div>
+              <span class="badge warn">ยังไม่ครบ</span></div>
+            <div class="progress-label"><span>จดแล้ว 42/67 ห้อง</span><span>63%</span></div>
+            <div class="progress"><div class="bar" style="width:63%"></div></div>
+            <div class="ui-sub" style="margin-top:8px">เหลือชั้น 1 (6) · ชั้น 2 (4) · ชั้น 3 (7) · ชั้น 4 (5) · ชั้น 5 (3)</div>
+            <div class="card-foot"><button class="btn primary">ไปจดมิเตอร์</button></div>
+          </div>
+
+          <div class="notice anch">
+            <span class="ann" style="top:-10px;right:2px">4</span>
+            <b>บัญชีเจ้าหน้าที่</b>หน้านี้ไม่แสดงค่าบริการ ยอดเงิน หรืออัตราค่าน้ำค่าไฟ หากต้องการดูบิล กรุณาติดต่อนิติบุคคล
+          </div>
+        </div>
+
+        <nav class="bottom-tabs anch">
+          <span class="ann" style="top:-10px;left:6px">5</span>
+          <a class="tab active"><span class="ico" aria-hidden="true">🏠</span>ภาพรวม</a>
+          <a class="tab"><span class="ico" aria-hidden="true">🚪</span>ห้องพัก</a>
+          <a class="tab"><span class="ico" aria-hidden="true">🔢</span>จดมิเตอร์</a>
+        </nav>
+      </div>
+    </div>
+  </div>
+</div>
+
+<ol class="annotations">
+  <li><span class="ann">1</span><b>Top bar</b> — page title, the signed-in identity, and ออกจากระบบ.
+    Logout lives here rather than in a fourth tab: the tab bar is reserved for the three pages the role
+    matrix grants, and a destination that is not a page does not deserve a tab.</li>
+  <li><span class="ann">2</span><b>Reduced ภาพรวม (D-36)</b> — room counts and this period's reading
+    progress, and nothing else. No revenue tile, no arrears tile, no chart: those figures are not merely
+    hidden from the template, they are absent from the response a staff session receives.</li>
+  <li><span class="ann">3</span><b>Progress card</b> — the same X/Y counter as the round bar, computed
+    the same way (both readings stored ⇒ จดแล้ว), plus the per-floor remainder so the walker can plan
+    the route. Its button is the one primary action on the page.</li>
+  <li><span class="ann">4</span><b>The boundary, stated</b> — one sentence explaining why there are no
+    amounts, so the absence reads as a rule rather than a bug and nobody files it as a missing feature.</li>
+  <li><span class="ann">5</span><b>Bottom tabs</b> — exactly three, in walking order:
+    <b>ภาพรวม</b> <code>/dashboard</code>, <b>ห้องพัก</b> <code>/rooms</code> (read-only list and detail,
+    no rates and no amounts), <b>จดมิเตอร์</b> <code>/readings</code>. Each tab is at least 44 × 44 px
+    (D-45); the active tab is brand-coloured and semibold, and colour is never the only signal because
+    the label is always visible. The bar is <code>position:sticky; bottom:0</code> and the round bar
+    parks above it, so neither covers the other. It appears only under the design system's
+    <code>@container app (max-width:767px)</code> rule — an Admin at 1280 px gets the sidebar instead.</li>
+</ol>
+
+<h4>Staff navigation matrix (D-36)</h4>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Tab / page</th><th>Route</th><th>Staff</th><th>What Staff may do</th></tr></thead>
+  <tbody>
+    <tr><td>ภาพรวม (Dashboard)</td><td><code>/dashboard</code></td><td><span class="badge ok">yes</span></td>
+      <td>Room counts and this period's reading progress. No money figure of any kind.</td></tr>
+    <tr><td>ห้องพัก (Rooms)</td><td><code>/rooms</code>, <code>/rooms/:id</code></td><td><span class="badge ok">yes</span></td>
+      <td>Read-only list and detail plus the room's reading history. No area edit, no baselines, no rates.</td></tr>
+    <tr><td>จดมิเตอร์ (Meter Reading)</td><td><code>/readings</code></td><td><span class="badge ok">yes</span></td>
+      <td>Create and edit readings while the bill is ฉบับร่าง or absent, record a meter replacement, press ส่งให้นิติตรวจสอบ.</td></tr>
+    <tr><td>ผู้เช่า · บิลประจำเดือน · รายละเอียดบิล · รับชำระเงิน · ใบเสร็จ · ประกาศ · รายงาน · ตั้งค่า · ผู้ใช้งานระบบ</td>
+      <td><code>/tenants</code>, <code>/bills</code>, <code>/bills/:id</code>, <code>/payments</code>, <code>/receipts/:id</code>, <code>/announcements</code>, <code>/reports</code>, <code>/settings</code>, <code>/users</code></td>
+      <td><span class="badge bad">403</span></td>
+      <td>No tab, and a direct URL returns the Thai 403 page — never a silent redirect, so the matrix is testable row by row (D-40).</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h4>States — navigation</h4>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>State</th><th>Trigger</th><th>What the screen shows</th></tr></thead>
+  <tbody>
+    <tr><td><span class="badge neutral">Empty</span></td><td>Seed not loaded / no rooms</td>
+      <td>KPI values render as 0 and the progress card is replaced by the shared empty state
+        <b>ยังไม่มีข้อมูลห้อง</b>. Staff get no เพิ่มห้อง action — creating rooms is Admin-only.</td></tr>
+    <tr><td><span class="badge info">Loading</span></td><td>First paint</td>
+      <td>Tab bar and top bar paint immediately from the session; the KPI values and the progress bar are
+        skeletons. The tab bar is never skeletonised — navigation must be usable before data arrives.</td></tr>
+    <tr><td><span class="badge bad">Error</span></td><td>Dashboard query fails</td>
+      <td><code>.notice.bad</code> — <b>โหลดข้อมูลไม่สำเร็จ</b> plus <b>ลองอีกครั้ง</b>. The จดมิเตอร์ tab
+        stays reachable, because a broken overview must not block the round.</td></tr>
+    <tr><td><span class="badge paid">Success</span></td><td>Round finished</td>
+      <td>Progress card badge flips to <span class="badge ok">ครบแล้ว</span>, the bar turns green
+        (<code>.progress.ok</code>), and the card action becomes <b>ตรวจทานและส่งให้นิติ</b>.</td></tr>
+    <tr><td><span class="badge overdue">Permission denied</span></td><td>Staff opens an admin route</td>
+      <td>Full-page Thai 403 (D-40) —
+        <b>ไม่มีสิทธิ์เข้าถึงหน้านี้ · บัญชีของคุณเป็นเจ้าหน้าที่ กรุณาติดต่อนิติบุคคล</b> with the
+        primary button <b>กลับไปหน้าจดมิเตอร์</b>. The tab bar stays visible so the user is never
+        stranded. Session expiry sends them to เข้าสู่ระบบ with <b>เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่</b>.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h4>Thai copy — navigation</h4>
+<div class="table-wrap">
+<table class="compact">
+  <thead><tr><th>Element</th><th>Thai copy</th></tr></thead>
+  <tbody>
+    <tr><td>Tabs</td><td>ภาพรวม · ห้องพัก · จดมิเตอร์</td></tr>
+    <tr><td>Top bar identity</td><td>เจ้าหน้าที่ · สมชาย</td></tr>
+    <tr><td>Buttons</td><td>ออกจากระบบ · ไปจดมิเตอร์ · ตรวจทานและส่งให้นิติ · ลองอีกครั้ง</td></tr>
+    <tr><td>Progress badges</td><td>ยังไม่ครบ · ครบแล้ว</td></tr>
+    <tr><td>Boundary note</td><td>หน้านี้ไม่แสดงค่าบริการ ยอดเงิน หรืออัตราค่าน้ำค่าไฟ หากต้องการดูบิล กรุณาติดต่อนิติบุคคล</td></tr>
+    <tr><td>403 page</td><td>ไม่มีสิทธิ์เข้าถึงหน้านี้ · บัญชีของคุณเป็นเจ้าหน้าที่ กรุณาติดต่อนิติบุคคล — กลับไปหน้าจดมิเตอร์</td></tr>
+    <tr><td>Session expired</td><td>เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่</td></tr>
+    <tr><td>Empty</td><td>ยังไม่มีข้อมูลห้อง</td></tr>
+  </tbody>
+</table>
+</div>
+
+
+<h3>Assumptions recorded for these screens</h3>
+
+<div class="callout note">
+  <div class="title">Design decisions taken here that the PM log does not settle</div>
+  <ol>
+    <li><b>Amounts are absent from every Staff frame.</b> The brief for this section asked for live
+      computed units <em>and</em> amounts on the reading screen; D-36 forbids Staff any amount or rate.
+      D-36 wins. Units are live on the Staff screens, and the 180 / 560 / 1,050 / 1,790 preview is shown
+      once, in a clearly labelled Admin frame on the same route.</li>
+    <li><b>No rollover confirmation dialog exists.</b> The brief mentioned a "rollover/replacement
+      confirm"; D-13 states there is no automatic rollover detection and no dialog — a rolled dial is
+      entered through เปลี่ยนมิเตอร์ในรอบนี้. The checkbox branch is the whole mechanism.</li>
+    <li><b>Deep-link shape <code>/readings?period=YYYY-MM&amp;room=205</code>.</b> D-23 requires room codes
+      that link "straight to the Meter Reading page for that room" but names no URL. A query parameter on
+      the existing route keeps the ADR's seven-endpoint and route conventions intact and adds no page.</li>
+    <li><b>Review screen shape <code>?view=review</code>.</b> D-18 places ส่งให้นิติตรวจสอบ on the Meter
+      Reading page and D-39 gives it no dialog, so the review step is a mode of the same route rather than
+      a new page, a new endpoint or a modal.</li>
+    <li><b>Staff-side surfacing of a returned bill.</b> D-22 defines the Admin revert and its mandatory
+      reason but does not say how Staff learn about it. The banner and the per-card reason are derived
+      from the existing <code>audit_log</code> <code>BILL_REVERT</code> row (D-38) — no new column, no
+      notification table, no push.</li>
+    <li><b>Three tabs, logout in the top bar.</b> D-36 grants Staff exactly three pages; a fourth
+      "account" tab would be a destination that is not one of them.</li>
+    <li><b>Numeric inputs hold raw digits.</b> Read-only figures use the D-03 thousands separator
+      (1,250); the editable Current field shows <code>1260</code>, because a separator inside a field
+      driven by the Android numeric keypad has to be stripped on every keystroke.</li>
+    <li><b>Reading history is capped at three periods on the phone.</b> The room's full history lives on
+      ห้องพัก → room detail; three rows are what fits above the fold and what a sanity check needs.</li>
+    <li><b>Example rooms other than 205.</b> Rooms 108, 112, 116, 210, 312 and 409 and their Thai tenant
+      names are illustrative, consistent with the D-44 seed shape (80 rooms across 5 floors, 67 occupied,
+      13 vacant, all 30.00 ตร.ม.). Only room 205's figures are binding.</li>
+  </ol>
+</div>
+
+</section>

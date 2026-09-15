@@ -1,0 +1,734 @@
+<section id="structure-and-plan">
+<h2>Project Structure, Environment &amp; Implementation Plan</h2>
+
+<p>This section turns ADR-001 into something a student can check out on a Monday morning and run. It fixes the folder tree, the environment variables, the npm scripts, the deploy procedure, the milestone plan for a 3–4 person team over one 14-week semester, the quality strategy and the risk register. Every name below either comes from ADR-001 §5–§6 verbatim or is listed as a new identifier in the callout at the end of this section.</p>
+
+<div class="callout decision">
+  <div class="title">Three structural facts that shape everything in this section</div>
+  <ul>
+    <li><strong>One repository, one deployable process, zero build steps</strong> (ADR A-1, D-43). The "frontend" is <code>views/</code> + <code>public/</code> inside the same repo. There is no second <code>package.json</code>, no bundler, no second deploy target, and therefore no <code>npm run build</code>.</li>
+    <li><strong>No migration framework</strong> (ADR A-3). The database is rebuilt from a committed <code>db/schema.sql</code> + <code>db/seed.sql</code>. The script called <code>db:migrate</code> below applies the schema to an empty database; it does not step through versioned files.</li>
+    <li><strong>The graded deliverable is the PRD §28 demo path.</strong> The milestone order below is chosen so that room 205 produces <strong>1,790.00 THB</strong> end-to-end as early as week 8, and with LINE by week 9 — five weeks before the defence.</li>
+  </ul>
+</div>
+
+<h3>1. Repository layout</h3>
+
+<p>Repository name <code>juristic-platform</code>, default branch <code>main</code>, Node.js <code>24.x</code>, ESM everywhere (<code>"type": "module"</code>). Ten runtime dependencies, three dev dependencies, <code>package-lock.json</code> committed.</p>
+
+<h4>1.1 Backend and repository root</h4>
+
+<pre class="tree">juristic-platform/
+├─ server.js                    <span class="c"># app wiring, middleware order, graceful shutdown</span>
+├─ package.json                 <span class="c"># 10 runtime + 3 dev deps, engines ">=24 &lt;25", the scripts of §2.4</span>
+├─ package-lock.json            <span class="c"># committed; npm ci is the only reproducible install</span>
+├─ .nvmrc                       <span class="c"># "24" — four laptops, one Node version</span>
+├─ eslint.config.js             <span class="c"># ESLint flat config + eslint-config-prettier, no plugins</span>
+├─ .prettierrc.json             <span class="c"># printWidth 100, singleQuote true — the whole file</span>
+├─ .env.example                 <span class="c"># every variable name of §2.3, never a value</span>
+├─ .gitignore                   <span class="c"># node_modules, .env, .env.test, db/dumps/*.sql.gz</span>
+├─ README.md                    <span class="c"># the 6 setup steps of §2.2 and nothing else</span>
+├─ .github/
+│  └─ workflows/ci.yml          <span class="c"># job "verify": lint + unit + integration on MySQL 8.4 (§5.3)</span>
+├─ db/
+│  ├─ pool.js                   <span class="c"># mysql2 pool: timezone '+07:00', dateStrings, decimalNumbers off</span>
+│  ├─ tx.js                     <span class="c"># withTx(fn) — the only place BEGIN/COMMIT/ROLLBACK appears</span>
+│  ├─ schema.sql                <span class="c"># 18 tables, 11 unique keys, 3 generated columns, 3 CHECKs</span>
+│  ├─ seed.sql                  <span class="c"># D-44 demo data, every date computed from CURDATE()</span>
+│  ├─ reset.js                  <span class="c"># ~25 lines: runs schema.sql and/or seed.sql over DATABASE_URL</span>
+│  └─ dumps/                    <span class="c"># mysqldump-M4-2026-11-01.sql.gz, one per milestone (§3.5)</span>
+├─ middleware/
+│  ├─ auth.js                   <span class="c"># requireAuth, requireRole — the D-36 matrix, one enforcement point</span>
+│  ├─ csrf.js                   <span class="c"># 25-line synchronizer token, issue on GET, verify on POST</span>
+│  ├─ validate.js               <span class="c"># zod schema -&gt; 422 in the standard envelope</span>
+│  └─ errors.js                 <span class="c"># last handler: one error shape, Thai 403 / 404 / 500 pages (D-40)</span>
+├─ routes/                      <span class="c"># HTTP only: parse, call ONE service, render or respond</span>
+│  ├─ auth.js                   <span class="c"># GET/POST /login, POST /logout (D-37)</span>
+│  ├─ dashboard.js              <span class="c"># GET /, GET /api/dashboard/charts (D-41)</span>
+│  ├─ rooms.js                  <span class="c"># /rooms, /rooms/:id (D-47)</span>
+│  ├─ tenants.js                <span class="c"># /tenants, link-code issue and slip print (D-10, D-29)</span>
+│  ├─ users.js                  <span class="c"># /users — Admin only (D-46)</span>
+│  ├─ settings.js               <span class="c"># /settings, rate insert, รันงานแจ้งเตือนตอนนี้ (D-17, D-32)</span>
+│  ├─ readings.js               <span class="c"># /readings, POST /api/readings, POST /api/bills/generate</span>
+│  ├─ bills.js                  <span class="c"># /bills, /bills/:id, approve, revert, invoice print</span>
+│  ├─ payments.js               <span class="c"># /payment, confirm, void (D-24, D-25)</span>
+│  ├─ receipts.js               <span class="c"># /receipts/:id, POST /api/receipts/:id/print (D-27)</span>
+│  ├─ announcements.js          <span class="c"># /announcements, preview-count, send (D-35)</span>
+│  ├─ reports.js                <span class="c"># /reports/1..4 plus ?format=csv (D-42)</span>
+│  ├─ line.js                   <span class="c"># POST /line/webhook — raw body, signature, ACK 200 first (D-29)</span>
+│  └─ internal.js               <span class="c"># POST /internal/jobs/daily, GET /healthz (D-32, D-43)</span>
+├─ services/                    <span class="c"># transactions, business rules AND their SQL. No req/res in here.</span>
+│  ├─ billing.js                <span class="c"># previous reading, rate resolution, generate, recalc, approve, revert</span>
+│  ├─ payment.js                <span class="c"># confirm, void, receipt-number allocation (D-24..D-27)</span>
+│  ├─ notify.js                 <span class="c"># enqueue, drain, retry, test-mode redirect, templates (D-30..D-35)</span>
+│  ├─ linking.js                <span class="c"># link codes, webhook event handling (D-29)</span>
+│  ├─ jobs.js                   <span class="c"># the daily job body, shared by cron and the manual button (D-32)</span>
+│  ├─ reports.js                <span class="c"># four report queries + the Dashboard formulas (D-41, D-42)</span>
+│  └─ records.js                <span class="c"># Rooms, Tenants, Users, Settings CRUD and their audit rows.</span>
+│                               <span class="c"># Exists because the layering rule allows no SQL in a route.</span>
+├─ lib/                         <span class="c"># pure functions only — no pool, no req, no I/O</span>
+│  ├─ money.js                  <span class="c"># FORMATTING ONLY: "1,790.00", "1,790 บาท". No arithmetic (D-16)</span>
+│  ├─ datetime.js               <span class="c"># Intl th-TH-u-ca-gregory, period helpers, todayBangkok()</span>
+│  ├─ thaiBaht.js               <span class="c"># amount in words: หนึ่งพันเจ็ดร้อยเก้าสิบบาทถ้วน (D-27)</span>
+│  ├─ billStatus.js             <span class="c"># the one JS display-status helper (D-21)</span>
+│  ├─ templates.js              <span class="c"># the seven Thai LINE templates, braced placeholders only (D-31)</span>
+│  ├─ csv.js                    <span class="c"># UTF-8 with BOM export helper (D-42)</span>
+│  ├─ audit.js                  <span class="c"># audit(conn, {...}) — always the transaction's connection (D-38)</span>
+│  ├─ schemas.js                <span class="c"># zod schemas, one per endpoint, Thai messages</span>
+│  ├─ errors.js                 <span class="c"># AppError and the { data } / { error } envelope</span>
+│  └─ log.js                    <span class="c"># 10 lines, JSON to stdout, Render captures it</span>
+├─ views/                       <span class="c"># see §1.2</span>
+├─ public/                      <span class="c"># see §1.2</span>
+├─ test/
+│  ├─ unit/                     <span class="c"># money, dates, thaiBaht, billStatus, previous reading, due date, rates</span>
+│  ├─ integration/              <span class="c"># the races that lose money, against a scratch schema</span>
+│  ├─ helpers/db.js             <span class="c"># create scratch schema from schema.sql, truncate between tests</span>
+│  ├─ helpers/client.js         <span class="c"># 15-line fetch wrapper that keeps the session cookie + CSRF token</span>
+│  └─ rehearsal.js              <span class="c"># the D-44 demo path, asserts arithmetic never the calendar (§5.2)</span>
+└─ docs/                        <span class="c"># the graded document set; not loaded by the app</span></pre>
+
+<div class="callout note">
+  <div class="title">The layering rule, in one sentence</div>
+  <p>Routes do HTTP, services do transactions and rules <em>and their own SQL</em>, <code>lib/</code> is pure functions. <strong>A <code>req</code> object never reaches a service; a SQL string never appears in a route; an arithmetic operator never appears next to money in JavaScript.</strong> These three greps are the entire code review for structure: <code>grep -rn "req\." services/</code>, <code>grep -rniE "select|insert|update" routes/</code>, <code>grep -rn "\*\|+" lib/money.js</code> must each return nothing.</p>
+</div>
+
+<h4>1.2 Frontend surface — server-rendered, same repo</h4>
+
+<pre class="tree">views/
+├─ layout.ejs                   <span class="c"># shell: apartment name + "Juristic Platform" 11px, nav from the role matrix</span>
+├─ partials/
+│  ├─ nav.ejs                   <span class="c"># generated from the D-36 matrix — no link exists for a forbidden page</span>
+│  ├─ flash.ejs                 <span class="c"># one-line Thai success/error strip after a POST-Redirect-GET</span>
+│  ├─ status-badge.ejs          <span class="c"># renders data-status="Draft|Unpaid|Paid|Overdue" (D-02, D-21)</span>
+│  ├─ money.ejs                 <span class="c"># right-aligned, tabular-nums, "1,790.00"</span>
+│  ├─ empty-state.ejs  confirm-dialog.ejs  pagination.ejs  skeleton.ejs
+├─ pages/
+│  ├─ login.ejs  dashboard.ejs  rooms.ejs  room-detail.ejs  tenants.ejs
+│  ├─ readings.ejs  bills.ejs  bill-detail.ejs  payment.ejs  receipt.ejs
+│  ├─ announcements.ejs  settings.ejs  users.ejs
+│  ├─ reports/1-monthly.ejs  reports/2-arrears.ejs                <span class="c"># D-42 reports 1 and 2</span>
+│  ├─ reports/3-room-history.ejs  reports/4-top-usage.ejs         <span class="c"># first two A-14 cut candidates</span>
+│  └─ errors/403.ejs  errors/404.ejs  errors/500.ejs
+└─ print/
+   ├─ receipt.ejs               <span class="c"># A5 portrait, ใบเสร็จรับเงิน, REC-202609-000852 (D-27)</span>
+   └─ invoice.ejs               <span class="c"># A5 portrait, ใบแจ้งค่าใช้จ่าย, same layout, no receipt number (D-28)</span>
+
+public/
+├─ css/app.css                  <span class="c"># design tokens, layout, components — one file, no preprocessor</span>
+├─ css/print.css                <span class="c"># @page { size: A5 portrait; margin: 10mm }</span>
+├─ js/readings.js               <span class="c"># per-room save + X/Y counter, ~60 lines (D-15)</span>
+├─ js/send-drain.js             <span class="c"># the approve result screen's drain loop, 20 at a time (D-19)</span>
+├─ js/payment-change.js         <span class="c"># รับเงิน / เงินทอน, screen only, never sent to the server (D-24)</span>
+├─ js/announcement-preview.js   <span class="c"># live preview and recipient count (D-35)</span>
+├─ js/charts.js                 <span class="c"># Chart.js bootstrap from /api/dashboard/charts (D-41)</span>
+└─ js/confirm-dialog.js         <span class="c"># the six confirmation call sites (D-39)</span></pre>
+
+<h4>1.3 Naming conventions</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Thing</th><th>Rule</th><th>Example</th><th>Counter-example</th></tr></thead>
+<tbody>
+<tr><td>Server modules</td><td><code>camelCase.js</code>, one noun, singular</td><td><code>services/billing.js</code>, <code>lib/thaiBaht.js</code></td><td><code>services/BillingService.js</code></td></tr>
+<tr><td>Public assets</td><td><code>kebab-case</code></td><td><code>public/js/send-drain.js</code></td><td><code>public/js/sendDrain.js</code></td></tr>
+<tr><td>EJS pages</td><td><code>kebab-case.ejs</code>, named after the English page identifier</td><td><code>bill-detail.ejs</code> for Bill Detail</td><td><code>billDetail.ejs</code></td></tr>
+<tr><td>Page routes</td><td>lowercase, plural, hyphenated</td><td><code>/bills</code>, <code>/bills/:id</code>, <code>/readings</code></td><td><code>/billDetail?id=1</code></td></tr>
+<tr><td>JSON routes</td><td><code>/api/&lt;resource&gt;[/&lt;action&gt;]</code>, no version segment</td><td><code>/api/bills/approve</code></td><td><code>/api/v1/bills/approve</code></td></tr>
+<tr><td>Tables / columns</td><td><code>snake_case</code>; tables plural, columns singular</td><td><code>meter_readings.previous_reading</code></td><td><code>MeterReading.prevRead</code></td></tr>
+<tr><td>Indexes</td><td><code>uq_&lt;table&gt;_&lt;cols&gt;</code> / <code>ix_&lt;table&gt;_&lt;cols&gt;</code></td><td><code>uq_bills_room_period</code></td><td><code>bills_idx_2</code></td></tr>
+<tr><td>EJS locals</td><td><code>snake_case</code> mirroring a column, <code>camelCase</code> when computed</td><td><code>due_date</code>, <code>displayStatus</code></td><td><code>dueDate</code> for a column</td></tr>
+<tr><td>Test files</td><td><code>&lt;subject&gt;.test.js</code> under the tier folder</td><td><code>test/unit/thaiBaht.test.js</code></td><td><code>test/thaiBahtSpec.js</code></td></tr>
+<tr><td>Branches</td><td><code>&lt;milestone&gt;/&lt;slug&gt;</code></td><td><code>m3/bill-generation</code></td><td><code>fix2</code></td></tr>
+<tr><td>Database dumps</td><td><code>db/dumps/mysqldump-&lt;milestone&gt;-&lt;YYYY-MM-DD&gt;.sql.gz</code></td><td><code>mysqldump-M4-2026-11-01.sql.gz</code></td><td><code>backup.sql</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Page identifiers stay English in routes, filenames, payloads and test selectors; every visible string is Thai (D-02). The file that renders Monthly Billing is <code>views/pages/bills.ejs</code> at route <code>/bills</code> with the header <code>บิลรายเดือน</code> — all three at once, no exceptions.</p>
+
+<h4>1.4 Where each module of the API specification lives</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Module (API spec)</th><th>Route file</th><th>Surface it serves</th><th>Service it calls</th></tr></thead>
+<tbody>
+<tr><td>Auth</td><td><code>routes/auth.js</code></td><td>Login page, <code>POST /logout</code></td><td>— (bcryptjs + session directly)</td></tr>
+<tr><td>Dashboard</td><td><code>routes/dashboard.js</code></td><td>Dashboard page, <code>GET /api/dashboard/charts?period=2026-09</code></td><td><code>services/reports.js</code></td></tr>
+<tr><td>Rooms</td><td><code>routes/rooms.js</code></td><td>Rooms, Room detail</td><td><code>services/records.js</code> (D-47)</td></tr>
+<tr><td>Tenants</td><td><code>routes/tenants.js</code></td><td>Tenants, link-code slip</td><td><code>services/records.js</code> for the tenancy itself, <code>services/linking.js</code> for the code (D-10, D-29)</td></tr>
+<tr><td>Meter Reading</td><td><code>routes/readings.js</code></td><td>Meter Reading page, <code>POST /api/readings</code>, <code>POST /api/bills/generate</code></td><td><code>services/billing.js</code></td></tr>
+<tr><td>Monthly Billing / Bill Detail</td><td><code>routes/bills.js</code></td><td>Monthly Billing, Bill Detail, <code>POST /api/bills/approve</code>, invoice print</td><td><code>services/billing.js</code></td></tr>
+<tr><td>Payment</td><td><code>routes/payments.js</code></td><td>Payment page, confirm, void</td><td><code>services/payment.js</code></td></tr>
+<tr><td>Receipt</td><td><code>routes/receipts.js</code></td><td>Receipt A5 view, <code>POST /api/receipts/:id/print</code></td><td><code>services/payment.js</code></td></tr>
+<tr><td>Announcements</td><td><code>routes/announcements.js</code></td><td>Announcements, <code>GET /api/announcements/preview-count</code></td><td><code>services/notify.js</code></td></tr>
+<tr><td>Notifications drain</td><td><code>routes/bills.js</code></td><td><code>POST /api/notifications/drain</code></td><td><code>services/notify.js</code></td></tr>
+<tr><td>Reports</td><td><code>routes/reports.js</code></td><td>Reports 1–4 and their CSV variants</td><td><code>services/reports.js</code></td></tr>
+<tr><td>Settings / Users</td><td><code>routes/settings.js</code>, <code>routes/users.js</code></td><td>Settings, Users, manual job button</td><td><code>services/records.js</code> for identity, due day and users (D-46); <code>services/billing.js</code> for the rate insert and the คำนวณบิลฉบับร่างใหม่ button (D-17); <code>services/jobs.js</code> for รันงานแจ้งเตือนตอนนี้ (D-32)</td></tr>
+<tr><td>LINE webhook</td><td><code>routes/line.js</code></td><td><code>POST /line/webhook</code></td><td><code>services/linking.js</code></td></tr>
+<tr><td>Internal</td><td><code>routes/internal.js</code></td><td><code>POST /internal/jobs/daily</code>, <code>GET /healthz</code></td><td><code>services/jobs.js</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>2. Development environment</h3>
+
+<h4>2.1 Prerequisites</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Tool</th><th>Version</th><th>Check</th><th>Why this exact thing</th></tr></thead>
+<tbody>
+<tr><td>Node.js</td><td><code>24.x</code> LTS</td><td><code>node -v</code> → <code>v24.…</code></td><td><code>--env-file</code>, <code>node:test</code>, <code>fetch</code> and <code>Intl</code> are built in; four dependencies deleted</td></tr>
+<tr><td>npm</td><td>ships with Node 24</td><td><code>npm -v</code></td><td><code>npm ci</code> is the reproducible install</td></tr>
+<tr><td>MySQL</td><td><code>8.4</code> (8.0.16 minimum)</td><td><code>mysql --version</code></td><td><code>CHECK</code> constraints, stored generated columns, <code>LAST_INSERT_ID(seq+1)</code></td></tr>
+<tr><td>Git</td><td>any recent</td><td><code>git --version</code></td><td>—</td></tr>
+<tr><td>Browser</td><td>Chrome or Edge, current</td><td>—</td><td>D-45 device target; A5 print preview is verified in Chrome</td></tr>
+<tr><td>LINE Developers account</td><td>—</td><td>console access</td><td>One Messaging API channel for the whole team (register in M0 — see R-01)</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>2.2 First-time setup — six commands</h4>
+
+<ol class="steps">
+  <li><code>git clone &lt;repo&gt; &amp;&amp; cd juristic-platform</code></li>
+  <li><code>npm ci</code> — installs exactly the locked versions. Never <code>npm install</code> on a fresh clone.</li>
+  <li><code>cp .env.example .env</code> then fill it in (§2.3). Generate the two secrets with <code>node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"</code>.</li>
+  <li><code>mysql -u root -p -e "CREATE DATABASE juristic CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci"</code> — <code>utf8mb4</code> is not optional; Thai names and LINE message templates live in these tables.</li>
+  <li><code>npm run db:reset</code> — drops every table, applies <code>db/schema.sql</code>, then <code>db/seed.sql</code>. Prints <code>80 rooms · 67 tenants · 54 LINE-linked · rates 18.00/8.00/35.00 · due day 5</code>. Fails loudly if <code>SEED_ADMIN_PASSWORD</code> is unset (D-37).</li>
+  <li><code>npm run dev</code> → open <code>http://localhost:3000</code>, log in as <code>admin</code> with your <code>SEED_ADMIN_PASSWORD</code>.</li>
+</ol>
+
+<div class="callout ok">
+  <div class="title">Verify the install with numbers, not with a vibe</div>
+  <p>Run <code>npm run rehearse</code>. It must print the PRD §28 arithmetic and exit 0:<br>
+  <code>room 205 · water 1,250 → 1,260 = 10 × 18.00 = 180.00 · electric 5,280 → 5,350 = 70 × 8.00 = 560.00 · common 30.00 × 35.00 = 1,050.00 · total 1,790.00 · receipt REC-&lt;YYYYMM&gt;-000852</code><br>
+  If the total is anything other than <code>1,790.00</code>, stop and fix that before writing another line of code.</p>
+</div>
+
+<h4>2.3 <code>.env.example</code> — every variable</h4>
+
+<pre><code># .env.example — names only, never values. Committed. (D-43)
+DATABASE_URL=
+SESSION_SECRET=
+LINE_CHANNEL_SECRET=
+LINE_CHANNEL_ACCESS_TOKEN=
+JOB_TOKEN=
+SEED_ADMIN_PASSWORD=
+NODE_ENV=development
+PORT=3000
+TZ=Asia/Bangkok</code></pre>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Variable</th><th>Meaning and consumer</th><th>Local value</th><th>Production source</th><th>If wrong</th></tr></thead>
+<tbody>
+<tr><td><code>DATABASE_URL</code></td><td>Full MySQL connection string parsed by <code>db/pool.js</code>. TLS is required by the managed host.</td><td><code>mysql://root:root@127.0.0.1:3306/juristic</code></td><td>Aiven service URI, pasted into Render</td><td>App exits at boot with <code>DB_UNREACHABLE</code>; <code>/healthz</code> returns 500</td></tr>
+<tr><td><code>SESSION_SECRET</code></td><td>Signs the <code>express-session</code> cookie. ≥ 32 random bytes hex.</td><td>locally generated, unique per student</td><td>Render env var, generated once</td><td>Changing it logs every user out — never rotate mid-demo</td></tr>
+<tr><td><code>LINE_CHANNEL_SECRET</code></td><td>Validates <code>X-Line-Signature</code> on <code>POST /line/webhook</code> (D-29).</td><td>real value, webhook disabled locally</td><td>LINE console → Messaging API channel</td><td>Every webhook call answers 401; linking silently stops working</td></tr>
+<tr><td><code>LINE_CHANNEL_ACCESS_TOKEN</code></td><td>Long-lived channel token used for push, multicast and reply.</td><td>real value; test mode ON so sends go to one whitelisted id</td><td>LINE console, issued once</td><td><code>notifications.http_status = 401</code>, rows go <code>failed</code>, nothing is lost</td></tr>
+<tr><td><code>JOB_TOKEN</code></td><td>Shared secret compared against the <code>X-Job-Token</code> header on <code>POST /internal/jobs/daily</code> (D-32).</td><td>any 32-hex string</td><td>Render env var; the same string is pasted into cron-job.org</td><td>Cron gets 401 daily; no reminder is ever sent and nothing warns you — check <code>job_runs</code></td></tr>
+<tr><td><code>SEED_ADMIN_PASSWORD</code></td><td>Read by <code>db/seed.sql</code> through <code>db/reset.js</code> to hash the seeded admin password (D-37). Never committed.</td><td>student's own choice</td><td>Set temporarily in the Render shell for the one seeding run, then removed</td><td>Seeding aborts with <code>SEED_ADMIN_PASSWORD is required</code> — deliberate</td></tr>
+<tr><td><code>NODE_ENV</code></td><td><code>development</code> | <code>production</code>. In production the session cookie gets <code>Secure</code> and stack traces stop reaching the browser.</td><td><code>development</code></td><td><code>production</code></td><td>Cookie without <code>Secure</code> on HTTPS, or a stack trace shown to an examiner</td></tr>
+<tr><td><code>PORT</code></td><td>Listening port. Render injects it; the app must not hard-code 3000.</td><td><code>3000</code></td><td>injected by Render</td><td>Render marks the deploy unhealthy — no open port detected</td></tr>
+<tr><td><code>TZ</code></td><td>Process timezone. Belt to the <code>SET time_zone='+07:00'</code> braces on every pooled connection (D-03).</td><td><code>Asia/Bangkok</code></td><td><code>Asia/Bangkok</code> — must be set explicitly, Render defaults to UTC</td><td>A bill due <code>2026-09-05</code> shows <span class="badge overdue">Overdue</span> seven hours early</td></tr>
+</tbody>
+</table>
+</div>
+
+<p><code>.env.test</code> is the same file pointing <code>DATABASE_URL</code> at a scratch database (<code>juristic_test</code>). It is git-ignored, and the integration helper truncates every table between tests, so it must never point at <code>juristic</code>.</p>
+
+<h4>2.4 npm scripts</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Script</th><th>Command</th><th>What it does · when you run it</th></tr></thead>
+<tbody>
+<tr><td><code>dev</code></td><td><code>node --watch --env-file=.env server.js</code></td><td>Local server with restart on save. Every day.</td></tr>
+<tr><td><code>start</code></td><td><code>node server.js</code></td><td>Render's start command. Reads env from the dashboard, no <code>.env</code> file exists there.</td></tr>
+<tr><td><code>build</code></td><td>— <em>(does not exist)</em></td><td><strong>There is no build step</strong> (A-1, D-43). <code>npm ci</code> is the whole build. If someone adds a <code>build</code> script, that is an architecture change, not a convenience.</td></tr>
+<tr><td><code>lint</code></td><td><code>eslint .</code></td><td>Before every commit; gate 1 of CI.</td></tr>
+<tr><td><code>format</code></td><td><code>prettier --write .</code></td><td>Formatting is never a review comment.</td></tr>
+<tr><td><code>test</code></td><td><code>node --test --env-file=.env.test test/unit test/integration</code></td><td>Both tiers; gate 2 of CI.</td></tr>
+<tr><td><code>test:unit</code></td><td><code>node --test test/unit</code></td><td>No database, runs in about a second. What you run while writing <code>thaiBaht.js</code>.</td></tr>
+<tr><td><code>test:int</code></td><td><code>node --test --env-file=.env.test test/integration</code></td><td>Scratch schema, the races that lose money.</td></tr>
+<tr><td><code>db:migrate</code></td><td><code>node --env-file=.env db/reset.js --schema-only</code></td><td>Drops every table and applies <code>db/schema.sql</code>. This <em>is</em> the migration story (A-3).</td></tr>
+<tr><td><code>db:seed</code></td><td><code>node --env-file=.env db/reset.js --seed-only</code></td><td>Applies <code>db/seed.sql</code> over an existing schema.</td></tr>
+<tr><td><code>db:reset</code></td><td><code>npm run db:migrate &amp;&amp; npm run db:seed</code></td><td>The one command that recreates the graded demo from empty (D-44).</td></tr>
+<tr><td><code>rehearse</code></td><td><code>node --env-file=.env test/rehearsal.js</code></td><td>Walks the PRD §28 path end to end with LINE test mode ON. Before every push and on the morning of the defence.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>2.5 Schema changes and seeding</h4>
+
+<p>There is no <code>schema_migrations</code> table and no numbered files. A schema change is an edit to <code>db/schema.sql</code> followed by <code>npm run db:reset</code> on every laptop. That is legitimate precisely because there is <strong>no production data to preserve</strong> — the only database that matters is rebuilt from <code>seed.sql</code> in one command.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Situation</th><th>Procedure</th></tr></thead>
+<tbody>
+<tr><td>Adding a column or index</td><td>Edit <code>db/schema.sql</code>, edit <code>db/seed.sql</code> if the column needs demo values, <code>npm run db:reset</code>, run <code>npm test</code>, commit both files in the same commit as the code that uses them.</td></tr>
+<tr><td>A teammate pulls your schema change</td><td>They run <code>npm run db:reset</code>. Their local data is disposable by design. The PR description says <strong>"requires db:reset"</strong> on the first line.</td></tr>
+<tr><td>Changing the deployed database</td><td>Render Shell → <code>npm run db:migrate</code> → <code>npm run db:seed</code>. Take the dump of §3.5 first if the deployed data contains a rehearsal you care about.</td></tr>
+<tr><td>Real data must survive a schema change</td><td>It never does in this project. If that changes, the trigger to add a migration runner has arrived — that is a decision, recorded as an ADR amendment, not an afternoon's improvisation.</td></tr>
+</tbody>
+</table>
+</div>
+
+<p><strong>Seed facts a test may rely on (D-44):</strong> 80 rooms across 5 floors (101–116 … 501–516), all <code>30.00</code> sqm; 67 <span class="badge neutral">Occupied</span>, 13 <span class="badge neutral">Vacant</span>; 67 Active tenants of which exactly 54 carry a LINE binding; rates <code>18.00</code> / <code>8.00</code> / <code>35.00</code> effective from the first day of the earliest history period; due day <code>5</code>; room 205's current-period bill left <span class="badge draft">Draft</span> so the demo approves it live; the receipt counter offset so room 205's payment issues <code>REC-&lt;current YYYYMM&gt;-000852</code>. <strong>Every seed date is computed from <code>CURDATE()</code></strong> — a test asserts <code>1,790.00</code>, never <code>5 ก.ย. 2026</code>.</p>
+
+<h4>2.6 Running locally against LINE</h4>
+
+<p>Local development never receives webhooks: the LINE console holds exactly one webhook URL and it belongs to the Render deployment (D-43). Locally, <code>settings.line_test_mode = 1</code> redirects every outbound message to <code>line_test_user_id</code>, and inbound linking is exercised in two ways — the integration tests post a signed fake <code>message</code> event to <code>POST /line/webhook</code> with a body signed by <code>LINE_CHANNEL_SECRET</code>, and the deployed instance is used for the one real end-to-end link per milestone. No tunnel, no ngrok, no second webhook URL.</p>
+
+<h3>3. Deployment</h3>
+
+<h4>3.1 Topology</h4>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart TB
+  DEV["Student laptop, node --watch, local MySQL 8.4"]
+  GH["GitHub main branch, source plus schema.sql and seed.sql"]
+  CI["GitHub Actions job verify, lint plus tests"]
+  RND["Render free web service, one Node 24 process, fixed HTTPS origin"]
+  AIV["Aiven free managed MySQL 8.4, app data and session store"]
+  CJ["cron-job.org, two schedules"]
+  LOA["LINE Official Account, Messaging API channel"]
+  PRN["Office printer, A5 portrait"]
+
+  DEV -->|"git push"| GH
+  GH --> CI
+  GH -->|"auto deploy on green main"| RND
+  RND -->|"TLS, DATABASE_URL"| AIV
+  CJ -->|"POST /internal/jobs/daily at 09:00 Asia/Bangkok"| RND
+  CJ -->|"GET /healthz every 10 minutes"| RND
+  RND -->|"push and multicast"| LOA
+  LOA -->|"webhook to the fixed origin"| RND
+  RND -->|"browser print dialog"| PRN
+  GH -.->|"demo-day fallback, local app on local MySQL from seed.sql"| DEV
+</pre>
+<div class="caption">Everything on the critical path is free. One origin, one database, two cron schedules, one LINE channel. Secrets exist only as Render environment variables and in a password-protected team note.</div>
+</div>
+
+<h4>3.2 Deploy procedure — first time</h4>
+
+<ol class="steps">
+  <li><strong>Aiven.</strong> Create a free MySQL 8.4 service, region Singapore. Copy the service URI. Create the database: <code>CREATE DATABASE juristic CHARACTER SET utf8mb4</code>.</li>
+  <li><strong>Render.</strong> New → Web Service → connect the GitHub repo → Runtime Node → Build Command <code>npm ci</code> → Start Command <code>npm start</code> → free instance type. Auto-deploy on <code>main</code>.</li>
+  <li><strong>Environment variables.</strong> Add all nine of §2.3 in the Render dashboard. <code>NODE_ENV=production</code>, <code>TZ=Asia/Bangkok</code>, <code>DATABASE_URL</code> = the Aiven URI. Do <em>not</em> add <code>SEED_ADMIN_PASSWORD</code> permanently — see step 5.</li>
+  <li><strong>First deploy.</strong> Push to <code>main</code>. Wait for <code>Live</code>. <code>curl https://&lt;service&gt;.onrender.com/healthz</code> must return <code>{"data":{"ok":true}}</code>.</li>
+  <li><strong>Seed once.</strong> Render Shell → set <code>SEED_ADMIN_PASSWORD</code> for the session → <code>npm run db:reset</code> → confirm the printed counts → log in and change the admin password → remove the variable.</li>
+  <li><strong>LINE console.</strong> Messaging API → Webhook URL = <code>https://&lt;service&gt;.onrender.com/line/webhook</code> → Verify (must be green) → Use webhook ON → auto-reply messages OFF, greeting message ON.</li>
+  <li><strong>cron-job.org.</strong> Two separate jobs. (a) <code>POST https://&lt;service&gt;.onrender.com/internal/jobs/daily</code>, header <code>X-Job-Token: &lt;JOB_TOKEN&gt;</code>, daily at <code>09:00</code>, timezone Asia/Bangkok. (b) <code>GET https://&lt;service&gt;.onrender.com/healthz</code>, every 10 minutes. <strong>These are two jobs, not one</strong> — the daily job is not a keep-alive (D-32, D-43).</li>
+  <li><strong>Smoke test on the deployed instance.</strong> Log in, open Meter Reading for room 205, save water <code>1,260</code>, generate, open Bill Detail, confirm the total reads <code>1,790.00</code>.</li>
+</ol>
+
+<h4>3.3 Deploy procedure — every subsequent release</h4>
+
+<ol class="steps">
+  <li>Merge to <code>main</code> only when CI is green (§5.3). Render deploys automatically.</li>
+  <li>If <code>db/schema.sql</code> or <code>db/seed.sql</code> changed: take the dump of §3.5, then Render Shell → <code>npm run db:reset</code>.</li>
+  <li><code>curl /healthz</code>, then log in and load Dashboard.</li>
+  <li><strong>Re-verify the webhook URL in the LINE console</strong> — one click, and it is the single line of the runbook that has ever silently killed the linking flow (D-43).</li>
+  <li><code>npm run rehearse</code> against the deployed instance's database before any milestone review or the defence.</li>
+</ol>
+
+<h4>3.4 Secrets</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Secret</th><th>Lives in</th><th>Never lives in</th><th>Rotation</th></tr></thead>
+<tbody>
+<tr><td><code>DATABASE_URL</code></td><td>Render env vars, local <code>.env</code>, team password note</td><td>the repo, a screenshot, a slide</td><td>Only if the Aiven service is recreated</td></tr>
+<tr><td><code>SESSION_SECRET</code></td><td>Render env vars</td><td>the repo</td><td>Never during the semester — rotating logs everyone out</td></tr>
+<tr><td><code>LINE_CHANNEL_SECRET</code> / <code>_ACCESS_TOKEN</code></td><td>Render env vars, team password note</td><td>the repo, the thesis appendix, a demo slide</td><td>Immediately if a screenshot leaks one; re-verify the webhook afterwards</td></tr>
+<tr><td><code>JOB_TOKEN</code></td><td>Render env vars and the cron-job.org job definition</td><td>the repo</td><td>If cron-job.org's account is shared outside the team</td></tr>
+<tr><td><code>SEED_ADMIN_PASSWORD</code></td><td>each student's local <code>.env</code>; set transiently in the Render shell</td><td>the repo, <code>seed.sql</code>, the README</td><td>Changed at first login on the deployed instance (D-37)</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>A pre-push habit that costs nothing: <code>git diff --cached | grep -iE "onrender|aiven|channel|secret|password|token"</code> before committing anything that touches configuration.</p>
+
+<h4>3.5 Backups</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Artifact</th><th>When</th><th>Command</th><th>Restores what</th></tr></thead>
+<tbody>
+<tr><td><code>db/schema.sql</code> + <code>db/seed.sql</code></td><td>Always in the repo</td><td><code>npm run db:reset</code></td><td>The entire graded demo from an empty database, in about 20 seconds. This is the real backup.</td></tr>
+<tr><td>Milestone dump</td><td>Before every milestone review and the day before the defence</td><td><code>mysqldump --single-transaction --set-gtid-purged=OFF juristic | gzip &gt; db/dumps/mysqldump-M4-2026-11-01.sql.gz</code></td><td>The exact state that was demonstrated, including rehearsal payments and receipt numbers</td></tr>
+<tr><td>Demo-day laptop copy</td><td>The day before the defence</td><td>Restore the newest dump into local MySQL and run <code>npm run rehearse</code></td><td>The whole demo with the hosted database unreachable (webhook disabled, test mode ON)</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout warn">
+  <div class="title">Recovery objective, stated plainly</div>
+  <p>Acceptable data loss is <strong>everything</strong>. There is no real tenant data (D-44: all seed content is fictional). The recovery target is <em>time</em>: a destroyed database must be back to a demonstrable state in under 10 minutes, which <code>npm run db:reset</code> meets. The dumps exist only so a rehearsed state — for example a receipt already numbered <code>REC-202611-000852</code> — can be reproduced exactly.</p>
+</div>
+
+<h4>3.6 Monitoring and logging</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Signal</th><th>Where</th><th>What good looks like</th><th>What to do when it is bad</th></tr></thead>
+<tbody>
+<tr><td>Liveness</td><td><code>GET /healthz</code>, pinged every 10 minutes</td><td><code>200 {"data":{"ok":true}}</code>, one <code>SELECT 1</code></td><td>cron-job.org emails on failure; check Render logs, then Aiven status</td></tr>
+<tr><td>Request log</td><td>Render logs, JSON lines from <code>lib/log.js</code>: <code>{"t":"2026-09-03T14:30:02+07:00","lvl":"info","msg":"POST /api/bills/approve","status":200,"ms":3120}</code></td><td>Approve under 5 s (D-45 target 4)</td><td>Grep <code>"lvl":"error"</code>; the stack is on stdout and never in the browser</td></tr>
+<tr><td>Daily job</td><td><code>job_runs</code> table, one row per day</td><td>A row for every date with <code>finished_at</code> set and a <code>summary_json</code></td><td>A missing row means the cron never authenticated — check <code>JOB_TOKEN</code></td></tr>
+<tr><td>Delivery health</td><td><code>notifications</code> table</td><td><code>SELECT status, COUNT(*) FROM notifications WHERE send_date = CURDATE() GROUP BY status</code> — <code>failed</code> rows should be zero</td><td>Rows with <code>attempt_count = 3</code> need the Admin's per-bill <code>ส่งแจ้งเตือนอีกครั้ง</code>, which is never capped (D-30)</td></tr>
+<tr><td>LINE quota</td><td>Settings page tile: <code>ส่งข้อความเดือนนี้: {N}/500</code></td><td>Below 450 (warn colour above)</td><td>Keep test mode ON; announcements go by multicast, never one push per tenant (D-34)</td></tr>
+<tr><td>Audit trail</td><td><code>audit_log</code>, indexed on <code>(bill_id, created_at)</code></td><td>Every approve, payment and void has a row written inside the same transaction (D-38)</td><td>A money change with no audit row is a defect, not a logging gap</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>There is no APM, no error tracker and no log aggregation. Render keeps the last logs, MySQL keeps <code>job_runs</code>, <code>notifications</code> and <code>audit_log</code>, and those three tables answer every operational question this system can be asked.</p>
+
+<h3>4. Implementation plan</h3>
+
+<h4>4.1 Shape of the semester</h4>
+
+<div class="formula">4 students × 8 h/week × 14 weeks = 448 h ≈ 56 person-days &nbsp;·&nbsp; 1 person-day = 8 focused hours &nbsp;·&nbsp; team velocity = 4 person-days per calendar week</div>
+
+<p>Weeks run Monday to Sunday from <strong>2026-09-07</strong> to <strong>2026-12-13</strong>. Estimates below are in person-days and total 56, i.e. the plan is fully committed with no slack — which is exactly why the A-14 cut list exists and why §4.5 names what gets dropped first. A three-student team has 42 person-days and must take cuts 1–3 of A-14 at the start of M7, not in week 14.</p>
+
+<h4>4.2 Milestones</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>ID</th><th>Milestone</th><th>Weeks</th><th>Effort</th><th>Depends on</th><th>Demoable deliverable — what you put on the screen</th></tr></thead>
+<tbody>
+<tr><td><strong>M0</strong></td><td>Walking skeleton and deployment</td><td>W1–W2</td><td>8 pd</td><td>—</td><td>The deployed HTTPS URL logs in as <code>admin</code>, shows an empty Dashboard shell, and <code>/healthz</code> answers from cron-job.org.</td></tr>
+<tr><td><strong>M1</strong></td><td>Rooms, tenants, settings, rates, seed</td><td>W3–W4</td><td>8 pd</td><td>M0</td><td>80 rooms listed by floor; room 205 shows <code>30.00 ตร.ม.</code> and one Active tenant; Settings shows rates <code>18.00 / 8.00 / 35.00</code> and due day <code>5</code>.</td></tr>
+<tr><td><strong>M2</strong></td><td>Meter Reading</td><td>W5</td><td>4 pd</td><td>M1</td><td>On a phone: open จดมิเตอร์, type <code>1,260</code> for room 205 water, see <code>10 หน่วย</code> and the counter move to <code>1/67</code>. Typing <code>1,240</code> is refused with the Thai message.</td></tr>
+<tr><td><strong>M3</strong></td><td>Billing: generate, Bill Detail, approve, revert</td><td>W6–W7</td><td>8 pd</td><td>M2</td><td>Generation reports <code>สร้างบิลใหม่ 67 ใบ</code>; room 205's Bill Detail shows 180.00 + 560.00 + 1,050.00 = <strong>1,790.00</strong>; approve flips <span class="badge draft">Draft</span> → <span class="badge unpaid">Unpaid</span> with a frozen due date.</td></tr>
+<tr><td><strong>M4</strong></td><td>Payment and receipt</td><td>W8</td><td>4 pd</td><td>M3</td><td><strong>The PRD §28 path, minus LINE.</strong> ยืนยันรับเงินสด → <span class="badge paid">Paid</span> → A5 receipt <code>REC-&lt;YYYYMM&gt;-000852</code> with the amount in Thai words, printed on paper.</td></tr>
+<tr><td><strong>M5</strong></td><td>LINE linking and the two money messages</td><td>W9–W10</td><td>8 pd</td><td>M4</td><td><strong>The complete PRD §28 path.</strong> A phone adds the OA, sends a 6-character code, gets <code>LINK_OK</code>; approving room 205's bill delivers <code>ยอดประจำเดือน 1,790 บาท</code>; confirming payment delivers <code>ชำระเงินเรียบร้อยแล้ว</code>.</td></tr>
+<tr><td><strong>M6</strong></td><td>Daily job, reminders, announcements</td><td>W11</td><td>4 pd</td><td>M5</td><td>Pressing <code>รันงานแจ้งเตือนตอนนี้</code> at 14:00 reports <code>ส่งแจ้งเตือนก่อนครบกำหนด 3 ราย · เลยกำหนด 1 ราย</code>; pressing it twice sends nothing twice.</td></tr>
+<tr><td><strong>M7</strong></td><td>Dashboard, four reports, CSV</td><td>W12</td><td>4 pd</td><td>M3 (M6 for the notification tile)</td><td>Dashboard tiles for the current period, the common-area total reading <code>70,350.00</code>, four Chart.js charts, arrears report exporting a UTF-8 CSV that opens in Excel with Thai intact.</td></tr>
+<tr><td><strong>M8</strong></td><td>Hardening, A5 print on real paper, rehearsal, documents</td><td>W13–W14</td><td>8 pd</td><td>M7</td><td>The rehearsal script green three days running; the printed receipt on real A5 paper; the document set final; the defence walkthrough timed.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>4.3 Tasks per milestone</h4>
+
+<details>
+<summary><strong>M0 · Walking skeleton and deployment</strong> — W1–W2, 8 pd</summary>
+<ul class="checklist">
+  <li>Create the repo, <code>package.json</code> with <code>engines: "&gt;=24 &lt;25"</code>, ESLint + Prettier configs, <code>.env.example</code>, <code>.gitignore</code>.</li>
+  <li><code>server.js</code> with the full middleware order: helmet → static → session → csrf → requireAuth → requireRole → zod → route → <code>middleware/errors.js</code>.</li>
+  <li><code>db/pool.js</code> with <code>timezone: '+07:00'</code>, <code>dateStrings: true</code>, <code>decimalNumbers</code> off; <code>db/tx.js</code>; <code>db/reset.js</code>.</li>
+  <li><code>db/schema.sql</code> for <code>users</code>, <code>settings</code>, <code>sessions</code> only — the rest arrives with its milestone.</li>
+  <li>Login, logout, bcryptjs cost 10, MySQL session store, rate limiter, <code>app.set('trust proxy', 1)</code> (D-37).</li>
+  <li><code>lib/log.js</code>, <code>lib/errors.js</code>, <code>middleware/csrf.js</code> + its unit test, the Thai 403/404/500 pages.</li>
+  <li><code>views/layout.ejs</code> + <code>public/css/app.css</code> tokens; empty Dashboard shell.</li>
+  <li><strong>Register the LINE Official Account and the Messaging API channel now</strong> (R-01) — no code depends on it yet, and approval is the one thing money cannot accelerate in week 9.</li>
+  <li>Render + Aiven + both cron-job.org schedules live; <code>.github/workflows/ci.yml</code> green.</li>
+</ul>
+</details>
+
+<details>
+<summary><strong>M1 · Rooms, tenants, settings, rates, seed</strong> — W3–W4, 8 pd</summary>
+<ul class="checklist">
+  <li>Schema for <code>rooms</code>, <code>tenants</code> (with the <code>active_room_id</code> generated column and its unique key), <code>rates</code>, <code>counters</code>, <code>audit_log</code>.</li>
+  <li>Rooms list and Room detail; create/edit; deactivate instead of delete; <code>floor</code> entered, never parsed from <code>room_code</code> (D-47).</li>
+  <li>Tenants: create, end tenancy with a Thai reason, the one-Active-tenant rule proven by the database not by a service (D-10).</li>
+  <li>Settings: apartment identity, due day with <code>CHECK (due_day BETWEEN 1 AND 28)</code>, rate insert that never UPDATEs (D-17).</li>
+  <li>Users page, Admin only, password reset by Admin (D-46).</li>
+  <li><code>db/seed.sql</code> complete: 80 rooms, 67 tenants, 54 LINE-linked, room 312's completed tenancy, every date from <code>CURDATE()</code> (D-44).</li>
+  <li><code>lib/money.js</code>, <code>lib/datetime.js</code>, <code>lib/thaiBaht.js</code> with their unit tests — including <code>1,790.00</code> → <code>หนึ่งพันเจ็ดร้อยเก้าสิบบาทถ้วน</code>.</li>
+</ul>
+</details>
+
+<details>
+<summary><strong>M2 · Meter Reading</strong> — W5, 4 pd</summary>
+<ul class="checklist">
+  <li>Schema for <code>meter_readings</code> with <code>uq_readings(room_id, period, utility_type)</code>, <code>CHECK (units &gt;= 0)</code>, <code>previous_period VARCHAR(8)</code>.</li>
+  <li>Previous-reading resolution: strictly earlier period, order by <code>period DESC</code>, fall back to the room baseline with <code>previous_period = 'baseline'</code> (D-06, D-14).</li>
+  <li>Meter Reading page grouped by floor, phone-first, 44 px tap targets, numeric keypad, X/Y counter (D-15, D-45 target 1).</li>
+  <li><code>POST /api/readings</code> as an UPSERT; a double submit changes nothing (D-12).</li>
+  <li>Hard block on current below previous with the Thai message and the <code>fields</code> payload; meter-replacement branch and its two validations (D-13).</li>
+  <li><strong>Write the PRD §28 arithmetic test now, red:</strong> 1,250→1,260 = 10 units, 5,280→5,350 = 70 units. It turns green in M3 when the item amounts exist.</li>
+</ul>
+</details>
+
+<details>
+<summary><strong>M3 · Billing</strong> — W6–W7, 8 pd</summary>
+<ul class="checklist">
+  <li>Schema for <code>bills</code> (<code>uq_bills_room_period</code>, three snapshot columns) and <code>bill_items</code> (<code>uq_bill_items(bill_id, item_type)</code>).</li>
+  <li>Generation: one transaction per room, three items always, <code>amount = ROUND(quantity * unit_price, 2)</code> in SQL, total = SQL <code>SUM</code> of rounded items (D-16, D-18).</li>
+  <li>Rate resolution keyed to the period's first day, not to the click (D-17).</li>
+  <li>Monthly Billing list, Bill Detail with the audit timeline, <code>data-status</code> on every status element.</li>
+  <li>Approve: <code>UPDATE … WHERE status='Draft'</code>, <code>due_date = MAX(due day, approval + 3 days)</code> clamped to month end (D-20); bulk approve as one transaction returning in ≤ 5 s (D-19).</li>
+  <li>Revert to Draft: Admin only, reason ≥ 10 characters, refused when a later bill exists for the room (D-22).</li>
+  <li>Display status helper in both SQL and JS, agreeing on the same fixtures (D-21).</li>
+  <li>Invoice A5 print view (D-28).</li>
+  <li><strong>Green:</strong> 10 × 18.00 = 180.00, 70 × 8.00 = 560.00, 30.00 × 35.00 = 1,050.00, total 1,790.00.</li>
+</ul>
+</details>
+
+<details>
+<summary><strong>M4 · Payment and receipt</strong> — W8, 4 pd</summary>
+<ul class="checklist">
+  <li>Schema for <code>payments</code> (<code>active_bill_id</code> generated + unique) and <code>receipts</code> (<code>uq_receipts(payment_id)</code>, <code>uq_receipts(receipt_no)</code>).</li>
+  <li>Confirm cash: conditional status update, 0 rows → 409 <code>บิลนี้ถูกชำระไปแล้ว</code>; receipt number from <code>counters</code> via <code>ON DUPLICATE KEY UPDATE seq = LAST_INSERT_ID(seq + 1)</code> (D-26).</li>
+  <li>Void payment: Admin only, reason required, payment and receipt marked voided and never deleted (D-25).</li>
+  <li>Receipt A5 print view with the letterhead from Settings, Thai words, <code>print_count</code> increment before <code>window.print()</code> (D-27).</li>
+  <li>Change calculator on screen only, never posted (D-24).</li>
+  <li>Integration tests: double confirm → one payment, one receipt, second call 409; void then re-pay → a new number, the old one still taken.</li>
+</ul>
+</details>
+
+<details>
+<summary><strong>M5 · LINE</strong> — W9–W10, 8 pd</summary>
+<ul class="checklist">
+  <li>Schema for <code>link_codes</code>, <code>line_followers</code>, <code>notifications</code> with the <code>dedupe_key</code> generated column and its unique key.</li>
+  <li><code>POST /line/webhook</code>: <code>express.raw</code> before the JSON parser, <code>validateSignature</code>, <strong>ACK 200 before any work</strong>, SDK <code>middleware()</code> deliberately not used (D-29).</li>
+  <li>Link codes: 6 characters from the unambiguous alphabet, 7 days, single use; printable slip with the OA QR code.</li>
+  <li><code>services/notify.js</code>: enqueue one row per recipient, drain at most 20 per call under <code>GET_LOCK('notif_drain', 0)</code>, retry below <code>attempt_count = 3</code>, reuse the stored <code>X-Line-Retry-Key</code>.</li>
+  <li>Test mode redirect to <code>line_test_user_id</code>, default ON in every environment (D-34).</li>
+  <li><code>lib/templates.js</code>: the seven Thai templates, braced placeholders only (D-31).</li>
+  <li>Approve result screen with the drain loop; <code>PAID</code> message after payment.</li>
+  <li><strong>Spike on day one of M5:</strong> confirm <code>GET_LOCK</code> works on the managed MySQL, else switch to <code>FOR UPDATE SKIP LOCKED</code> (R-09).</li>
+  <li><strong>Print the A5 receipt on the real office printer this week</strong> — week 9 is the deadline in A-13.5. The receipt view has existed since M4, and paper is the one thing no test covers (R-06).</li>
+</ul>
+</details>
+
+<details>
+<summary><strong>M6 · Job, reminders, announcements</strong> — W11, 4 pd</summary>
+<ul class="checklist">
+  <li>Schema for <code>job_runs</code> (<code>uq_job_runs(job_name, run_date)</code>) and <code>announcements</code>.</li>
+  <li><code>POST /internal/jobs/daily</code> with <code>X-Job-Token</code>; PRE_DUE at due − 2 days; OVERDUE at 1, 8 and 15 days past due; at most four automatic messages per bill for its whole life (D-33).</li>
+  <li>Bills whose latest payment was voided are excluded from automatic sends (D-25).</li>
+  <li>The manual button <code>รันงานแจ้งเตือนตอนนี้</code> using <code>job_name='daily_manual'</code> and skipping the <code>job_runs</code> guard (D-32).</li>
+  <li>Announcements: compose, live preview, recipient count, multicast in chunks of ≤ 500, one <code>notifications</code> row per recipient, immutable once sent (D-35).</li>
+  <li>Integration test: the job twice in one day is a no-op; the manual button afterwards still sends nothing twice.</li>
+</ul>
+</details>
+
+<details>
+<summary><strong>M7 · Dashboard and reports</strong> — W12, 4 pd</summary>
+<ul class="checklist">
+  <li>Dashboard tiles scoped to the selected period, money tiles aggregating <code>status IN ('Unpaid','Paid')</code> (D-41).</li>
+  <li><code>GET /api/dashboard/charts?period=2026-09</code> and four Chart.js charts from cdnjs.</li>
+  <li>Reports 1–4 and <code>?format=csv</code> through <code>lib/csv.js</code>, UTF-8 with BOM so Excel shows Thai (D-42).</li>
+  <li>Verify the seed reproduces <code>67 × 30.00 × 35.00 = 70,350.00</code> on the common-area tile; do <strong>not</strong> expect PRD §16's 18,500 or 62,500 — they are not reproducible at these rates (D-44).</li>
+  <li>Any list page under 2 seconds against the full seed of ~800 bills (D-45 target 2) — add the missing index rather than a cache.</li>
+</ul>
+</details>
+
+<details>
+<summary><strong>M8 · Hardening and rehearsal</strong> — W13–W14, 8 pd</summary>
+<ul class="checklist">
+  <li>Re-print the A5 receipt and the A5 invoice on the office printer after the final CSS pass — the first real print happened in M5, week 9; fix margins in <code>public/css/print.css</code> only (A-13.5).</li>
+  <li>Every one of the five D-45 numbers measured with a stopwatch against the seed and written down.</li>
+  <li>One integration test per staff-forbidden route asserting 403 <strong>and</strong> that no amount appears anywhere in the response body (D-36).</li>
+  <li>Empty states, the D-23 missing-readings warn banner, the six confirmation dialogs (D-39).</li>
+  <li><code>test/rehearsal.js</code> run daily for the last week; the milestone dump committed.</li>
+  <li>Demo-day fallback rehearsed once for real: hosted database unplugged, local app on a restored dump, webhook disabled, test mode ON.</li>
+  <li>Document set finalised; the defence walkthrough timed against the PRD §26 flow.</li>
+</ul>
+</details>
+
+<h4>4.4 Schedule</h4>
+
+<div class="diagram">
+<pre class="mermaid">
+gantt
+  title Juristic Platform, 14 weeks, 4 students
+  dateFormat YYYY-MM-DD
+  axisFormat %d %b
+  section Foundation
+  M0 walking skeleton and deploy      :m0, 2026-09-07, 14d
+  M1 rooms tenants rates seed         :m1, after m0, 14d
+  section Demo path
+  M2 meter reading                    :m2, after m1, 7d
+  M3 billing generate and approve     :m3, after m2, 14d
+  M4 payment and receipt              :m4, after m3, 7d
+  M5 LINE linking and money messages  :m5, after m4, 14d
+  PRD 28 path complete                :milestone, mp, 2026-11-15, 0d
+  section Supporting
+  M6 daily job and announcements      :m6, after m5, 7d
+  M7 dashboard and reports            :m7, after m6, 7d
+  section Close
+  M8 hardening print and rehearsal    :m8, after m7, 14d
+  Defence                             :milestone, def, 2026-12-13, 0d
+</pre>
+<div class="caption">The demo path owns eight of the fourteen weeks. Everything after 15 November is either supporting scope that A-14 allows cutting, or hardening that A-14 forbids cutting.</div>
+</div>
+
+<h4>4.5 The order that gets the PRD §28 demo working earliest</h4>
+
+<p>The plan above is already that order, but the reason is worth stating so nobody "optimises" it. Each milestone from M0 to M5 adds exactly one link in the §28 chain, and no milestone before M5 exists to make a different screen prettier.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>By the end of</th><th>Date</th><th>Of the PRD §28 chain, this much runs</th></tr></thead>
+<tbody>
+<tr><td>M1</td><td>4 Oct</td><td>Room 205 exists at 30.00 sqm with one Active tenant and rates 18.00 / 8.00 / 35.00.</td></tr>
+<tr><td>M2</td><td>11 Oct</td><td>Water 1,250 → 1,260 = <strong>10 units</strong>; electricity 5,280 → 5,350 = <strong>70 units</strong>.</td></tr>
+<tr><td>M3</td><td>25 Oct</td><td>180.00 + 560.00 + 1,050.00 = <strong>1,790.00</strong>, approved, due date frozen.</td></tr>
+<tr><td>M4</td><td>1 Nov</td><td>Cash confirmed, <span class="badge paid">Paid</span>, receipt <code>REC-&lt;YYYYMM&gt;-000852</code> printed on A5. <strong>Six weeks before the defence, the whole chain runs except the two LINE messages.</strong></td></tr>
+<tr><td>M5</td><td>15 Nov</td><td>The complete chain including <code>ยอดประจำเดือน 1,790 บาท</code> and <code>ชำระเงินเรียบร้อยแล้ว</code>.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout warn">
+  <div class="title">Two sequencing rules that are easy to get wrong</div>
+  <ul>
+    <li><strong>Seed room 205 in M1, not in M8.</strong> The 1,790.00 assertion must be runnable the week the arithmetic is written. A seed built at the end is a seed nobody has tested against.</li>
+    <li><strong>Register the LINE channel in M0.</strong> It is the only dependency in this project with an external waiting time, and it blocks M5 completely. Everything else can be started on any Monday.</li>
+  </ul>
+</div>
+
+<h4>4.6 Team split</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Role</th><th>Owns</th><th>Primary milestones</th><th>Pairs with</th></tr></thead>
+<tbody>
+<tr><td><strong>Billing owner</strong></td><td><code>services/billing.js</code>, <code>services/payment.js</code>, <code>lib/money.js</code>, <code>lib/thaiBaht.js</code>, <code>lib/billStatus.js</code></td><td>M3, M4</td><td>Data owner on <code>schema.sql</code></td></tr>
+<tr><td><strong>Integrations owner</strong></td><td><code>routes/line.js</code>, <code>services/notify.js</code>, <code>services/linking.js</code>, <code>services/jobs.js</code>, <code>lib/templates.js</code></td><td>M5, M6</td><td>Billing owner on the approve → enqueue seam</td></tr>
+<tr><td><strong>UI owner</strong></td><td><code>views/</code>, <code>public/css/</code>, <code>public/js/</code>, both print views, Chart.js</td><td>M2, M7</td><td>Everyone — every milestone ends in a screen</td></tr>
+<tr><td><strong>Data &amp; QA owner</strong></td><td><code>db/schema.sql</code>, <code>db/seed.sql</code>, <code>services/reports.js</code>, <code>test/</code>, CI</td><td>M1, M7, M8</td><td>Billing owner on the money tests</td></tr>
+</tbody>
+</table>
+</div>
+
+<p><strong>Three-student fallback:</strong> the Data &amp; QA role is dissolved — <code>schema.sql</code> and <code>seed.sql</code> go to the Billing owner, <code>services/reports.js</code> to the UI owner, and tests are written by whoever wrote the code with a mandatory second reviewer. Effort drops to 42 person-days, so A-14 cuts 1–3 (report 4, all CSV exports, two of the four charts) are taken at the start of M7 rather than debated in week 14.</p>
+
+<p><strong>No module on the §28 demo path has a single owner.</strong> Every one of <code>billing.js</code>, <code>payment.js</code>, <code>notify.js</code> and <code>schema.sql</code> has a named second reader who has run its tests locally — the mitigation for R-07 that costs nothing while everyone is healthy.</p>
+
+<h3>5. Quality strategy</h3>
+
+<h4>5.1 Three tiers</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Tier</th><th>Runner</th><th>Covers</th><th>Example assertion</th><th>Runs</th></tr></thead>
+<tbody>
+<tr><td><strong>Unit</strong> — no database</td><td><code>npm run test:unit</code></td><td>Every calculation and format: <code>thaiBaht()</code>, previous-reading resolution over fixtures, meter-replacement units, item rounding, rate resolution by period, the <code>MAX(due day, approval + 3)</code> clamp, <code>billStatus()</code>, receipt-number formatting, the CSRF compare</td><td><code>assert.equal(thaiBaht('1790.00'), 'หนึ่งพันเจ็ดร้อยเก้าสิบบาทถ้วน')</code></td><td>On save, in about a second</td></tr>
+<tr><td><strong>Integration</strong> — scratch schema, real HTTP</td><td><code>npm run test:int</code></td><td>The races that lose money: double confirm, void then re-pay, generation twice, approve twice, the daily job twice, concurrent receipt allocation, the dedupe key, revert with a later bill, and 403 + no-amount for every staff-forbidden route</td><td>Second <code>POST /payments/confirm</code> returns <code>409</code> with <code>error.code = "BILL_ALREADY_PAID"</code>; <code>SELECT COUNT(*) FROM receipts</code> is still 1</td><td>Before every push, in CI</td></tr>
+<tr><td><strong>Rehearsal</strong> — end to end on the seed</td><td><code>npm run rehearse</code></td><td>The PRD §28 path with LINE test mode ON: read room 205 → generate → approve → drain → confirm payment → receipt → both notification rows</td><td>Total is <code>'1790.00'</code>; two <code>notifications</code> rows exist with <code>status='sent'</code>; the arithmetic is asserted, the calendar never is (D-44)</td><td>Before every push and on the morning of the defence</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>There is no coverage gate and no browser automation. What is enforced is the <em>list</em> above: an integration test missing from that list is a gap, a coverage percentage is a number.</p>
+
+<h4>5.2 The one test that may never go red</h4>
+
+<pre><code>test('PRD 28 demo arithmetic', async () =&gt; {
+  const bill = await generateFor({ room: '205', period: '2026-09' });
+  assert.equal(bill.items.water.quantity, '10');       // 1,260 - 1,250
+  assert.equal(bill.items.water.amount, '180.00');     // 10 x 18.00
+  assert.equal(bill.items.electric.quantity, '70');    // 5,350 - 5,280
+  assert.equal(bill.items.electric.amount, '560.00');  // 70 x 8.00
+  assert.equal(bill.items.common.amount, '1050.00');   // 30.00 x 35.00
+  assert.equal(bill.total, '1790.00');                 // sum of the printed lines
+});</code></pre>
+
+<p>Every value is a string, because <code>mysql2</code> returns <code>DECIMAL</code> as a string and no amount ever passes through a JavaScript float (D-16). A test that compares to a number is a test that will pass while the receipt prints <code>1789.9999999999998</code>.</p>
+
+<h4>5.3 Continuous integration</h4>
+
+<pre><code># .github/workflows/ci.yml — on push and pull_request to main
+name: ci
+on: [push, pull_request]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: juristic_test
+        ports: ['3306:3306']
+        options: --health-cmd="mysqladmin ping" --health-interval=5s --health-retries=10
+    env:
+      DATABASE_URL: mysql://root:root@127.0.0.1:3306/juristic_test
+      SEED_ADMIN_PASSWORD: ci-only-not-a-secret
+      TZ: Asia/Bangkok
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24', cache: 'npm' }
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run db:migrate
+      - run: npm test</code></pre>
+
+<p>Four gates, no more: install, lint, schema applies to an empty database, tests pass. The schema step matters as much as the tests — it is what catches a <code>schema.sql</code> that only works because someone's laptop still has the old column.</p>
+
+<h4>5.4 Definition of done</h4>
+
+<p>A task is done when every line below is true. Not "mostly", and not "the happy path".</p>
+
+<ul class="checklist">
+  <li>The feature works against <code>db/seed.sql</code>, not against three rows typed by hand.</li>
+  <li>Every visible string is Thai; every route, filename and <code>data-status</code> value is the English identifier (D-02).</li>
+  <li>Money is formatted by <code>lib/money.js</code> and computed in SQL. No <code>*</code>, <code>+</code> or <code>toFixed</code> touches an amount in JavaScript.</li>
+  <li>The failure path renders: 422 shows the Thai inline message with the typed values preserved; 403 shows the Thai page with the button back to จดมิเตอร์ (D-40).</li>
+  <li>Anything that changes money or bill state writes its <code>audit_log</code> row on the same connection, inside the same transaction (D-38).</li>
+  <li>A unit test exists for any calculation, and an integration test exists for any state transition.</li>
+  <li><code>npm run lint</code> and <code>npm test</code> are green locally, and CI is green on the branch.</li>
+  <li>The PR description names the decision ids it implements and says <strong>"requires db:reset"</strong> when the schema or seed changed.</li>
+  <li>A second student has pulled the branch, run <code>npm run db:reset</code> and clicked the feature once.</li>
+  <li>It introduces nothing from the PRD §24 exclusion list — no rent, no lease, no gateway, no slip, no QR, no IoT, no AI.</li>
+</ul>
+
+<h4>5.5 Coding conventions</h4>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Rule</th><th>Enforced by</th><th>Violation looks like</th></tr></thead>
+<tbody>
+<tr><td>Routes do HTTP; services do transactions, rules and SQL; <code>lib/</code> is pure</td><td>Review, plus the three greps of §1.1</td><td><code>const [rows] = await pool.query(...)</code> in <code>routes/bills.js</code></td></tr>
+<tr><td>Every SQL value is a placeholder — never string concatenation</td><td>Review: <code>grep -rn '`.*SELECT.*\${' services/</code> returns nothing</td><td><code>WHERE room_id = ${roomId}</code></td></tr>
+<tr><td><code>BEGIN</code>/<code>COMMIT</code>/<code>ROLLBACK</code> appear only in <code>db/tx.js</code></td><td>Review</td><td><code>conn.beginTransaction()</code> in a service</td></tr>
+<tr><td>LINE is talked to <em>after</em> the commit, never inside the transaction</td><td>Review, and the integration tests (D-30)</td><td>An <code>await push(...)</code> between <code>BEGIN</code> and <code>COMMIT</code></td></tr>
+<tr><td>Thai user-facing text lives in the EJS view, <code>lib/schemas.js</code> or <code>lib/templates.js</code> — nowhere else</td><td>Review</td><td>A Thai string literal inside <code>services/billing.js</code></td></tr>
+<tr><td>ESM only, no CommonJS, no default exports for multi-function modules</td><td>ESLint</td><td><code>module.exports =</code></td></tr>
+<tr><td>Conventional Commits, scoped by module</td><td>Review</td><td><code>fix stuff</code> instead of <code>fix(payment): reject a second confirm with 409</code></td></tr>
+<tr><td>Branch per milestone task, squash-merge to <code>main</code>, one reviewer</td><td>GitHub branch protection</td><td>A push straight to <code>main</code></td></tr>
+<tr><td>Formatting is Prettier's problem</td><td><code>npm run format</code></td><td>A review comment about a blank line</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>6. Risk register</h3>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>ID</th><th>Risk</th><th>Impact</th><th>Likelihood</th><th>Mitigation — the concrete action, with its deadline</th><th>Owner</th></tr></thead>
+<tbody>
+<tr><td>R-01</td><td>The LINE Official Account or Messaging API channel is not usable when M5 starts</td><td><span class="badge p0">Demo-stopping</span></td><td><span class="badge warn">Medium</span></td><td>Register both in <strong>M0, week 1</strong>, and post a test message from the console before M0 is signed off. It is the only externally-gated dependency in the project.</td><td>Integrations</td></tr>
+<tr><td>R-02</td><td>The free LINE plan's 500 push/multicast messages per month are exhausted mid-semester</td><td><span class="badge p1">Major</span></td><td><span class="badge bad">High</span></td><td>Test mode defaults ON in every environment (D-34); announcements use multicast in chunks of ≤ 500, never one push per tenant; Settings shows <code>ส่งข้อความเดือนนี้: {N}/500</code> in warn colour above 450. The graded run sends to at most three real accounts.</td><td>Integrations</td></tr>
+<tr><td>R-03</td><td>The free Render instance sleeps and the webhook cold-starts into LINE's timeout, so LINE auto-disables the endpoint</td><td><span class="badge p0">Demo-stopping</span></td><td><span class="badge warn">Medium</span></td><td><code>GET /healthz</code> pinged every 10 minutes on its own schedule (D-43), and <code>POST /line/webhook</code> answers 200 <em>before</em> doing any work. Re-verify the webhook in the console after every deploy.</td><td>Integrations</td></tr>
+<tr><td>R-04</td><td>The free managed database is suspended, expires or is deleted</td><td><span class="badge p1">Major</span></td><td><span class="badge warn">Medium</span></td><td><code>schema.sql</code> + <code>seed.sql</code> rebuild everything in one command; a gzipped <code>mysqldump</code> is committed before every milestone; the rehearsed fallback is the same app on local MySQL.</td><td>Data &amp; QA</td></tr>
+<tr><td>R-05</td><td>Money comes out wrong — a float, a double rounding, a total that is not the sum of its printed lines</td><td><span class="badge p0">Demo-stopping</span></td><td><span class="badge neutral">Low</span></td><td><code>DECIMAL</code> schema-wide, arithmetic in SQL, <code>decimalNumbers</code> off, no arithmetic operator in <code>lib/money.js</code>, and the 1,790.00 test in CI from M3 onward (D-16).</td><td>Billing</td></tr>
+<tr><td>R-06</td><td>The A5 receipt prints wrong on real paper — clipped margins, broken Thai, two pages</td><td><span class="badge p1">Major</span></td><td><span class="badge warn">Medium</span></td><td>Print on the real office printer by <strong>week 9</strong>, not in week 14. Browser print CSS is the one part of this stack that cannot be unit tested (A-13.5).</td><td>UI</td></tr>
+<tr><td>R-07</td><td>A student is unavailable for two weeks (exams, illness, military service)</td><td><span class="badge p1">Major</span></td><td><span class="badge bad">High</span></td><td>No demo-path module has a single owner (§4.6); every PR has a reviewer who has run it; A-14's cut order is agreed <em>now</em> so a shortfall is a decision already made.</td><td>Whole team</td></tr>
+<tr><td>R-08</td><td>Scope creep — a QR payment field, a slip upload, a rent column, "a small AI feature"</td><td><span class="badge p1">Major</span></td><td><span class="badge warn">Medium</span></td><td>PRD §24 is absolute and appears as the last line of the definition of done. The answer is always the same sentence: it is out of scope by the PRD.</td><td>Whole team</td></tr>
+<tr><td>R-09</td><td><code>GET_LOCK</code> is unavailable or behaves differently on the managed MySQL, so two drains push the same row twice</td><td><span class="badge p2">Minor</span></td><td><span class="badge neutral">Low</span></td><td>Spike on day one of M5. Documented fallback is <code>SELECT id FROM notifications … FOR UPDATE SKIP LOCKED</code> inside the drain transaction; layers 1, 2, 3 and 5 of the send design hold either way.</td><td>Integrations</td></tr>
+<tr><td>R-10</td><td>Demo-day failure — no venue network, host outage, hosted database unreachable</td><td><span class="badge p0">Demo-stopping</span></td><td><span class="badge warn">Medium</span></td><td>The local fallback is <strong>rehearsed once for real in M8</strong>, not merely written down: local app, local MySQL restored from the newest dump, webhook disabled, LINE test mode ON.</td><td>Data &amp; QA</td></tr>
+<tr><td>R-11</td><td>A date renders in Buddhist Era or shifts a day, and a bill shows <span class="badge overdue">Overdue</span> a day early in front of an examiner</td><td><span class="badge p1">Major</span></td><td><span class="badge warn">Medium</span></td><td>One formatter, <code>Intl</code> with the load-bearing <code>-u-ca-gregory</code> keyword; <code>dateStrings: true</code> on the pool; <code>TZ=Asia/Bangkok</code> set explicitly on Render; a unit test asserting <code>2026</code> and never <code>2569</code>.</td><td>Billing</td></tr>
+<tr><td>R-12</td><td>A secret reaches the repository, a slide or the thesis appendix</td><td><span class="badge p1">Major</span></td><td><span class="badge warn">Medium</span></td><td><code>.env</code> git-ignored, <code>.env.example</code> holds names only, <code>SEED_ADMIN_PASSWORD</code> required by the seed and never defaulted, and the pre-push grep of §3.4. If one leaks: rotate the LINE token, re-verify the webhook, redeploy.</td><td>Data &amp; QA</td></tr>
+<tr><td>R-13</td><td>Reports and charts eat weeks 12–14 and the demo path is still unfinished</td><td><span class="badge p1">Major</span></td><td><span class="badge warn">Medium</span></td><td>The §28 path is complete at M5 (15 November) by construction. If it is not, M7 is cut to report 1 and report 2 with no CSV and no charts, following A-14 in order.</td><td>Whole team</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout note">
+  <div class="title">Identifiers introduced by this section</div>
+  <p>Everything else in this section is ADR-001 vocabulary. These names are new here and sibling sections must reuse them exactly: the npm scripts <code>dev</code>, <code>start</code>, <code>lint</code>, <code>format</code>, <code>test</code>, <code>test:unit</code>, <code>test:int</code>, <code>db:migrate</code>, <code>db:seed</code>, <code>db:reset</code>, <code>rehearse</code>; the module <code>services/records.js</code> (Rooms, Tenants, Users and Settings CRUD — the ADR names six services, and the layering rule leaves these four pages without one); the files <code>db/reset.js</code>, <code>test/rehearsal.js</code>, <code>test/helpers/db.js</code>, <code>test/helpers/client.js</code>, <code>.github/workflows/ci.yml</code> (job <code>verify</code>), <code>.nvmrc</code>, <code>.prettierrc.json</code>, <code>.env.test</code>; the directory <code>db/dumps/</code> with filenames <code>mysqldump-&lt;milestone&gt;-&lt;YYYY-MM-DD&gt;.sql.gz</code>; the environment variable <code>PORT</code> (the other eight are ADR §2.2); the milestone ids <code>M0</code>–<code>M8</code>; the team roles <strong>Billing owner</strong>, <strong>Integrations owner</strong>, <strong>UI owner</strong>, <strong>Data &amp; QA owner</strong>; the risk ids <code>R-01</code>–<code>R-13</code>; the local database names <code>juristic</code> and <code>juristic_test</code>; the branch convention <code>&lt;milestone&gt;/&lt;slug&gt;</code>; and the report view filenames <code>reports/1-monthly.ejs</code>, <code>reports/2-arrears.ejs</code>, <code>reports/3-room-history.ejs</code>, <code>reports/4-top-usage.ejs</code>.</p>
+</div>
+
+</section>
