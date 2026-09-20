@@ -10,6 +10,8 @@ DROP TABLE IF EXISTS bill_items;
 DROP TABLE IF EXISTS bills;
 DROP TABLE IF EXISTS receipts;
 DROP TABLE IF EXISTS payments;
+DROP TABLE IF EXISTS notifications;
+DROP TABLE IF EXISTS link_codes;
 DROP TABLE IF EXISTS settings;
 DROP TABLE IF EXISTS users;
 SET FOREIGN_KEY_CHECKS = 1;
@@ -171,4 +173,28 @@ CREATE TABLE receipts (
   UNIQUE KEY uq_receipts_payment (payment_id),
   UNIQUE KEY uq_receipts_number (receipt_number),
   CONSTRAINT fk_receipts_payment FOREIGN KEY (payment_id) REFERENCES payments(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE link_codes (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  tenant_id BIGINT UNSIGNED NOT NULL,
+  code CHAR(6) NOT NULL,
+  expires_at DATETIME NOT NULL,
+  used_at DATETIME NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id), UNIQUE KEY uq_link_codes_code (code),
+  CONSTRAINT fk_link_codes_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE notifications (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  tenant_id BIGINT UNSIGNED NULL,
+  type ENUM('BILL','PAID','PRE_DUE','OVERDUE','ANNOUNCEMENT') NOT NULL,
+  body VARCHAR(400) NOT NULL,
+  status ENUM('queued','sent','failed','skipped_no_line') NOT NULL DEFAULT 'queued',
+  attempt_count TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  sent_at DATETIME NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  CONSTRAINT fk_notifications_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

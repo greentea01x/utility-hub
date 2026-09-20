@@ -55,16 +55,14 @@ router.post('/api/readings', async (req, res, next) => {
         req.session.user.id,
       ],
     );
-    return res
-      .status(200)
-      .json({
-        data: {
-          room_id: input.room_id,
-          period: input.period,
-          utility_type: input.utility_type,
-          units: input.current_reading - Number(previous),
-        },
-      });
+    return res.status(200).json({
+      data: {
+        room_id: input.room_id,
+        period: input.period,
+        utility_type: input.utility_type,
+        units: input.current_reading - Number(previous),
+      },
+    });
   } catch (error) {
     if (error instanceof z.ZodError)
       return next(new AppError(422, 'VALIDATION_FAILED', 'ข้อมูลจดมิเตอร์ไม่ถูกต้อง'));

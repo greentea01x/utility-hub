@@ -16,6 +16,8 @@ import settingsRoutes from './routes/settings.js';
 import readingsRoutes from './routes/readings.js';
 import billsRoutes from './routes/bills.js';
 import paymentsRoutes from './routes/payments.js';
+import lineRoutes from './routes/line.js';
+import notificationsRoutes from './routes/notifications.js';
 
 if (!process.env.SESSION_SECRET) throw new Error('SESSION_SECRET is required');
 const app = express();
@@ -31,6 +33,7 @@ app.use(
   }),
 );
 app.use(express.static(new URL('./public', import.meta.url).pathname));
+app.use('/line', express.raw({ type: 'application/json' }), lineRoutes);
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
 app.use(
@@ -54,7 +57,6 @@ app.use((req, res, next) => {
 });
 app.use('/internal', internalRoutes);
 app.get('/healthz', healthz);
-app.use('/line/webhook', (_req, res) => res.sendStatus(501));
 app.use(csrf);
 app.use(
   '/login',
@@ -75,6 +77,7 @@ app.use(settingsRoutes);
 app.use(readingsRoutes);
 app.use(billsRoutes);
 app.use(paymentsRoutes);
+app.use(notificationsRoutes);
 app.use(notFound);
 app.use(errors);
 
