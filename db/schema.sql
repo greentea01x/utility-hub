@@ -5,6 +5,7 @@ DROP TABLE IF EXISTS sessions;
 DROP TABLE IF EXISTS tenants;
 DROP TABLE IF EXISTS rates;
 DROP TABLE IF EXISTS rooms;
+DROP TABLE IF EXISTS meter_readings;
 DROP TABLE IF EXISTS settings;
 DROP TABLE IF EXISTS users;
 SET FOREIGN_KEY_CHECKS = 1;
@@ -91,4 +92,22 @@ CREATE TABLE rates (
   UNIQUE KEY uq_rates_utility_date (utility_type, effective_from),
   CONSTRAINT fk_rates_user FOREIGN KEY (created_by) REFERENCES users(id),
   CONSTRAINT ck_rates_price CHECK (unit_price > 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE meter_readings (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  room_id BIGINT UNSIGNED NOT NULL,
+  period CHAR(7) NOT NULL,
+  utility_type ENUM('water','electric') NOT NULL,
+  previous_reading DECIMAL(12,2) NOT NULL,
+  current_reading DECIMAL(12,2) NOT NULL,
+  meter_replaced TINYINT(1) NOT NULL DEFAULT 0,
+  recorded_by BIGINT UNSIGNED NOT NULL,
+  recorded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_readings_room_period_utility (room_id, period, utility_type),
+  CONSTRAINT fk_readings_room FOREIGN KEY (room_id) REFERENCES rooms(id),
+  CONSTRAINT fk_readings_user FOREIGN KEY (recorded_by) REFERENCES users(id),
+  CONSTRAINT ck_readings_period CHECK (period REGEXP '^[0-9]{4}-[0-9]{2}$'),
+  CONSTRAINT ck_readings_current CHECK (current_reading >= previous_reading)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

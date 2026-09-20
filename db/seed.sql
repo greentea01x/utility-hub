@@ -31,3 +31,7 @@ INSERT INTO rates (utility_type, unit_price, effective_from, created_by)
 VALUES ('water', 18.00, '2026-01-01', 1),
        ('electric', 8.00, '2026-01-01', 1),
        ('common', 35.00, '2026-01-01', 1);
+
+INSERT INTO meter_readings (room_id, period, utility_type, previous_reading, current_reading, recorded_by)
+VALUES (15, '2026-08', 'water', 1240.00, 1250.00, 1),
+       (15, '2026-08', 'electric', 5200.00, 5280.00, 1);
