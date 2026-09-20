@@ -18,6 +18,7 @@ import billsRoutes from './routes/bills.js';
 import paymentsRoutes from './routes/payments.js';
 import lineRoutes from './routes/line.js';
 import notificationsRoutes from './routes/notifications.js';
+import announcementsRoutes from './routes/announcements.js';
 
 if (!process.env.SESSION_SECRET) throw new Error('SESSION_SECRET is required');
 const app = express();
@@ -78,6 +79,7 @@ app.use(readingsRoutes);
 app.use(billsRoutes);
 app.use(paymentsRoutes);
 app.use(notificationsRoutes);
+app.use(announcementsRoutes);
 app.use(notFound);
 app.use(errors);
 
