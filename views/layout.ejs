@@ -1,0 +1,8 @@
+<!doctype html>
+<html lang="th">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title><%= title %> · Juristic Platform</title><link rel="stylesheet" href="/css/app.css"></head>
+<body>
+  <% if (session?.user) { %><header><a href="/">UtilityHub</a><span>Juristic Platform</span><form action="/logout" method="post"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button>ออกจากระบบ</button></form></header><% } %>
+  <main><%- body %></main>
+</body>
+</html>

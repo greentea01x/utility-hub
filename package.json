@@ -1,0 +1,37 @@
+{
+  "name": "juristic-platform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "dev": "node --watch --env-file=.env server.js",
+    "start": "node server.js",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "test": "node --test --env-file-if-exists=.env.test test/unit test/integration",
+    "test:unit": "node --test test/unit",
+    "test:int": "node --test --env-file-if-exists=.env.test test/integration",
+    "db:migrate": "node --env-file=.env db/reset.js --schema-only",
+    "db:seed": "node --env-file=.env db/reset.js --seed-only",
+    "db:reset": "npm run db:migrate && npm run db:seed"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "ejs": "^3.1.10",
+    "express": "^5.1.0",
+    "express-mysql-session": "^3.0.3",
+    "express-rate-limit": "^8.0.1",
+    "express-session": "^1.18.1",
+    "helmet": "^8.1.0",
+    "mysql2": "^3.14.4",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "eslint": "^9.34.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.6.2"
+  }
+}

@@ -1,25 +1,4 @@
-# OS / editor
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
-
-# Local tooling (machine-specific paths)
-.claude/
-
-# Node (for when the app lands)
 node_modules/
-dist/
-coverage/
 .env
-.env.*
-!.env.example
-
-# Workflow run artifacts that are noise in git (journal is a raw agent transcript)
-docs/_work/workflow/journal.jsonl
-docs/_work/workflow/sync.log
-docs/_work/workflow/last-sync.txt
-docs/_work/workflow/*.v1.js
-docs/_work/workflow/patch.pl
-docs/_work/sync.sh
-docs/_work/parts/dec.txt
+.env.test
+db/dumps/*.sql.gz

@@ -1,0 +1,42 @@
+SET NAMES utf8mb4;
+SET time_zone = '+07:00';
+SET FOREIGN_KEY_CHECKS = 0;
+DROP TABLE IF EXISTS sessions;
+DROP TABLE IF EXISTS settings;
+DROP TABLE IF EXISTS users;
+SET FOREIGN_KEY_CHECKS = 1;
+
+CREATE TABLE users (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  username VARCHAR(50) NOT NULL,
+  display_name VARCHAR(100) NOT NULL,
+  password_hash CHAR(60) NOT NULL,
+  role ENUM('admin','staff') NOT NULL,
+  status ENUM('Active','Inactive') NOT NULL DEFAULT 'Active',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_users_username (username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE settings (
+  id TINYINT UNSIGNED NOT NULL DEFAULT 1,
+  apartment_name VARCHAR(120) NOT NULL,
+  address VARCHAR(255) NOT NULL,
+  tax_id VARCHAR(13) NULL,
+  phone VARCHAR(20) NOT NULL,
+  office_hours VARCHAR(60) NOT NULL,
+  due_day TINYINT UNSIGNED NOT NULL DEFAULT 5,
+  line_test_mode TINYINT(1) NOT NULL DEFAULT 1,
+  line_test_user_id VARCHAR(64) NULL,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  CONSTRAINT ck_settings_singleton CHECK (id = 1),
+  CONSTRAINT ck_settings_due_day CHECK (due_day BETWEEN 1 AND 28)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE sessions (
+  session_id VARCHAR(128) COLLATE utf8mb4_bin NOT NULL,
+  expires INT UNSIGNED NOT NULL,
+  data MEDIUMTEXT COLLATE utf8mb4_bin,
+  PRIMARY KEY (session_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
