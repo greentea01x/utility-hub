@@ -10,3 +10,5 @@ Walking skeleton for the apartment utility and common-area billing system.
 6. Open `http://localhost:3000/login` and sign in as `admin` with the seed password.
 
 `GET /healthz` reports database availability. The current milestone includes authentication, the session store, CSRF protection, and the dashboard shell.
+
+Run `npm run rehearse` to verify the documented room 205 demo arithmetic without a database.
