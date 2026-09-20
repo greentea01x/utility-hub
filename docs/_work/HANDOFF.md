@@ -1,6 +1,73 @@
 # Handoff — Juristic Platform documentation run
 
-Updated: 2026-09-07
+Updated: 2026-09-20
+
+## Application implementation handoff
+
+The application implementation is in the repository root, alongside the documentation. The
+implementation was committed as separate milestone commits:
+
+| Commit | Milestone |
+|---|---|
+| `97a8c82` | M0 walking skeleton, authentication, sessions, CSRF, dashboard shell |
+| `3ee185e` | M1 rooms, tenants, settings, rates, demo seed |
+| `5e58d9c` | M2 meter readings and previous-reading validation |
+| `d7e18ae` | M3 draft bill generation and bill items |
+| `95a5c9f` | M4 cash payment and receipt persistence |
+| `68d4ae8` | M4 bill approval and receipt view |
+| `36f9d93` | M5 LINE link codes, signed webhook, notification queue |
+| `ab0a4fd` | M6 announcements and daily reminder job |
+| `68ca6a1` | M7 dashboard summary, arrears report, CSV export |
+| `46e26c5` | M8 rehearsal command and final verification setup |
+| `308b707` | M6 announcements template fix |
+
+### Current application tree
+
+- `server.js` — Express middleware order, sessions, route mounting, health check.
+- `db/schema.sql`, `db/seed.sql`, `db/reset.js` — MySQL schema and demo data.
+- `routes/` — auth, dashboard, rooms, tenants, settings, readings, bills, payments, LINE,
+  notifications, announcements, reports, and internal job endpoints.
+- `services/` — records, billing, payments, linking, jobs, and reports.
+- `views/pages/` — server-rendered Thai pages.
+- `test/rehearsal.js` — deterministic room 205 arithmetic check.
+
+### Verification already run
+
+These commands pass in the current environment:
+
+```text
+npm run lint
+npm test
+npm run rehearse
+```
+
+The rehearsal prints the expected room 205 result: water `180.00`, electricity `560.00`, common
+area `1,050.00`, total `1,790.00`.
+
+### Important limitations
+
+MySQL 8.4 was not available locally, so `db/schema.sql`, `db/seed.sql`, session persistence, and
+database integration tests have not been executed against a real server. The real LINE Messaging
+API has not been exercised with channel credentials. The collaborative browser preview was
+available, but the local Node process did not remain alive long enough for a browser smoke test.
+
+Several routes are intentionally thin milestone implementations and still need hardening against
+the full engineering specification: complete CRUD and role matrix coverage, audit logging, bill
+revert/void flows, receipt print-count handling, real LINE sends, announcement recipient fan-out,
+pagination, and full integration/E2E coverage.
+
+### Recommended next session sequence
+
+1. Start MySQL 8.4 and create `juristic` and `juristic_test` databases.
+2. Copy `.env.example` to `.env`, set `DATABASE_URL`, `SESSION_SECRET`, `SEED_ADMIN_PASSWORD`,
+   `JOB_TOKEN`, and LINE credentials.
+3. Run `npm ci`, then `npm run db:reset` and inspect the seeded counts: 80 rooms, 67 tenants, 54
+   LINE-linked tenants, and rates 18/8/35.
+4. Add integration tests under `test/integration/` for schema reset, login, CSRF, reading save,
+   bill generation/approval, duplicate payment, link-code consumption, and daily-job idempotency.
+5. Start the app with `npm run dev` and use the T3 collaborative preview (`preview_status`,
+   `preview_open`, `preview_navigate`, `preview_snapshot`) for login and the room 205 demo path.
+6. Implement the remaining spec gaps above, keeping one commit per milestone or focused step.
 
 ## Status
 
