@@ -65,3 +65,29 @@ export async function generateDrafts(period, userId) {
     return { generated, period, userId };
   });
 }
+
+export async function approveBills(billIds, userId) {
+  return withTx(async (connection) => {
+    const result = { approved: 0, already_approved: 0, not_found: 0 };
+    for (const billId of billIds) {
+      const [[bill]] = await connection.execute(
+        'SELECT id, status FROM bills WHERE id = ? FOR UPDATE',
+        [billId],
+      );
+      if (!bill) {
+        result.not_found += 1;
+        continue;
+      }
+      if (bill.status !== 'Draft') {
+        result.already_approved += 1;
+        continue;
+      }
+      await connection.execute(
+        "UPDATE bills SET status = 'Unpaid', approved_at = CURRENT_TIMESTAMP, approved_by = ? WHERE id = ?",
+        [userId, billId],
+      );
+      result.approved += 1;
+    }
+    return result;
+  });
+}

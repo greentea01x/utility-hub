@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import pool from '../db/pool.js';
-import { generateDrafts } from '../services/billing.js';
+import { approveBills, generateDrafts } from '../services/billing.js';
 import { AppError } from '../lib/errors.js';
 
 const router = Router();
@@ -24,6 +24,18 @@ router.post('/api/bills/generate', async (req, res, next) => {
   } catch (error) {
     if (error instanceof z.ZodError)
       return next(new AppError(422, 'VALIDATION_FAILED', 'รอบบิลไม่ถูกต้อง'));
+    return next(error);
+  }
+});
+router.post('/api/bills/approve', async (req, res, next) => {
+  try {
+    const { bill_ids: billIds } = z
+      .object({ bill_ids: z.array(z.coerce.number().int().positive()).min(1).max(200) })
+      .parse(req.body);
+    return res.json({ data: await approveBills(billIds, req.session.user.id) });
+  } catch (error) {
+    if (error instanceof z.ZodError)
+      return next(new AppError(422, 'VALIDATION_FAILED', 'เลือกบิลที่ต้องการอนุมัติ'));
     return next(error);
   }
 });
