@@ -2,6 +2,9 @@ SET NAMES utf8mb4;
 SET time_zone = '+07:00';
 SET FOREIGN_KEY_CHECKS = 0;
 DROP TABLE IF EXISTS sessions;
+DROP TABLE IF EXISTS tenants;
+DROP TABLE IF EXISTS rates;
+DROP TABLE IF EXISTS rooms;
 DROP TABLE IF EXISTS settings;
 DROP TABLE IF EXISTS users;
 SET FOREIGN_KEY_CHECKS = 1;
@@ -40,3 +43,52 @@ CREATE TABLE sessions (
   data MEDIUMTEXT COLLATE utf8mb4_bin,
   PRIMARY KEY (session_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+CREATE TABLE rooms (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  room_number VARCHAR(10) NOT NULL,
+  floor TINYINT UNSIGNED NOT NULL,
+  area_sqm DECIMAL(6,2) NOT NULL,
+  status ENUM('Vacant','Occupied','Inactive') NOT NULL DEFAULT 'Vacant',
+  water_baseline DECIMAL(12,2) NOT NULL DEFAULT 0,
+  electric_baseline DECIMAL(12,2) NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_rooms_number (room_number),
+  CONSTRAINT ck_rooms_area CHECK (area_sqm > 0),
+  CONSTRAINT ck_rooms_floor CHECK (floor BETWEEN 1 AND 99)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE tenants (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  room_id BIGINT UNSIGNED NOT NULL,
+  full_name VARCHAR(100) NOT NULL,
+  phone CHAR(10) NOT NULL,
+  move_in_date DATE NOT NULL,
+  move_out_date DATE NULL,
+  status ENUM('Active','Inactive') NOT NULL DEFAULT 'Active',
+  line_user_id VARCHAR(64) NULL,
+  line_linked_at DATETIME NULL,
+  active_room_id BIGINT UNSIGNED GENERATED ALWAYS AS (IF(status = 'Active', room_id, NULL)) STORED,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_tenants_active_room (active_room_id),
+  UNIQUE KEY uq_tenants_line_user (line_user_id),
+  CONSTRAINT fk_tenants_room FOREIGN KEY (room_id) REFERENCES rooms(id),
+  CONSTRAINT ck_tenants_phone CHECK (phone REGEXP '^0[0-9]{9}$')
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE rates (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  utility_type ENUM('water','electric','common') NOT NULL,
+  unit_price DECIMAL(8,2) NOT NULL,
+  effective_from DATE NOT NULL,
+  created_by BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_rates_utility_date (utility_type, effective_from),
+  CONSTRAINT fk_rates_user FOREIGN KEY (created_by) REFERENCES users(id),
+  CONSTRAINT ck_rates_price CHECK (unit_price > 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

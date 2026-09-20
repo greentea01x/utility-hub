@@ -10,6 +10,9 @@ import { errors, notFound } from './middleware/errors.js';
 import authRoutes from './routes/auth.js';
 import dashboardRoutes from './routes/dashboard.js';
 import internalRoutes, { healthz } from './routes/internal.js';
+import roomsRoutes from './routes/rooms.js';
+import tenantsRoutes from './routes/tenants.js';
+import settingsRoutes from './routes/settings.js';
 
 if (!process.env.SESSION_SECRET) throw new Error('SESSION_SECRET is required');
 const app = express();
@@ -63,6 +66,9 @@ app.use(
 app.use(authRoutes);
 app.use(requireAuth);
 app.use(dashboardRoutes);
+app.use(roomsRoutes);
+app.use(tenantsRoutes);
+app.use(settingsRoutes);
 app.use(notFound);
 app.use(errors);
 
