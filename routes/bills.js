@@ -1,0 +1,30 @@
+import { Router } from 'express';
+import { z } from 'zod';
+import pool from '../db/pool.js';
+import { generateDrafts } from '../services/billing.js';
+import { AppError } from '../lib/errors.js';
+
+const router = Router();
+router.get('/bills', async (req, res, next) => {
+  try {
+    const period = req.query.period ?? new Date().toISOString().slice(0, 7);
+    const [bills] = await pool.execute(
+      'SELECT b.id, r.room_number, b.period, b.status, b.total, b.due_date FROM bills b JOIN rooms r ON r.id=b.room_id WHERE b.period = ? ORDER BY r.room_number',
+      [period],
+    );
+    return res.render('pages/bills', { title: 'บิลรายเดือน', bills, period });
+  } catch (error) {
+    return next(error);
+  }
+});
+router.post('/api/bills/generate', async (req, res, next) => {
+  try {
+    const { period } = z.object({ period: z.string().regex(/^\d{4}-\d{2}$/) }).parse(req.body);
+    return res.json({ data: await generateDrafts(period, req.session.user.id) });
+  } catch (error) {
+    if (error instanceof z.ZodError)
+      return next(new AppError(422, 'VALIDATION_FAILED', 'รอบบิลไม่ถูกต้อง'));
+    return next(error);
+  }
+});
+export default router;

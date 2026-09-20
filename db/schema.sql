@@ -6,6 +6,8 @@ DROP TABLE IF EXISTS tenants;
 DROP TABLE IF EXISTS rates;
 DROP TABLE IF EXISTS rooms;
 DROP TABLE IF EXISTS meter_readings;
+DROP TABLE IF EXISTS bill_items;
+DROP TABLE IF EXISTS bills;
 DROP TABLE IF EXISTS settings;
 DROP TABLE IF EXISTS users;
 SET FOREIGN_KEY_CHECKS = 1;
@@ -110,4 +112,35 @@ CREATE TABLE meter_readings (
   CONSTRAINT fk_readings_user FOREIGN KEY (recorded_by) REFERENCES users(id),
   CONSTRAINT ck_readings_period CHECK (period REGEXP '^[0-9]{4}-[0-9]{2}$'),
   CONSTRAINT ck_readings_current CHECK (current_reading >= previous_reading)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE bills (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  room_id BIGINT UNSIGNED NOT NULL,
+  period CHAR(7) NOT NULL,
+  status ENUM('Draft','Unpaid','Paid','Voided') NOT NULL DEFAULT 'Draft',
+  due_date DATE NOT NULL,
+  subtotal DECIMAL(10,2) NOT NULL DEFAULT 0,
+  total DECIMAL(10,2) NOT NULL DEFAULT 0,
+  approved_at DATETIME NULL,
+  approved_by BIGINT UNSIGNED NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_bills_room_period (room_id, period),
+  CONSTRAINT fk_bills_room FOREIGN KEY (room_id) REFERENCES rooms(id),
+  CONSTRAINT fk_bills_approved_by FOREIGN KEY (approved_by) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE bill_items (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  bill_id BIGINT UNSIGNED NOT NULL,
+  utility_type ENUM('water','electric','common') NOT NULL,
+  description VARCHAR(100) NOT NULL,
+  quantity DECIMAL(12,2) NOT NULL,
+  unit_price DECIMAL(8,2) NOT NULL,
+  amount DECIMAL(10,2) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_bill_items_bill_utility (bill_id, utility_type),
+  CONSTRAINT fk_bill_items_bill FOREIGN KEY (bill_id) REFERENCES bills(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
