@@ -15,6 +15,7 @@ import tenantsRoutes from './routes/tenants.js';
 import settingsRoutes from './routes/settings.js';
 import readingsRoutes from './routes/readings.js';
 import billsRoutes from './routes/bills.js';
+import paymentsRoutes from './routes/payments.js';
 
 if (!process.env.SESSION_SECRET) throw new Error('SESSION_SECRET is required');
 const app = express();
@@ -73,6 +74,7 @@ app.use(tenantsRoutes);
 app.use(settingsRoutes);
 app.use(readingsRoutes);
 app.use(billsRoutes);
+app.use(paymentsRoutes);
 app.use(notFound);
 app.use(errors);
 

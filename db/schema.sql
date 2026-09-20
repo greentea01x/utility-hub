@@ -8,6 +8,8 @@ DROP TABLE IF EXISTS rooms;
 DROP TABLE IF EXISTS meter_readings;
 DROP TABLE IF EXISTS bill_items;
 DROP TABLE IF EXISTS bills;
+DROP TABLE IF EXISTS receipts;
+DROP TABLE IF EXISTS payments;
 DROP TABLE IF EXISTS settings;
 DROP TABLE IF EXISTS users;
 SET FOREIGN_KEY_CHECKS = 1;
@@ -143,4 +145,30 @@ CREATE TABLE bill_items (
   PRIMARY KEY (id),
   UNIQUE KEY uq_bill_items_bill_utility (bill_id, utility_type),
   CONSTRAINT fk_bill_items_bill FOREIGN KEY (bill_id) REFERENCES bills(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE payments (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  bill_id BIGINT UNSIGNED NOT NULL,
+  amount DECIMAL(10,2) NOT NULL,
+  method ENUM('cash') NOT NULL DEFAULT 'cash',
+  received_by BIGINT UNSIGNED NOT NULL,
+  received_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  voided_at DATETIME NULL,
+  void_reason VARCHAR(255) NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_payments_bill (bill_id),
+  CONSTRAINT fk_payments_bill FOREIGN KEY (bill_id) REFERENCES bills(id),
+  CONSTRAINT fk_payments_user FOREIGN KEY (received_by) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE receipts (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  payment_id BIGINT UNSIGNED NOT NULL,
+  receipt_number VARCHAR(30) NOT NULL,
+  printed_at DATETIME NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_receipts_payment (payment_id),
+  UNIQUE KEY uq_receipts_number (receipt_number),
+  CONSTRAINT fk_receipts_payment FOREIGN KEY (payment_id) REFERENCES payments(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
