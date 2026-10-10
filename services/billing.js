@@ -1,4 +1,5 @@
 import { withTx } from '../db/tx.js';
+import { recordAudit } from '../lib/audit.js';
 
 export async function generateDrafts(period, userId) {
   return withTx(async (connection) => {
@@ -91,8 +92,9 @@ export async function approveBills(billIds, userId) {
   return withTx(async (connection) => {
     const result = { approved: 0, already_approved: 0, not_found: 0 };
     for (const billId of billIds) {
+      const columns = 'id, room_id, period, status, due_date, total, approved_at, approved_by';
       const [[bill]] = await connection.execute(
-        'SELECT id, status FROM bills WHERE id = ? FOR UPDATE',
+        `SELECT ${columns} FROM bills WHERE id = ? FOR UPDATE`,
         [billId],
       );
       if (!bill) {
@@ -103,10 +105,19 @@ export async function approveBills(billIds, userId) {
         result.already_approved += 1;
         continue;
       }
-      await connection.execute(
-        "UPDATE bills SET status = 'Unpaid', approved_at = CURRENT_TIMESTAMP, approved_by = ?, due_date = GREATEST(due_date, (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Bangkok')::date + 3) WHERE id = ?",
+      const [[after]] = await connection.execute(
+        `UPDATE bills SET status = 'Unpaid', approved_at = CURRENT_TIMESTAMP, approved_by = ?, due_date = GREATEST(due_date, (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Bangkok')::date + 3) WHERE id = ? RETURNING ${columns}`,
         [userId, billId],
       );
+      await recordAudit(connection, {
+        entityType: 'bill',
+        entityId: bill.id,
+        billId: bill.id,
+        action: 'BILL_APPROVE',
+        actorUserId: userId,
+        before: bill,
+        after,
+      });
       result.approved += 1;
     }
     return result;

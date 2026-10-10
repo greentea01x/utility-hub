@@ -1,5 +1,7 @@
 import crypto from 'node:crypto';
 import pool from '../db/pool.js';
+import { withTx } from '../db/tx.js';
+import { recordAudit } from '../lib/audit.js';
 
 export async function createLinkCode(tenantId) {
   const code = crypto.randomBytes(4).toString('hex').slice(0, 6).toUpperCase();
@@ -11,28 +13,32 @@ export async function createLinkCode(tenantId) {
 }
 
 export async function consumeLinkCode(code, lineUserId) {
-  const connection = await pool.getConnection();
-  try {
-    await connection.beginTransaction();
+  return withTx(async (connection) => {
     const [[link]] = await connection.execute(
       'SELECT id, tenant_id FROM link_codes WHERE code = ? AND used_at IS NULL AND expires_at > CURRENT_TIMESTAMP FOR UPDATE',
       [code],
     );
-    if (!link) {
-      await connection.rollback();
-      return false;
-    }
-    await connection.execute(
-      'UPDATE tenants SET line_user_id = ?, line_linked_at = CURRENT_TIMESTAMP WHERE id = ?',
+    if (!link) return false;
+    const columns = 'id, room_id, line_user_id, line_linked_at';
+    const [[before]] = await connection.execute(
+      `SELECT ${columns} FROM tenants WHERE id = ? FOR UPDATE`,
+      [link.tenant_id],
+    );
+    const [[after]] = await connection.execute(
+      `UPDATE tenants SET line_user_id = ?, line_linked_at = CURRENT_TIMESTAMP WHERE id = ? RETURNING ${columns}`,
       [lineUserId, link.tenant_id],
     );
-    await connection.execute('UPDATE link_codes SET used_at = CURRENT_TIMESTAMP WHERE id = ?', [link.id]);
-    await connection.commit();
+    await connection.execute('UPDATE link_codes SET used_at = CURRENT_TIMESTAMP WHERE id = ?', [
+      link.id,
+    ]);
+    await recordAudit(connection, {
+      entityType: 'tenant',
+      entityId: link.tenant_id,
+      action: 'TENANT_LINE_LINK',
+      actorSource: 'line_webhook',
+      before,
+      after,
+    });
     return true;
-  } catch (error) {
-    await connection.rollback();
-    throw error;
-  } finally {
-    connection.release();
-  }
+  });
 }

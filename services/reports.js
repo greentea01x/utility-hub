@@ -1,5 +1,26 @@
 import pool from '../db/pool.js';
 
+// Deliberately reads only rooms and meters; financial columns never enter a staff payload.
+export async function readingSummary(period) {
+  const {
+    rows: [summary],
+  } = await pool.query(
+    `SELECT count(*)::int AS rooms_total,
+      count(*) FILTER (WHERE r.status = 'Occupied')::int AS rooms_occupied,
+      count(*) FILTER (WHERE r.status = 'Occupied' AND m.utilities = 2)::int AS readings_complete
+     FROM rooms r LEFT JOIN (
+       SELECT room_id, count(DISTINCT utility_type) AS utilities
+       FROM meter_readings WHERE period = $1 GROUP BY room_id
+     ) m ON m.room_id = r.id`,
+    [period],
+  );
+  return {
+    period,
+    ...summary,
+    readings_remaining: summary.rooms_occupied - summary.readings_complete,
+  };
+}
+
 export async function dashboardSummary(period) {
   const [[summary]] = await pool.execute(
     `SELECT COUNT(*) AS bills, COALESCE(SUM(total),0) AS billed,

@@ -14,12 +14,16 @@
   <main>
     <p class="eyebrow">ภาพรวม</p>
     <h1>ยินดีต้อนรับ, <%= session.user.displayName %></h1>
-    <p>จัดการรอบบิลจากการจดมิเตอร์จนถึงออกใบเสร็จ</p>
+    <% if (summary) { %>
+      <p>รอบจดมิเตอร์ <%= summary.period %> · ห้องพักทั้งหมด <%= summary.rooms_total %> ห้อง · มีผู้พักอาศัย <%= summary.rooms_occupied %> ห้อง</p>
+      <p role="status">จดมิเตอร์ครบแล้ว <%= summary.readings_complete %> ห้อง · รอจดมิเตอร์ <%= summary.readings_remaining %> ห้อง</p>
+    <% } else { %>
+      <p>จัดการรอบบิลจากการจดมิเตอร์จนถึงออกใบเสร็จ</p>
+    <% } %>
     <nav class="page-nav" aria-label="งานหลัก">
-      <a href="/rooms">ห้องพัก</a>
-      <a href="/readings">จดมิเตอร์</a>
-      <a href="/bills">บิลรายเดือน</a>
-      <a href="/reports/arrears">รายงานลูกหนี้</a>
+      <% navigation.forEach((page) => { %>
+        <a href="<%= page.href %>"><%= page.label %></a>
+      <% }) %>
     </nav>
   </main>
 </body>

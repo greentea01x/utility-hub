@@ -43,7 +43,9 @@
         </tbody>
       </table>
     </div>
-    <p><a href="/bills?period=<%= period %>">ไปหน้าบิลรายเดือน →</a></p>
+    <% if (canAccess('/bills')) { %>
+      <p><a href="/bills?period=<%= period %>">ไปหน้าบิลรายเดือน →</a></p>
+    <% } %>
   </main>
 </body>
 </html>

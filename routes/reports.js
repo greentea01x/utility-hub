@@ -1,5 +1,8 @@
 import { Router } from 'express';
-import { dashboardSummary, arrearsReport } from '../services/reports.js';
+import { z } from 'zod';
+import { dashboardSummary, readingSummary, arrearsReport } from '../services/reports.js';
+import { billingPeriod } from '../lib/validation.js';
+import { AppError } from '../lib/errors.js';
 
 const router = Router();
 const csv = (rows) =>
@@ -7,19 +10,25 @@ const csv = (rows) =>
 router.get(['/api/dashboard/summary', '/api/dashboard/charts'], async (req, res, next) => {
   try {
     return res.json({
-      data: await dashboardSummary(req.query.period ?? new Date().toISOString().slice(0, 7)),
+      data: await (req.session.user.role === 'staff' ? readingSummary : dashboardSummary)(
+        billingPeriod.parse(req.query.period ?? new Date().toISOString().slice(0, 7)),
+      ),
     });
   } catch (error) {
+    if (error instanceof z.ZodError)
+      return next(new AppError(422, 'VALIDATION_FAILED', 'รอบบิลไม่ถูกต้อง'));
     return next(error);
   }
 });
 router.get('/reports/arrears', async (req, res, next) => {
   try {
-    const period = req.query.period ?? new Date().toISOString().slice(0, 7);
+    const period = billingPeriod.parse(req.query.period ?? new Date().toISOString().slice(0, 7));
     const rows = await arrearsReport(period);
     if (req.query.format === 'csv') return res.type('text/csv').send(csv(rows));
     return res.render('pages/report', { title: 'รายงานลูกหนี้ค้างชำระ', period, rows });
   } catch (error) {
+    if (error instanceof z.ZodError)
+      return next(new AppError(422, 'VALIDATION_FAILED', 'รอบบิลไม่ถูกต้อง'));
     return next(error);
   }
 });

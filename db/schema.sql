@@ -1,4 +1,4 @@
-DROP TABLE IF EXISTS sessions, notifications, receipts, payments, bill_items, bills, meter_readings, link_codes, announcements, rates, tenants, rooms, settings, users CASCADE;
+DROP TABLE IF EXISTS audit_log, sessions, notifications, receipts, payments, bill_items, bills, meter_readings, link_codes, announcements, rates, tenants, rooms, settings, users CASCADE;
 
 CREATE TABLE users (id BIGSERIAL PRIMARY KEY, username VARCHAR(50) NOT NULL UNIQUE, display_name VARCHAR(100) NOT NULL, password_hash CHAR(60) NOT NULL, role VARCHAR(10) NOT NULL CHECK (role IN ('admin','staff')), status VARCHAR(10) NOT NULL DEFAULT 'Active' CHECK (status IN ('Active','Inactive')), created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE settings (id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1), apartment_name VARCHAR(120) NOT NULL, address VARCHAR(255) NOT NULL, tax_id VARCHAR(13), phone VARCHAR(20) NOT NULL, office_hours VARCHAR(60) NOT NULL, due_day SMALLINT NOT NULL DEFAULT 5 CHECK (due_day BETWEEN 1 AND 28), line_test_mode BOOLEAN NOT NULL DEFAULT TRUE, line_test_user_id VARCHAR(64), updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP);

@@ -36,7 +36,9 @@ router.post('/login', async (req, res, next) => {
       if (error) return next(error);
       req.session.user = identity;
       return req.session.save((saveError) =>
-        saveError ? next(saveError) : res.redirect('/dashboard'),
+        saveError
+          ? next(saveError)
+          : res.redirect(identity.role === 'staff' ? '/readings' : '/dashboard'),
       );
     });
   } catch (error) {

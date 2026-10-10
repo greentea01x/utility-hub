@@ -5,7 +5,7 @@ import helmet from 'helmet';
 import { rateLimit } from 'express-rate-limit';
 import pool from './db/pool.js';
 import { csrf } from './middleware/csrf.js';
-import { requireAuth } from './middleware/auth.js';
+import { requireAuth, requirePageAccess } from './middleware/auth.js';
 import { errors, notFound } from './middleware/errors.js';
 import authRoutes from './routes/auth.js';
 import dashboardRoutes from './routes/dashboard.js';
@@ -77,6 +77,7 @@ app.use(
 );
 app.use(authRoutes);
 app.use(requireAuth);
+app.use(requirePageAccess);
 app.use(dashboardRoutes);
 app.use(roomsRoutes);
 app.use(tenantsRoutes);

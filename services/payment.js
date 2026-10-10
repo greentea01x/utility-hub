@@ -1,4 +1,5 @@
 import { withTx } from '../db/tx.js';
+import { recordAudit } from '../lib/audit.js';
 
 export async function confirmPayment(billId, userId) {
   return withTx(async (connection) => {
@@ -20,7 +21,7 @@ export async function confirmPayment(billId, userId) {
     }
     await connection.execute("UPDATE bills SET status = 'Paid' WHERE id = ?", [billId]);
     const [paymentRows] = await connection.execute(
-      'INSERT INTO payments (bill_id, amount, received_by) VALUES (?, ?, ?) RETURNING id',
+      'INSERT INTO payments (bill_id, amount, received_by) VALUES (?, ?, ?) RETURNING id, bill_id, amount, method, received_by, received_at',
       [billId, bill.total, userId],
     );
     const paymentId = paymentRows[0].id;
@@ -29,11 +30,26 @@ export async function confirmPayment(billId, userId) {
       'INSERT INTO receipts (payment_id, receipt_number) VALUES (?, ?) RETURNING id',
       [paymentId, receiptNumber],
     );
-    return {
+    const result = {
       payment_id: paymentId,
       receipt_id: receiptRows[0].id,
       receipt_number: receiptNumber,
       amount: bill.total,
     };
+    await recordAudit(connection, {
+      entityType: 'payment',
+      entityId: paymentId,
+      billId,
+      action: 'PAYMENT_CONFIRM',
+      actorUserId: userId,
+      before: { bill_id: bill.id, bill_status: bill.status, total: bill.total },
+      after: {
+        ...paymentRows[0],
+        receipt_id: result.receipt_id,
+        receipt_number: receiptNumber,
+        bill_status: 'Paid',
+      },
+    });
+    return result;
   });
 }

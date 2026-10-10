@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import bcrypt from 'bcryptjs';
 import pg from 'pg';
 import { connectionString } from './connection.js';
+import { schemaSql } from './migrations.js';
 
 const schemaOnly = process.argv.includes('--schema-only');
 const seedOnly = process.argv.includes('--seed-only');
@@ -14,8 +15,8 @@ const connection = new pg.Client({
 });
 await connection.connect();
 try {
-  if (!seedOnly)
-    await connection.query(await readFile(new URL('./schema.sql', import.meta.url), 'utf8'));
+  await connection.query('BEGIN');
+  if (!seedOnly) await connection.query(await schemaSql());
   if (!schemaOnly) {
     const hash = await bcrypt.hash(process.env.SEED_ADMIN_PASSWORD, 10);
     const sql = (await readFile(new URL('./seed.sql', import.meta.url), 'utf8')).replace(
@@ -25,6 +26,10 @@ try {
     await connection.query(sql);
     console.log('Seeded admin and apartment settings.');
   }
+  await connection.query('COMMIT');
+} catch (error) {
+  await connection.query('ROLLBACK');
+  throw error;
 } finally {
   await connection.end();
 }

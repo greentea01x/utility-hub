@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import bcrypt from 'bcryptjs';
 import pg from 'pg';
+import { schemaSql as loadSchemaSql } from '../../db/migrations.js';
 
 export async function createDatabaseFixture() {
   if (!process.env.TEST_DATABASE_URL) throw new Error('TEST_DATABASE_URL is required');
@@ -27,7 +28,7 @@ export async function createDatabaseFixture() {
   });
   const { connectionString } = await import('../../db/connection.js');
   const client = new pg.Client({ connectionString, connectionTimeoutMillis: 10000 });
-  const schemaSql = await readFile(new URL('../../db/schema.sql', import.meta.url), 'utf8');
+  const schemaSql = await loadSchemaSql();
   const seedSql = (await readFile(new URL('../../db/seed.sql', import.meta.url), 'utf8')).replace(
     '__ADMIN_PASSWORD_HASH__',
     await bcrypt.hash(password, 10),
@@ -66,6 +67,7 @@ export async function createDatabaseFixture() {
           'link_codes',
           'notifications',
           'announcements',
+          'audit_log',
         ],
       ],
     );

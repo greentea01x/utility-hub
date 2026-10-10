@@ -44,7 +44,10 @@ describe(
         body: { username, password: db.password },
       });
       assert.equal(response.status, 302);
-      assert.equal(response.headers.get('location'), '/dashboard');
+      assert.equal(
+        response.headers.get('location'),
+        username === 'staff' ? '/readings' : '/dashboard',
+      );
       assert.equal((await browser.request('/dashboard')).status, 200);
       return browser;
     }

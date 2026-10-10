@@ -17,10 +17,26 @@ The current operator flow is **Dashboard → Meter Readings → Monthly Bills �
 `npm run db:reset` is a development/demo reset: it drops and recreates all application tables, then seeds the 80-room demo dataset. Do not run it against a production database containing real data.
 
 For an existing initialized database, run `npm run db:upgrade` before starting the updated app.
-It adds the reminder notification columns and deduplication index without resetting application
-data. Daily reminders are queued two days before the due date and on overdue days 1, 8, and 15;
+It adds the reminder notification columns, deduplication index, and audit table without resetting
+application data. Schema resets also apply all upgrades. Daily reminders are queued two days
+before the due date and on overdue days 1, 8, and 15;
 same-day retries and concurrent jobs do not duplicate reminders. Paid bills and bills with a
 voided payment are excluded.
+
+Staff land on Meter Readings and can inspect rooms, save meters, and see room counts and reading
+progress. A shared route/navigation policy blocks billing, receipts, financial charts/reports/CSV,
+tenants, settings, announcements, notification draining, and room mutations. The staff dashboard
+query reads only rooms and meters, so amounts and rates never enter its response.
+
+Reading creation/edits, bill approval, cash payment, LINE binding, and announcement creation write
+audit snapshots on the same database connection and transaction as the change. If an audit insert
+fails, the business change rolls back. Database triggers reject ordinary audit UPDATE, DELETE,
+and TRUNCATE operations; this does not restrict a database owner from changing the schema.
+User actions require an actor user ID. Signed LINE linking records `actor_source=line_webhook`
+and no user ID because a tenant webhook has no application login. One-time link codes and
+credentials are excluded from audit snapshots. The specification's `ANNOUNCEMENT_SEND` action
+currently records creation with `delivery_status=not_dispatched`; real LINE delivery and fan-out
+remain to be implemented.
 
 `npm test` runs unit tests and, when `TEST_DATABASE_URL` is set in `.env.test`, database-backed
 integration tests. The integration suite uses a temporary schema with no `public` fallback and
@@ -28,5 +44,5 @@ checks that public application data stays unchanged. See [test/integration/READM
 
 Run `npm run rehearse` to verify the documented room 205 demo arithmetic without a database.
 Run `npm run test:e2e` for read-only browser smoke checks. See [test/e2e/README.md](test/e2e/README.md) for the opt-in full room 205 browser scenario; it writes disposable demo data.
-Run `npm run test:e2e:isolated` with `TEST_DATABASE_URL` in `.env.test` to exercise all five browser
+Run `npm run test:e2e:isolated` with `TEST_DATABASE_URL` in `.env.test` to exercise all six browser
 scenarios in a temporary schema while preserving the public demo data.
