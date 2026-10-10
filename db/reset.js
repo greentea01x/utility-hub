@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import bcrypt from 'bcryptjs';
-import mysql from 'mysql2/promise';
+import pg from 'pg';
+import { connectionString } from './connection.js';
 
 const schemaOnly = process.argv.includes('--schema-only');
 const seedOnly = process.argv.includes('--seed-only');
@@ -8,12 +9,10 @@ const seedOnly = process.argv.includes('--seed-only');
 if (!schemaOnly && !seedOnly) throw new Error('Use --schema-only or --seed-only');
 if (!schemaOnly && !process.env.SEED_ADMIN_PASSWORD)
   throw new Error('SEED_ADMIN_PASSWORD is required');
-if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required');
-
-const connection = await mysql.createConnection({
-  uri: process.env.DATABASE_URL,
-  multipleStatements: true,
+const connection = new pg.Client({
+  connectionString,
 });
+await connection.connect();
 try {
   if (!seedOnly)
     await connection.query(await readFile(new URL('./schema.sql', import.meta.url), 'utf8'));

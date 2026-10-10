@@ -10,7 +10,7 @@ export function csrf(req, res, next) {
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
   const actual = req.get('x-csrf-token') ?? req.body?._csrf;
   const expected = req.session[tokenKey];
-  if (!actual || actual.length !== expected.length)
+  if (typeof actual !== 'string' || Buffer.byteLength(actual) !== Buffer.byteLength(expected))
     return next(new AppError(403, 'CSRF_INVALID', 'คำขอไม่ถูกต้อง'));
   const valid = crypto.timingSafeEqual(Buffer.from(actual), Buffer.from(expected));
   return valid ? next() : next(new AppError(403, 'CSRF_INVALID', 'คำขอไม่ถูกต้อง'));

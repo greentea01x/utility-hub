@@ -5,7 +5,7 @@ export async function generateDrafts(period, userId) {
     const [settingsRows] = await connection.execute('SELECT due_day FROM settings WHERE id = 1');
     const dueDay = settingsRows[0]?.due_day ?? 5;
     const [rooms] = await connection.execute(
-      "SELECT id, area_sqm FROM rooms WHERE status = 'Occupied'",
+      "SELECT id, area_sqm FROM rooms WHERE status = 'Occupied' ORDER BY id FOR UPDATE",
     );
     let generated = 0;
     for (const room of rooms) {
@@ -18,49 +18,70 @@ export async function generateDrafts(period, userId) {
       );
       if (!readings.water || !readings.electric) continue;
       const [rateRows] = await connection.execute(
-        "SELECT utility_type, unit_price FROM rates WHERE effective_from <= CONCAT(?, '-01') ORDER BY effective_from DESC",
+        "SELECT utility_type, unit_price FROM rates WHERE effective_from <= CAST(? || '-01' AS DATE) ORDER BY effective_from DESC",
         [period],
       );
       const rates = {};
       for (const rate of rateRows)
         if (!rates[rate.utility_type]) rates[rate.utility_type] = rate.unit_price;
       if (!rates.water || !rates.electric || !rates.common) continue;
-      const [billResult] = await connection.execute(
-        "INSERT INTO bills (room_id, period, due_date) VALUES (?, ?, LAST_DAY(CONCAT(?, '-01')) - INTERVAL (DAY(LAST_DAY(CONCAT(?, '-01'))) - ?) DAY) ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)",
-        [room.id, period, period, period, dueDay],
+      const dueDate = new Date(
+        Date.UTC(Number(period.slice(0, 4)), Number(period.slice(5, 7)) - 1, dueDay),
       );
-      const billId = billResult.insertId;
+      const [[existing]] = await connection.execute(
+        'SELECT id, status FROM bills WHERE room_id = ? AND period = ? FOR UPDATE',
+        [room.id, period],
+      );
+      if (existing && existing.status !== 'Draft') continue;
+      const [billRows] = await connection.execute(
+        "INSERT INTO bills (room_id, period, due_date) VALUES (?, ?, ?) ON CONFLICT (room_id, period) DO UPDATE SET due_date = EXCLUDED.due_date, updated_at = CURRENT_TIMESTAMP WHERE bills.status = 'Draft' RETURNING id",
+        [room.id, period, dueDate.toISOString().slice(0, 10)],
+      );
+      if (!billRows.length) continue;
+      const billId = billRows[0].id;
       await connection.execute('DELETE FROM bill_items WHERE bill_id = ?', [billId]);
       const items = [
         [
           'water',
           'ค่าน้ำ',
-          Number(readings.water.current_reading) - Number(readings.water.previous_reading),
+          readings.water.current_reading,
+          readings.water.previous_reading,
           rates.water,
         ],
         [
           'electric',
           'ค่าไฟฟ้า',
-          Number(readings.electric.current_reading) - Number(readings.electric.previous_reading),
+          readings.electric.current_reading,
+          readings.electric.previous_reading,
           rates.electric,
         ],
-        ['common', 'ค่าส่วนกลาง', Number(room.area_sqm), rates.common],
+        ['common', 'ค่าส่วนกลาง', room.area_sqm, '0', rates.common],
       ];
-      let total = 0;
-      for (const [utility, description, quantity, unitPrice] of items) {
-        const amount = quantity * Number(unitPrice);
-        total += amount;
+      for (const [utility, description, current, previous, unitPrice] of items) {
         await connection.execute(
-          'INSERT INTO bill_items (bill_id, utility_type, description, quantity, unit_price, amount) VALUES (?, ?, ?, ?, ?, ?)',
-          [billId, utility, description, quantity, unitPrice, amount],
+          `INSERT INTO bill_items (bill_id, utility_type, description, quantity, unit_price, amount)
+           VALUES (?, ?, ?, CAST(? AS NUMERIC) - CAST(? AS NUMERIC), ?,
+             ROUND((CAST(? AS NUMERIC) - CAST(? AS NUMERIC)) * CAST(? AS NUMERIC), 2))`,
+          [
+            billId,
+            utility,
+            description,
+            current,
+            previous,
+            unitPrice,
+            current,
+            previous,
+            unitPrice,
+          ],
         );
       }
-      await connection.execute('UPDATE bills SET subtotal = ?, total = ? WHERE id = ?', [
-        total,
-        total,
-        billId,
-      ]);
-      generated += 1;
+      await connection.execute(
+        `UPDATE bills SET subtotal = totals.amount, total = totals.amount
+         FROM (SELECT SUM(amount) AS amount FROM bill_items WHERE bill_id = ?) totals
+         WHERE bills.id = ?`,
+        [billId, billId],
+      );
+      if (!existing) generated += 1;
     }
     return { generated, period, userId };
   });
@@ -83,7 +104,7 @@ export async function approveBills(billIds, userId) {
         continue;
       }
       await connection.execute(
-        "UPDATE bills SET status = 'Unpaid', approved_at = CURRENT_TIMESTAMP, approved_by = ? WHERE id = ?",
+        "UPDATE bills SET status = 'Unpaid', approved_at = CURRENT_TIMESTAMP, approved_by = ?, due_date = GREATEST(due_date, (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Bangkok')::date + 3) WHERE id = ?",
         [userId, billId],
       );
       result.approved += 1;

@@ -3,11 +3,11 @@ import pool from '../db/pool.js';
 export async function dashboardSummary(period) {
   const [[summary]] = await pool.execute(
     `SELECT COUNT(*) AS bills, COALESCE(SUM(total),0) AS billed,
-    SUM(status='Paid') AS paid FROM bills WHERE period=?`,
+    COUNT(*) FILTER (WHERE status='Paid') AS paid FROM bills WHERE period=?`,
     [period],
   );
   const [[rooms]] = await pool.execute(
-    "SELECT COUNT(*) AS total, SUM(status='Occupied') AS occupied FROM rooms",
+    "SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE status='Occupied') AS occupied FROM rooms",
   );
   return {
     period,

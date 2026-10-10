@@ -1,24 +1,32 @@
 import pool from '../db/pool.js';
 
 export async function runDailyJob() {
-  const [bills] = await pool.execute(`SELECT b.due_date, t.id AS tenant_id
-    FROM bills b JOIN rooms r ON r.id=b.room_id JOIN tenants t ON t.room_id=r.id AND t.status='Active'
-    WHERE b.status='Unpaid' AND (b.due_date = CURDATE() + INTERVAL 3 DAY OR b.due_date < CURDATE())`);
-  let queued = 0;
-  for (const bill of bills) {
-    const type = bill.due_date < new Date().toISOString().slice(0, 10) ? 'OVERDUE' : 'PRE_DUE';
-    const [result] = await pool.execute(
-      `INSERT INTO notifications (tenant_id, type, body)
-      SELECT ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM notifications WHERE tenant_id=? AND type=? AND DATE(created_at)=CURDATE())`,
-      [
-        bill.tenant_id,
-        type,
-        type === 'OVERDUE' ? 'มีบิลค้างชำระ กรุณาติดต่อสำนักงาน' : 'บิลของคุณใกล้ครบกำหนดชำระ',
-        bill.tenant_id,
-        type,
-      ],
-    );
-    queued += result.affectedRows;
-  }
-  return { queued, checked: bills.length };
+  const [[result]] = await pool.execute(`
+    WITH today AS (
+      SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Bangkok')::date AS day
+    ), eligible AS (
+      SELECT b.id AS bill_id, t.id AS tenant_id, today.day AS send_date,
+        CASE WHEN b.due_date = today.day + 2 THEN 'PRE_DUE' ELSE 'OVERDUE' END AS type
+      FROM bills b
+      JOIN tenants t ON t.room_id = b.room_id AND t.status = 'Active'
+      CROSS JOIN today
+      WHERE b.status = 'Unpaid'
+        AND (b.due_date = today.day + 2 OR today.day - b.due_date IN (1, 8, 15))
+        AND NOT EXISTS (
+          SELECT 1 FROM payments p WHERE p.bill_id = b.id AND p.voided_at IS NOT NULL
+        )
+    ), queued AS (
+      INSERT INTO notifications (bill_id, tenant_id, type, body, send_date)
+      SELECT bill_id, tenant_id, type,
+        CASE WHEN type = 'OVERDUE' THEN 'มีบิลค้างชำระ กรุณาติดต่อสำนักงาน'
+          ELSE 'บิลของคุณใกล้ครบกำหนดชำระ' END,
+        send_date
+      FROM eligible
+      ON CONFLICT DO NOTHING
+      RETURNING id
+    )
+    SELECT (SELECT COUNT(*)::int FROM queued) AS queued,
+      (SELECT COUNT(*)::int FROM eligible) AS checked
+  `);
+  return result;
 }

@@ -1,2 +1,28 @@
 :root { font-family: system-ui, sans-serif; color: #172033; background: #f6f8fb; }
 * { box-sizing: border-box; } body { margin: 0; } header { min-height: 64px; display: flex; align-items: center; gap: 12px; padding: 0 7vw; background: #12355b; color: white; } header a { color: white; font-weight: 700; text-decoration: none; } header span { font-size: 11px; letter-spacing: .08em; opacity: .8; } header form { margin-left: auto; } button { cursor: pointer; border: 0; border-radius: 6px; padding: 10px 16px; background: #1769aa; color: white; font: inherit; } header button { background: transparent; padding: 6px; } main { max-width: 960px; margin: 0 auto; padding: 48px 24px; } .auth { max-width: 380px; margin: 8vh auto; padding: 32px; background: white; border-radius: 12px; box-shadow: 0 8px 30px #17203318; } label { display: grid; gap: 6px; margin: 18px 0; } input { padding: 10px; border: 1px solid #b9c3d0; border-radius: 6px; font: inherit; } .eyebrow { color: #1769aa; font-weight: 700; }
+.page-nav { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
+.page-nav a { padding: 16px 20px; background: white; border: 1px solid #dce4ed; border-radius: 8px; color: #12355b; text-decoration: none; font-weight: 600; }
+.breadcrumbs { margin-bottom: 24px; color: #68788d; }
+.breadcrumbs a { color: #1769aa; }
+.table-wrap { overflow-x: auto; margin-top: 20px; background: white; border: 1px solid #dce4ed; border-radius: 8px; }
+table { width: 100%; border-collapse: collapse; text-align: left; }
+th, td { padding: 12px; border-bottom: 1px solid #e8edf3; vertical-align: middle; white-space: nowrap; }
+th { background: #edf3f9; font-weight: 700; }
+tbody tr:last-child td { border-bottom: 0; }
+td input[type="number"] { width: 120px; }
+td form { margin: 0; }
+.action-bar { margin: 24px 0; }
+.notice { padding: 12px 16px; background: #e8f6ed; border: 1px solid #a6d9b6; border-radius: 6px; color: #145f32; }
+.receipt-page { max-width: 760px; }
+.receipt { padding: 32px; background: white; border: 1px solid #dce4ed; border-radius: 8px; }
+.receipt .table-wrap { border: 0; margin: 24px 0; }
+.receipt th, .receipt td { white-space: normal; text-align: right; }
+.receipt th:first-child, .receipt td:first-child { text-align: left; }
+.receipt h2 { text-align: right; }
+@page { size: A5 portrait; margin: 10mm; }
+@media print {
+  :root { background: white; }
+  .receipt-page { max-width: none; padding: 0; }
+  .receipt { border: 0; border-radius: 0; padding: 0; }
+  [data-print-receipt] { display: none; }
+}

@@ -1,1 +1,49 @@
-<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title><%= title %> · Juristic Platform</title><link rel="stylesheet" href="/css/app.css"></head><body><header><a href="/dashboard">UtilityHub</a><span>Juristic Platform</span><form action="/logout" method="post"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button>ออกจากระบบ</button></form></header><main><h1>จดมิเตอร์</h1><p>รอบบิล <%= period %></p><table><thead><tr><th>ห้อง</th><th>น้ำ</th><th>ไฟฟ้า</th></tr></thead><tbody><% rooms.forEach((room) => { %><tr><td><%= room.room_number %></td><td><input aria-label="น้ำ ห้อง <%= room.room_number %>" data-room-id="<%= room.id %>" data-utility="water" type="number" min="0"></td><td><input aria-label="ไฟฟ้า ห้อง <%= room.room_number %>" data-room-id="<%= room.id %>" data-utility="electric" type="number" min="0"></td></tr><% }) %></tbody></table></main></body></html>
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title><%= title %> · Juristic Platform</title>
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+  <header>
+    <a href="/dashboard">UtilityHub</a><span>Juristic Platform</span>
+    <form action="/logout" method="post"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button>ออกจากระบบ</button></form>
+  </header>
+  <main>
+    <nav class="breadcrumbs"><a href="/dashboard">ภาพรวม</a> / จดมิเตอร์</nav>
+    <h1>จดมิเตอร์</h1>
+    <p>รอบบิล <%= period %> · กรอกเลขมิเตอร์ปัจจุบันของแต่ละห้อง</p>
+    <% if (saved) { %><p class="notice" role="status">บันทึกเลขมิเตอร์เรียบร้อย</p><% } %>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>ห้อง</th><th>น้ำ · ครั้งก่อน</th><th>น้ำ · ปัจจุบัน</th><th>ไฟฟ้า · ครั้งก่อน</th><th>ไฟฟ้า · ปัจจุบัน</th><th>บันทึก</th></tr></thead>
+        <tbody>
+          <% rooms.forEach((room) => { %>
+            <tr data-room="<%= room.room_number %>">
+              <td><%= room.room_number %></td>
+              <td><%= room.water_previous %></td>
+              <td>
+                <input aria-label="น้ำ ห้อง <%= room.room_number %>" form="reading-<%= room.id %>" name="water" type="number" min="0" step="0.01" value="<%= room.water_current ?? '' %>" required>
+              </td>
+              <td><%= room.electric_previous %></td>
+              <td>
+                <input aria-label="ไฟฟ้า ห้อง <%= room.room_number %>" form="reading-<%= room.id %>" name="electric" type="number" min="0" step="0.01" value="<%= room.electric_current ?? '' %>" required>
+              </td>
+              <td>
+                <form id="reading-<%= room.id %>" action="/readings/<%= room.id %>" method="post">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                  <input type="hidden" name="period" value="<%= period %>">
+                  <button type="submit">บันทึก</button>
+                </form>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+    <p><a href="/bills?period=<%= period %>">ไปหน้าบิลรายเดือน →</a></p>
+  </main>
+</body>
+</html>

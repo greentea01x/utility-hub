@@ -9,7 +9,7 @@ router.post('/api/notifications/drain', async (_req, res, next) => {
     );
     if (rows.length)
       await pool.query(
-        `UPDATE notifications SET status='sent', sent_at=NOW(), attempt_count=attempt_count+1 WHERE id IN (${rows.map(() => '?').join(',')})`,
+        `UPDATE notifications SET status='sent', sent_at=CURRENT_TIMESTAMP, attempt_count=attempt_count+1 WHERE id IN (${rows.map((_, index) => `$${index + 1}`).join(',')})`,
         rows.map((row) => row.id),
       );
     return res.json({ data: { sent: rows.length, failed: 0, remaining: 0 } });

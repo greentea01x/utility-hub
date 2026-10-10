@@ -1,1 +1,33 @@
-<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title><%= title %></title><link rel="stylesheet" href="/css/app.css"></head><body><main><section class="receipt"><p>ใบเสร็จรับเงิน</p><h1>UtilityHub Apartment</h1><p>เลขที่ <%= receipt.receipt_number %></p><p>ห้อง <%= receipt.room_number %> · <%= receipt.full_name ?? '-' %></p><p>รอบบิล <%= receipt.period %></p><h2><%= receipt.amount %> บาท</h2><button onclick="window.print()">พิมพ์ใบเสร็จ</button></section></main></body></html>
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title><%= title %> · <%= receipt.receipt_number %></title>
+  <link rel="stylesheet" href="/css/app.css">
+  <script src="/js/receipt.js" defer></script>
+</head>
+<body>
+  <main class="receipt-page">
+    <section class="receipt">
+      <p class="eyebrow">ใบเสร็จรับเงิน</p>
+      <h1>UtilityHub Apartment</h1>
+      <p>เลขที่ <%= receipt.receipt_number %></p>
+      <p>ห้อง <%= receipt.room_number %> · <%= receipt.full_name ?? '-' %></p>
+      <p>รอบบิล <%= receipt.period %></p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>รายการ</th><th>จำนวน</th><th>อัตรา</th><th>จำนวนเงิน</th></tr></thead>
+          <tbody>
+            <% items.forEach((item) => { %>
+              <tr><td><%= item.description %></td><td><%= item.quantity %></td><td><%= item.unit_price %></td><td><%= item.amount %></td></tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+      <h2>รวม <%= receipt.amount %> บาท</h2>
+      <button type="button" data-print-receipt disabled>พิมพ์ใบเสร็จ</button>
+    </section>
+  </main>
+</body>
+</html>

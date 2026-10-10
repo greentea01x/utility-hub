@@ -1,1 +1,26 @@
-<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title><%= title %> · Juristic Platform</title><link rel="stylesheet" href="/css/app.css"></head><body><header><a href="/dashboard">UtilityHub</a><span>Juristic Platform</span><form action="/logout" method="post"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button>ออกจากระบบ</button></form></header><main><section><p class="eyebrow">ภาพรวม</p><h1>ยินดีต้อนรับ, <%= session.user.displayName %></h1><p>Dashboard พร้อมสำหรับข้อมูลห้องพัก บิล และการชำระเงินในขั้นถัดไป</p></section></main></body></html>
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title><%= title %> · Juristic Platform</title>
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+  <header>
+    <a href="/dashboard">UtilityHub</a><span>Juristic Platform</span>
+    <form action="/logout" method="post"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button>ออกจากระบบ</button></form>
+  </header>
+  <main>
+    <p class="eyebrow">ภาพรวม</p>
+    <h1>ยินดีต้อนรับ, <%= session.user.displayName %></h1>
+    <p>จัดการรอบบิลจากการจดมิเตอร์จนถึงออกใบเสร็จ</p>
+    <nav class="page-nav" aria-label="งานหลัก">
+      <a href="/rooms">ห้องพัก</a>
+      <a href="/readings">จดมิเตอร์</a>
+      <a href="/bills">บิลรายเดือน</a>
+      <a href="/reports/arrears">รายงานลูกหนี้</a>
+    </nav>
+  </main>
+</body>
+</html>
