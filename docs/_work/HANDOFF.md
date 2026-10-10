@@ -1,3 +1,94 @@
+# Current handoff — Juristic Platform
+
+Updated: 2026-10-10 (Asia/Bangkok)
+
+## Read this first
+
+This section supersedes the 2026-09-20 MySQL-era implementation handoff preserved below. The
+application is now configured for **Supabase PostgreSQL** through the Session Pooler. Do not follow
+the old instructions to start MySQL or create MySQL databases. The current setup and operator flow
+are in [`README.md`](../../README.md); browser-test setup is in
+[`test/e2e/README.md`](../../test/e2e/README.md), and database integration setup is in
+[`test/integration/README.md`](../../test/integration/README.md).
+
+The PostgreSQL migration, UI flow, integration coverage, and browser tests are committed in
+`910184f` (`feat: migrate billing workflow to Supabase PostgreSQL`). The untracked `tmp/` directory
+and unrelated SVG/PNG files are user-owned and were excluded from the commits; do not remove or
+reset them during cleanup. Database credentials remain in ignored local `.env`/`.env.test` files.
+
+## What has been implemented and verified
+
+- PostgreSQL schema/seed/reset and PostgreSQL-backed sessions replace the earlier MySQL setup.
+  `db/connection.js` configures TLS for remote databases. The default Supabase `sslmode=require`
+  encrypts traffic but does **not** verify the server certificate; the README documents the optional
+  CA/`verify-full` configuration.
+- The usable operator path is Dashboard → Meter Readings → Monthly Bills → Receipt. A user can save
+  room readings, generate a Draft bill, approve it, confirm cash payment, and view/print its receipt.
+- Room 205 demo arithmetic: water 1,250 → 1,260 costs 180.00; electricity 5,280 → 5,350 costs
+  560.00; common area 30 × 35 costs 1,050.00; total **1,790.00 baht**.
+- Playwright has four default read-only browser smoke tests plus one database-mutating room 205
+  end-to-end scenario. **All five passed in Chrome on 2026-10-10** using the new
+  `npm run test:e2e:isolated` command. This covers readings, bill, approval, payment, receipt,
+  print action, duplicate-payment rejection (409), and paid-dashboard count. The scenario ran in a
+  temporary test schema, which was removed afterwards; public demo data was preserved.
+- There are **22 database integration tests** covering schema/reset, login/session regeneration,
+  CSRF, logout, billing/payment/receipt staff restrictions, readings and transaction rollback,
+  generation/approval and concurrency, decimal amounts, payments/receipts, link-code consumption,
+  daily jobs, and upgrades. Tests use their own schema with an exclusive `search_path`, reset only
+  that schema, and compare public application-table counts/checksums before and after each suite.
+- Billing amounts and totals now use PostgreSQL decimal arithmetic, generation counts only new
+  drafts, and concurrent generation does not duplicate bills/items. Invalid calendar months and
+  multibyte/non-string CSRF tokens are rejected. Staff cannot access bill generation, approval,
+  cash-payment routes, or receipts; the remaining full role matrix still needs review.
+- Daily reminders follow the specification: two days before due, then overdue days 1/8/15,
+  excluding Paid bills and bills with voided payments. A per-bill/tenant/type/Bangkok-day unique
+  index prevents duplicates during retries and concurrent jobs. `npm run db:upgrade` adds the
+  required columns/index without resetting existing data; it was tested and applied to the demo.
+- The new Supabase project was initialized on 2026-10-10 after confirming that its public schema
+  was empty. Schema creation and demo seeding ran in one transaction. The final live check found
+  80 rooms, 67 tenants, two seeded readings, zero bills/payments/receipts/notifications, and zero
+  remaining temporary test schemas.
+
+## Checks run on 2026-10-10
+
+- `npm run lint` — passed.
+- `npm test` with `TEST_DATABASE_URL` — **23 passed** (22 PostgreSQL integration tests and the
+  existing CSRF unit test), with no skips. Test scripts now use file globs compatible with Node 24.
+- `npm run test:e2e:isolated` — **all five Chrome tests passed**, including the full room 205 path.
+- `npm run rehearse` — passed, producing the 1,790.00 baht room 205 result.
+- `git diff --check` — passed.
+- The initial database check failed with a pooler `tenant/user ... not found` error. The user then
+  created a new Supabase project and updated the local `.env` `DATABASE_URL`. The new Session
+  Pooler connection **passed**, and the client connection is encrypted. Do not print `.env` or
+  credentials.
+- The app is running at `http://127.0.0.1:3000`; `/healthz` returned HTTP 200 with `status: ok`, and
+  the collaborative preview is open at `/login`.
+- Four default Chrome browser smoke tests also passed against the public demo earlier in the
+  session. The later full browser run used an isolated schema. Public application counts and
+  checksums were unchanged after the integration and full-browser suites.
+- `npm run db:upgrade` — passed against the demo database; no reset was performed.
+- An ignored `.env.test` was created with `TEST_DATABASE_URL` for the isolated test commands.
+- App and browser validation used Node 24.21.0 through `npm exec --yes --package=node@24 -- ...`.
+  The machine's default Node is 26.8.1, outside the repository's declared Node 24 range. The
+  running dev server was started with `npm exec --yes --package=node@24 -- npm run dev`.
+
+## Recommended next session
+
+1. Supabase connectivity, demo initialization, database integration tests, full browser validation,
+   the reminder upgrade, and the application commit are complete.
+   If the local app has stopped, use Node 24 to start it with `npm run dev` (or the `npm exec`
+   command above); confirm `/healthz` and login at `http://127.0.0.1:3000/login`.
+2. Run `npm test` and `npm run test:e2e:isolated` on Node 24 for isolated database and full-browser
+   checks. The local `.env.test` is configured. There is no need to reset the public demo for these
+   commands. Do not run `npm run db:reset` against data that must be kept.
+3. Continue full-spec hardening: finish the CRUD/role matrix (including staff dashboard/report
+   financial access), add transactional audit logging, bill revert/payment void flows, receipt
+   print counts, real LINE sending, announcement fan-out, and pagination. Add integration cases
+   alongside those changes. The current notification drain still marks messages sent without
+   calling LINE; a successful test run does not verify external delivery.
+
+## Historical handoff (2026-09-20; superseded where inconsistent)
+
 # Handoff — Juristic Platform documentation run
 
 Updated: 2026-09-20
