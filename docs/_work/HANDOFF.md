@@ -12,7 +12,10 @@ are in [`README.md`](../../README.md); browser-test setup is in
 [`test/integration/README.md`](../../test/integration/README.md).
 
 The PostgreSQL migration, UI flow, integration coverage, and browser tests are committed in
-`910184f` (`feat: migrate billing workflow to Supabase PostgreSQL`). The untracked `tmp/` directory
+`910184f` (`feat: migrate billing workflow to Supabase PostgreSQL`). Staff access restrictions and
+transactional audit logging are committed in `50019e2` (`feat: enforce staff access and transactional
+audit history`). The audit upgrade has been applied to the live demo without resetting any data.
+The untracked `tmp/` directory
 and unrelated SVG/PNG files are user-owned and were excluded from the commits; do not remove or
 reset them during cleanup. Database credentials remain in ignored local `.env`/`.env.test` files.
 
@@ -26,20 +29,41 @@ reset them during cleanup. Database credentials remain in ignored local `.env`/`
   room readings, generate a Draft bill, approve it, confirm cash payment, and view/print its receipt.
 - Room 205 demo arithmetic: water 1,250 → 1,260 costs 180.00; electricity 5,280 → 5,350 costs
   560.00; common area 30 × 35 costs 1,050.00; total **1,790.00 baht**.
-- Playwright has four default read-only browser smoke tests plus one database-mutating room 205
-  end-to-end scenario. **All five passed in Chrome on 2026-10-10** using the new
+- Playwright has four default read-only browser smoke tests plus the database-mutating room 205
+  and staff meter scenarios. **All six passed in Chrome on 2026-10-10** using the
   `npm run test:e2e:isolated` command. This covers readings, bill, approval, payment, receipt,
   print action, duplicate-payment rejection (409), and paid-dashboard count. The scenario ran in a
-  temporary test schema, which was removed afterwards; public demo data was preserved.
-- There are **22 database integration tests** covering schema/reset, login/session regeneration,
+  temporary test schema, which was removed afterwards; public demo data was preserved. The runner
+  also verified four reading-create audit rows, one approval audit, and one payment audit.
+- There are **35 database integration tests** covering schema/reset, login/session regeneration,
   CSRF, logout, billing/payment/receipt staff restrictions, readings and transaction rollback,
   generation/approval and concurrency, decimal amounts, payments/receipts, link-code consumption,
-  daily jobs, and upgrades. Tests use their own schema with an exclusive `search_path`, reset only
+  daily jobs, upgrades, the staff route matrix, nonfinancial dashboard queries, audit snapshots,
+  concurrent auditing, append-only guards, and audit-failure rollback. Tests use their own schema
+  with an exclusive `search_path`, reset only
   that schema, and compare public application-table counts/checksums before and after each suite.
 - Billing amounts and totals now use PostgreSQL decimal arithmetic, generation counts only new
   drafts, and concurrent generation does not duplicate bills/items. Invalid calendar months and
   multibyte/non-string CSRF tokens are rejected. Staff cannot access bill generation, approval,
-  cash-payment routes, or receipts; the remaining full role matrix still needs review.
+  cash-payment routes, or receipts.
+- A single staff allowlist now drives protected routes and navigation. Staff land on readings,
+  can inspect rooms and save meters, and receive only room counts and reading progress from the
+  dashboard. Financial charts, reports/CSV, tenants, settings, announcements, notification drain,
+  and room mutations return 403. The reduced dashboard queries only rooms and meters; an
+  integration test verifies it still works with the financial tables renamed.
+- Reading creates/edits, approval, cash payment/receipt persistence, LINE binding, and announcement
+  creation insert audit snapshots in the business transaction on the same connection. Tests
+  deliberately reject audit inserts and verify that every associated business mutation rolls back.
+  Concurrent approval/payment/link consumption each produce one successful event and audit row.
+  Identical reading saves preserve the row without creating an edit audit. Database triggers
+  reject ordinary audit UPDATE, DELETE, and TRUNCATE; database owners can still change the schema.
+- PostgreSQL audit adaptation: user actions require `actor_user_id`, while tenant LINE webhooks
+  have `actor_source=line_webhook` and a null user ID, constrained to `TENANT_LINE_LINK`. This is
+  an explicit adaptation of the historical MySQL spec's non-null user actor because webhook
+  senders have no application login. One-time codes and credentials are not included in snapshots.
+  `ANNOUNCEMENT_SEND` currently audits creation with `delivery_status=not_dispatched`; it does not
+  certify external delivery. Other audit action types will be wired as their CRUD/correction flows
+  are implemented; there is no global audit-browser UI.
 - Daily reminders follow the specification: two days before due, then overdue days 1/8/15,
   excluding Paid bills and bills with voided payments. A per-bill/tenant/type/Bangkok-day unique
   index prevents duplicates during retries and concurrent jobs. `npm run db:upgrade` adds the
@@ -47,14 +71,16 @@ reset them during cleanup. Database credentials remain in ignored local `.env`/`
 - The new Supabase project was initialized on 2026-10-10 after confirming that its public schema
   was empty. Schema creation and demo seeding ran in one transaction. The final live check found
   80 rooms, 67 tenants, two seeded readings, zero bills/payments/receipts/notifications, and zero
-  remaining temporary test schemas.
+  remaining temporary test schemas. The later audit upgrade preserved the counts/checksums of
+  every existing application table and created an empty audit table with its immutable trigger.
 
 ## Checks run on 2026-10-10
 
 - `npm run lint` — passed.
-- `npm test` with `TEST_DATABASE_URL` — **23 passed** (22 PostgreSQL integration tests and the
+- `npm test` with `TEST_DATABASE_URL` — **36 passed** (35 PostgreSQL integration tests and the
   existing CSRF unit test), with no skips. Test scripts now use file globs compatible with Node 24.
-- `npm run test:e2e:isolated` — **all five Chrome tests passed**, including the full room 205 path.
+- `npm run test:e2e:isolated` — **all six Chrome tests passed**, including the full room 205 path,
+  staff meter entry, forbidden-route checks, and verification of resulting audit records.
 - `npm run rehearse` — passed, producing the 1,790.00 baht room 205 result.
 - `git diff --check` — passed.
 - The initial database check failed with a pooler `tenant/user ... not found` error. The user then
@@ -66,7 +92,8 @@ reset them during cleanup. Database credentials remain in ignored local `.env`/`
 - Four default Chrome browser smoke tests also passed against the public demo earlier in the
   session. The later full browser run used an isolated schema. Public application counts and
   checksums were unchanged after the integration and full-browser suites.
-- `npm run db:upgrade` — passed against the demo database; no reset was performed.
+- `npm run db:upgrade` — reminder and audit upgrades passed against the demo database; no reset
+  was performed. Pre/post row counts and checksums of existing application tables matched.
 - An ignored `.env.test` was created with `TEST_DATABASE_URL` for the isolated test commands.
 - App and browser validation used Node 24.21.0 through `npm exec --yes --package=node@24 -- ...`.
   The machine's default Node is 26.8.1, outside the repository's declared Node 24 range. The
@@ -75,17 +102,22 @@ reset them during cleanup. Database credentials remain in ignored local `.env`/`
 ## Recommended next session
 
 1. Supabase connectivity, demo initialization, database integration tests, full browser validation,
-   the reminder upgrade, and the application commit are complete.
+   reminder/audit upgrades, staff access restrictions for implemented routes, and transactional
+   audit logging are complete and committed.
    If the local app has stopped, use Node 24 to start it with `npm run dev` (or the `npm exec`
    command above); confirm `/healthz` and login at `http://127.0.0.1:3000/login`.
 2. Run `npm test` and `npm run test:e2e:isolated` on Node 24 for isolated database and full-browser
    checks. The local `.env.test` is configured. There is no need to reset the public demo for these
    commands. Do not run `npm run db:reset` against data that must be kept.
-3. Continue full-spec hardening: finish the CRUD/role matrix (including staff dashboard/report
-   financial access), add transactional audit logging, bill revert/payment void flows, receipt
-   print counts, real LINE sending, announcement fan-out, and pagination. Add integration cases
-   alongside those changes. The current notification drain still marks messages sent without
-   calling LINE; a successful test run does not verify external delivery.
+3. **Next implementation milestone: bill revert and payment void flows**, including required
+   reasons, state-transition restrictions, and audit rows in their transactions. Then continue
+   full-spec hardening: remaining room/tenant/user/rate CRUD, meter replacement and staff submission
+   for review, receipt print counts, real LINE sending, announcement fan-out, and pagination.
+   New staff capabilities must be explicitly added to `lib/permissions.js`; new audited mutations
+   must call `lib/audit.js` inside their business transaction. Add integration cases alongside
+   those changes. The current notification drain still marks messages sent without calling LINE;
+   a successful test run does not verify external delivery. No further Supabase setup is needed
+   from the user for the next implementation milestone.
 
 ## Historical handoff (2026-09-20; superseded where inconsistent)
 
