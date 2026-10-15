@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>สรุปผลตรวจสไลด์แบบอ่านง่าย · UtilityHub</title>
+<style>
+:root{color-scheme:light}*{box-sizing:border-box}body{margin:0;background:#f2f5f7;color:#1b2e3d;font:17px/1.85 Tahoma,system-ui,sans-serif}main{max-width:900px;margin:32px auto;padding:38px 44px;background:#fff;border-radius:10px}h1{font-size:32px;line-height:1.5;margin:8px 0 14px}h2{font-size:23px;line-height:1.6;margin:30px 0 12px}p{margin:0 0 14px}.meta{font-size:13px;color:#5d6a75}.lead{font-size:19px;color:#2d5066}.good{padding:16px 20px;border-left:4px solid #258165;background:#edf7f2}.good p{margin:0}ol{padding-left:26px}li{padding:11px 0 13px 7px;border-bottom:1px solid #e5ebef}li p{margin:3px 0 0;color:#4a5c69;font-size:16px}table{width:100%;border-collapse:collapse;font-size:16px}th,td{text-align:left;vertical-align:top;padding:12px 14px;border-bottom:1px solid #e0e7ed;overflow-wrap:anywhere}th{background:#eef4f8}th:first-child{width:30%}blockquote{margin:18px 0;padding:18px 22px;background:#edf4f9;border-left:4px solid #256781}details{margin-top:24px;padding:14px 18px;background:#faf5e9;font-size:15px}summary{cursor:pointer;font-weight:700}details p{margin:10px 0 0}a{color:#155e80;text-underline-offset:3px}footer{margin-top:28px;padding-top:18px;border-top:1px solid #e0e7ed;font-size:13px;color:#5d6a75}code{font-size:.9em;overflow-wrap:anywhere}@media(max-width:640px){main{margin:0;padding:25px 20px;border-radius:0}h1{font-size:27px}h2{font-size:21px}th,td{padding:10px 8px;font-size:14px}.lead{font-size:18px}}@media print{@page{size:A4;margin:15mm}body{background:#fff;font-size:11pt}main{margin:0;padding:0;max-width:none}h1{font-size:22pt}h2{font-size:16pt}li,blockquote,tr,.good{break-inside:avoid}thead{display:table-header-group}table,li p{font-size:10pt}a{color:inherit}*{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
+</style>
+</head>
+<body>
+<main>
+<header>
+<p class="meta">ตรวจ Canva 12 สไลด์เทียบกับโค้ด วันที่ 15 ตุลาคม 2569</p>
+<h1>สรุปง่าย ๆ: สไลด์ต้องแก้ตรงไหน?</h1>
+<p class="lead">ระบบหลักทำงานได้แล้ว แต่สไลด์ยังมีข้อมูลเก่า และบางภาพเป็นสิ่งที่ออกแบบไว้แต่ยังทำไม่เสร็จ</p>
+</header>
+<section class="good" aria-label="สิ่งที่ทำได้แล้ว">
+<p><strong>ทำได้แล้ว:</strong> จดมิเตอร์ คำนวณค่าใช้จ่าย สร้างและอนุมัติบิล รับเงินสด ออกและพิมพ์ใบเสร็จ รวมถึงแยกสิทธิ์ Admin / Staff และบันทึกการเปลี่ยนแปลงสำคัญ</p>
+</section>
+<section>
+<h2>6 จุดที่ควรแก้ก่อนนำเสนอ</h2>
+<ol>
+<li><strong>เปลี่ยน MySQL เป็น Supabase (PostgreSQL)</strong><p>แก้ทั้งรูปฐานข้อมูลหน้า 6 และชื่อฐานข้อมูลหน้า 10 ให้ตรงกัน</p></li>
+<li><strong>นำ Chart.js และ Aiven ออกจากรายการที่ใช้อยู่</strong><p>ยังไม่มี Chart.js ในแอป ส่วนฐานข้อมูลปัจจุบันใช้ Supabase ภาพกราฟหน้า 7 จึงควรระบุว่าเป็น “แบบจำลอง”</p></li>
+<li><strong>LINE ยังไม่ส่งข้อความจริง</strong><p>ผูกบัญชีและเตรียมคิวแจ้งเตือนได้แล้ว แต่ยังต้องทำส่วนส่งบิลและยืนยันชำระเงิน ภาพข้อความหน้า 9 เป็นตัวอย่างที่ออกแบบไว้</p></li>
+<li><strong>แก้ภาพหน้า Staff ให้ตรงสิทธิ์</strong><p>Staff ดูห้องและจดมิเตอร์ได้ แต่อนุมัติบิลหรือรับเงินไม่ได้ ภาพหน้า 8 ไม่ควรมีปุ่มงาน Admin ปะปน</p></li>
+<li><strong>แยก GitHub ออกจากบริการ Deploy</strong><p>แก้ “GitHup” เป็น “GitHub” ใช้จัดการซอร์สโค้ด ส่วน Render และ cron-job.org ให้ระบุว่าเป็นแผนหรือรอยืนยันการใช้งานจริง</p></li>
+<li><strong>แยก “เป้าหมาย” ออกจาก “ทำเสร็จแล้ว”</strong><p>เพิ่ม/แก้ข้อมูลห้อง ผู้เช่า และอัตราบริการยังทำไม่ครบ เช่นเดียวกับ Dashboard แบบกราฟ จึงไม่ควรนำเสนอว่าทุกอย่างในขอบเขตเสร็จแล้ว</p></li>
+</ol>
+</section>
+<section>
+<h2>Tech Stack ที่ควรใส่ในสไลด์</h2>
+<table>
+<thead><tr><th scope="col">หมวด</th><th scope="col">รายการที่ตรงกับโค้ด</th></tr></thead>
+<tbody>
+<tr><td>หน้าเว็บ</td><td>HTML, CSS, JavaScript, EJS</td></tr>
+<tr><td>Backend</td><td>Node.js 24, Express 5</td></tr>
+<tr><td>ฐานข้อมูล</td><td>Supabase (PostgreSQL)</td></tr>
+<tr><td>การทดสอบ</td><td>Node.js Test Runner, Playwright</td></tr>
+<tr><td>ซอร์สโค้ด</td><td>Git / GitHub</td></tr>
+<tr><td>LINE OA</td><td>ผูกบัญชีและทำคิวแล้ว การส่งข้อความจริงอยู่ระหว่างพัฒนา</td></tr>
+</tbody>
+</table>
+<p class="meta">บริการโฮสต์แอปและตัวตั้งเวลาภายนอก ควรระบุเพิ่มเมื่อยืนยันการใช้งานจริงแล้ว</p>
+</section>
+<section>
+<h2>พูดประกอบสไลด์แบบนี้ได้เลย</h2>
+<blockquote>ต้นแบบทำงานตั้งแต่จดมิเตอร์ คำนวณบิล รับเงินสด ไปจนถึงออกใบเสร็จได้แล้ว โดยใช้ Node.js, Express, EJS และฐานข้อมูล PostgreSQL บน Supabase ส่วน Dashboard ตามภาพและการส่งแจ้งเตือน LINE จริงยังอยู่ระหว่างพัฒนา</blockquote>
+</section>
+<details>
+<summary>อีก 1 เรื่องในโค้ดที่ควรแก้: GitHub Actions</summary>
+<p>ไฟล์ CI ยังตั้งค่า MySQL อยู่ ต้องเปลี่ยนให้ใช้ PostgreSQL และตั้งค่าฐานข้อมูลทดสอบให้ตรงกับระบบปัจจุบันก่อนอ้างว่า CI ทดสอบครบแล้ว ครั้งนี้ตรวจจากไฟล์ ไม่ได้รัน workflow ออนไลน์</p>
+</details>
+<footer>
+<p><a href="canva-implementation-review-2026-10-15-detailed.html">ดูรายงานละเอียด พร้อมตารางเทียบครบ 12 สไลด์และหลักฐานจากโค้ด</a></p>
+<p>ผลทดสอบที่บันทึกไว้เมื่อ 10 ต.ค. 2569: 36 tests และ 6 browser scenarios ผ่าน ไม่ได้รันใหม่ในรอบตรวจนี้</p>
+</footer>
+</main>
+</body>
+</html>
