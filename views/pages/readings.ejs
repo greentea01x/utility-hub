@@ -1,51 +1,112 @@
-<!doctype html>
-<html lang="th">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title><%= title %> · Juristic Platform</title>
-  <link rel="stylesheet" href="/css/app.css">
-</head>
-<body>
-  <header>
-    <a href="/dashboard">UtilityHub</a><span>Juristic Platform</span>
-    <form action="/logout" method="post"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button>ออกจากระบบ</button></form>
-  </header>
-  <main>
-    <nav class="breadcrumbs"><a href="/dashboard">ภาพรวม</a> / จดมิเตอร์</nav>
-    <h1>จดมิเตอร์</h1>
-    <p>รอบบิล <%= period %> · กรอกเลขมิเตอร์ปัจจุบันของแต่ละห้อง</p>
-    <% if (saved) { %><p class="notice" role="status">บันทึกเลขมิเตอร์เรียบร้อย</p><% } %>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>ห้อง</th><th>น้ำ · ครั้งก่อน</th><th>น้ำ · ปัจจุบัน</th><th>ไฟฟ้า · ครั้งก่อน</th><th>ไฟฟ้า · ปัจจุบัน</th><th>บันทึก</th></tr></thead>
-        <tbody>
-          <% rooms.forEach((room) => { %>
-            <tr data-room="<%= room.room_number %>">
-              <td><%= room.room_number %></td>
-              <td><%= room.water_previous %></td>
-              <td>
-                <input aria-label="น้ำ ห้อง <%= room.room_number %>" form="reading-<%= room.id %>" name="water" type="number" min="0" step="0.01" value="<%= room.water_current ?? '' %>" required>
+<%- include('../partials/shell-start') %>
+<% const readingDateTime = new Intl.DateTimeFormat('th-TH-u-ca-gregory', { timeZone:'Asia/Bangkok', day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }); %>
+<div class="meter-workspace">
+  <div class="meter-page-intro">
+    <span class="section-kicker">งานประจำเดือน · <%= monthLabel(period) %></span>
+    <h2>บันทึกเลขมิเตอร์รายห้อง</h2>
+    <p>เทียบเลขครั้งก่อน กรอกเลขเดือนนี้ให้ครบทั้งน้ำและไฟฟ้า แล้วบันทึกทีละห้อง</p>
+  </div>
+  <% if (saved) { %><p class="notice" role="status">บันทึกเลขมิเตอร์เรียบร้อย</p><% } %>
+  <div class="meter-page-layout">
+    <section class="meter-round" aria-label="จดมิเตอร์ประจำเดือน">
+      <div class="reading-toolbar">
+        <nav class="filter-chips" aria-label="กรองสถานะจดมิเตอร์">
+          <% [{key:'all',label:'ทั้งหมด'},{key:'pending',label:'ยังไม่จด'},{key:'complete',label:'จดแล้ว'},{key:'vacant',label:'ห้องว่าง'}].forEach((item) => { %>
+            <a class="filter-chip <%= filter === item.key ? 'is-active' : '' %>" href="/readings?period=<%= period %>&amp;filter=<%= item.key %>&amp;q=<%= encodeURIComponent(q) %>" <%- filter === item.key ? 'aria-current="true"' : '' %>><%= item.label %><span><%= counts[item.key] %></span></a>
+          <% }) %>
+        </nav>
+        <form class="search-form" method="get" action="/readings">
+          <input type="hidden" name="period" value="<%= period %>"><input type="hidden" name="filter" value="<%= filter %>">
+          <label class="search-label">ค้นหาห้อง<input name="q" value="<%= q %>" maxlength="10" placeholder="ค้นหาห้อง เช่น 205" aria-label="ค้นหาห้อง"></label><button type="submit">ค้นหา</button>
+          <% if (q) { %><a class="meter-clear-search" href="/readings?period=<%= period %>&amp;filter=<%= filter %>">ล้างคำค้น</a><% } %>
+        </form>
+      </div>
+      <div class="reading-progress">
+        <span>จดแล้ว <strong><%= counts.complete %>/<%= counts.all %></strong> ห้อง <span class="meter-progress-remaining">· เหลือ <%= counts.pending %> ห้อง</span></span>
+        <progress value="<%= counts.complete %>" max="<%= counts.all || 1 %>" aria-label="ความคืบหน้าการจดมิเตอร์"></progress>
+        <span><%= counts.all ? Math.round(counts.complete / counts.all * 100) : 0 %>%</span>
+      </div>
+      <div class="table-wrap readings-wrap">
+        <table class="readings-table">
+          <thead><tr><th>ห้อง</th><th>น้ำ · ครั้งก่อน</th><th>น้ำ · เดือนนี้</th><th>ไฟฟ้า · ครั้งก่อน</th><th>ไฟฟ้า · เดือนนี้</th><th>บันทึก</th></tr></thead>
+          <tbody>
+          <% let floor = null; rooms.forEach((room) => {
+            const complete = room.water_current !== null && room.electric_current !== null;
+            const errorForRoom = roomError && Number(roomError.roomId) === Number(room.id);
+            const waterValue = errorForRoom && submittedValues ? submittedValues.water : room.water_current ?? '';
+            const electricValue = errorForRoom && submittedValues ? submittedValues.electric : room.electric_current ?? '';
+            const technicianValue = errorForRoom && submittedValues ? submittedValues.technician_name ?? '' : '';
+            if (floor !== room.floor) { floor = room.floor; %>
+            <tr class="reading-floor"><td colspan="6"><span>ชั้น <%= floor %></span><span><%= rooms.filter((item) => item.floor === floor).length %> ห้องที่แสดง</span></td></tr>
+            <% } %>
+            <tr data-room="<%= room.room_number %>" data-complete="<%= complete %>" data-vacant="<%= room.status === 'Vacant' %>" data-locked="<%= Boolean(room.locked) %>">
+              <td class="room-cell">
+                <div class="meter-room-heading"><strong><%= room.room_number %></strong><span class="badge <%= room.status === 'Vacant' ? 'muted' : complete ? 'success' : '' %>"><%= room.status === 'Vacant' ? 'ห้องว่าง' : complete ? 'จดแล้ว' : 'มีผู้เช่า' %></span></div>
+                <% if (room.tenant_name) { %><p class="meter-tenant"><%= room.tenant_name %></p><% } %>
+                <% if (complete) { %><div class="meter-saved-summary"><span><%- include('../partials/emoji', {icon:'water'}) %><%= quantity(Number(room.water_current) - Number(room.water_previous)) %> หน่วย</span><span><%- include('../partials/emoji', {icon:'electric'}) %><%= quantity(Number(room.electric_current) - Number(room.electric_previous)) %> หน่วย</span></div><% } %>
               </td>
-              <td><%= room.electric_previous %></td>
-              <td>
-                <input aria-label="ไฟฟ้า ห้อง <%= room.room_number %>" form="reading-<%= room.id %>" name="electric" type="number" min="0" step="0.01" value="<%= room.electric_current ?? '' %>" required>
-              </td>
-              <td>
-                <form id="reading-<%= room.id %>" action="/readings/<%= room.id %>" method="post">
-                  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                  <input type="hidden" name="period" value="<%= period %>">
-                  <button type="submit">บันทึก</button>
-                </form>
-              </td>
+              <% if (room.status === 'Vacant') { %>
+                <td class="vacant-note" colspan="5">ห้องว่าง · ไม่ต้องจดมิเตอร์เพื่อออกบิลในรอบนี้</td>
+              <% } else { %>
+                <td class="water-previous" data-label="น้ำ · ครั้งก่อน"><span class="previous-reading"><%= room.water_previous %></span></td>
+                <td class="water-current" data-label="เดือนนี้ *">
+                  <input id="water-<%= room.id %>" aria-label="น้ำ ห้อง <%= room.room_number %>" form="reading-<%= room.id %>" name="water" type="number" inputmode="decimal" min="<%= room.water_previous %>" step="0.01" value="<%= waterValue %>" placeholder="กรอกเลขมิเตอร์" required data-meter-input data-previous="<%= room.water_previous %>" aria-describedby="water-error-<%= room.id %>" <%= room.locked ? 'disabled' : '' %>>
+                  <small class="field-error" id="water-error-<%= room.id %>" hidden>เลขมิเตอร์ต้องไม่น้อยกว่าครั้งก่อน (<%= quantity(room.water_previous) %>)</small>
+                  <span class="meter-units" data-units-for="water-<%= room.id %>">— หน่วย</span>
+                  <% if (room.water_current !== null) { %><div class="meter-recorded-by"><span>ผู้จด: <strong><%= room.water_technician_name || 'ไม่ได้ระบุชื่อช่าง (ข้อมูลเดิม)' %></strong></span><% if (room.water_recorded_at) { %><time datetime="<%= new Date(room.water_recorded_at).toISOString() %>"><%= readingDateTime.format(new Date(room.water_recorded_at)) %> น.</time><% } %></div><% } %>
+                </td>
+                <td class="electric-previous" data-label="ไฟฟ้า · ครั้งก่อน"><span class="previous-reading"><%= room.electric_previous %></span></td>
+                <td class="electric-current" data-label="เดือนนี้ *">
+                  <input id="electric-<%= room.id %>" aria-label="ไฟฟ้า ห้อง <%= room.room_number %>" form="reading-<%= room.id %>" name="electric" type="number" inputmode="decimal" min="<%= room.electric_previous %>" step="0.01" value="<%= electricValue %>" placeholder="กรอกเลขมิเตอร์" required data-meter-input data-previous="<%= room.electric_previous %>" aria-describedby="electric-error-<%= room.id %>" <%= room.locked ? 'disabled' : '' %>>
+                  <small class="field-error" id="electric-error-<%= room.id %>" hidden>เลขมิเตอร์ต้องไม่น้อยกว่าครั้งก่อน (<%= quantity(room.electric_previous) %>)</small>
+                  <span class="meter-units" data-units-for="electric-<%= room.id %>">— หน่วย</span>
+                  <% if (room.electric_current !== null) { %><div class="meter-recorded-by"><span>ผู้จด: <strong><%= room.electric_technician_name || 'ไม่ได้ระบุชื่อช่าง (ข้อมูลเดิม)' %></strong></span><% if (room.electric_recorded_at) { %><time datetime="<%= new Date(room.electric_recorded_at).toISOString() %>"><%= readingDateTime.format(new Date(room.electric_recorded_at)) %> น.</time><% } %></div><% } %>
+                </td>
+                <td class="save-cell">
+                  <% if (errorForRoom) { %><p class="meter-room-error" role="alert"><%= roomError.message %></p><% } %>
+                  <% if (room.locked) { %><p class="meter-locked-note">🔒 บิลอนุมัติแล้ว แก้ไขเลขมิเตอร์ไม่ได้</p><% } else { %>
+                    <div class="meter-technician-field">
+                      <label for="technician-<%= room.id %>">ชื่อช่างผู้จดมิเตอร์ <span class="required-mark" aria-hidden="true">*</span><span class="meter-technician-role">ช่างประจำอาคาร</span></label>
+                      <input id="technician-<%= room.id %>" form="reading-<%= room.id %>" name="technician_name" value="<%= technicianValue %>" type="text" minlength="2" maxlength="100" required autocomplete="off" placeholder="กรอกชื่อ–นามสกุลช่าง" aria-label="ชื่อช่างผู้จดมิเตอร์ ห้อง <%= room.room_number %>" aria-describedby="technician-help-<%= room.id %> technician-error-<%= room.id %>" data-technician-input data-error-id="technician-error-<%= room.id %>">
+                      <small id="technician-help-<%= room.id %>">กรอกชื่อผู้จดจริงก่อนบันทึกทุกครั้ง</small>
+                      <small class="field-error" id="technician-error-<%= room.id %>" hidden>กรุณากรอกชื่อช่าง 2–100 ตัวอักษร</small>
+                    </div>
+                    <form id="reading-<%= room.id %>" action="/readings/<%= room.id %>" method="post" data-reading-form>
+                      <input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="period" value="<%= period %>"><input type="hidden" name="filter" value="<%= filter %>"><input type="hidden" name="q" value="<%= q %>">
+                      <button type="submit">บันทึก</button>
+                    </form>
+                  <% } %>
+                </td>
+              <% } %>
             </tr>
           <% }) %>
-        </tbody>
-      </table>
-    </div>
-    <% if (canAccess('/bills')) { %>
-      <p><a href="/bills?period=<%= period %>">ไปหน้าบิลรายเดือน →</a></p>
-    <% } %>
-  </main>
-</body>
-</html>
+          <% if (!rooms.length) { %><tr class="meter-empty-row"><td class="empty-cell" colspan="6"><%- include('../partials/emoji', {icon:'readings'}) %><strong>ไม่พบห้องตามเงื่อนไขที่เลือก</strong><span>ลองเปลี่ยนตัวกรอง หรือค้นหาเลขห้องอื่น</span></td></tr><% } %>
+          </tbody>
+        </table>
+      </div>
+      <% if (canAccess('/bills')) { %><p class="meter-next-step"><a href="/bills?period=<%= period %>">ไปหน้าบิลประจำเดือน →</a><span>ตรวจสอบเลขมิเตอร์ให้ครบก่อนสร้างบิลฉบับร่าง</span></p><% } %>
+    </section>
+    <aside class="meter-side" aria-label="ตัวอย่างและคำแนะนำการจดมิเตอร์">
+      <details class="meter-example" open data-meter-example>
+        <summary><span class="section-kicker">ตัวอย่างสมมุติ</span><strong>ดูตัวอย่างการกรอก</strong><span class="meter-example-chevron" aria-hidden="true">⌄</span></summary>
+        <div class="meter-example-content">
+          <p class="meter-example-disclaimer">ข้อมูลตามภาพเพื่ออธิบายวิธีกรอกเท่านั้น ไม่ใช่ข้อมูลห้องจริง และไม่ได้บันทึกในระบบ</p>
+          <div class="meter-example-card">
+            <div class="meter-room-heading"><strong>205</strong><span class="badge">มีผู้เช่า</span></div>
+            <div class="meter-example-fields"><span></span><span>ครั้งก่อน</span><span>เดือนนี้</span><span><%- include('../partials/emoji', {icon:'water'}) %></span><b class="meter-example-previous">1,250</b><b>1,260</b><span><%- include('../partials/emoji', {icon:'electric'}) %></span><b class="meter-example-previous">5,280</b><b>5,350</b></div>
+            <div class="meter-example-units"><span>💧 ใช้น้ำ <strong>10 หน่วย</strong></span><span>⚡ ใช้ไฟ <strong>70 หน่วย</strong></span></div>
+            <div class="meter-example-technician"><span>ชื่อช่างผู้จดมิเตอร์</span><strong>สมชาย ใจดี</strong><span>ช่างประจำอาคาร · ชื่อสมมุติ</span></div>
+          </div>
+          <div class="meter-example-list"><span><strong>206</strong> 💧 12 · ⚡ 81 หน่วย</span><b>จดแล้ว</b></div>
+          <div class="meter-example-list is-pending"><span><strong>207</strong> 💧 — · ⚡ —</span><b>ยังไม่จด</b></div>
+        </div>
+      </details>
+      <section class="meter-help">
+        <h2>จดให้ครบใน 3 ขั้นตอน</h2>
+        <ol><li>เลือกเดือน และค้นหาห้องที่ต้องการ</li><li>กรอกเลขเดือนนี้ทั้งน้ำและไฟฟ้า ระบบคำนวณจำนวนหน่วยให้ดูทันที</li><li>กรอกชื่อช่างประจำอาคาร แล้วกดบันทึก ระบบเก็บชื่อผู้จดพร้อมเลขมิเตอร์ทั้งสองรายการ</li></ol>
+        <p>เลขครั้งก่อนดึงจากข้อมูลที่บันทึกไว้ เลขเดือนนี้ต้องไม่น้อยกว่าครั้งก่อน</p>
+      </section>
+    </aside>
+  </div>
+</div>
+<%- include('../partials/shell-end') %>

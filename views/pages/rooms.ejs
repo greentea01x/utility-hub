@@ -1,1 +1,21 @@
-<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title><%= title %> · Juristic Platform</title><link rel="stylesheet" href="/css/app.css"></head><body><header><a href="/dashboard">UtilityHub</a><span>Juristic Platform</span><form action="/logout" method="post"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button>ออกจากระบบ</button></form></header><main><h1>ห้องพัก</h1><p>ทั้งหมด <%= total %> ห้อง</p><table><thead><tr><th>ห้อง</th><th>ชั้น</th><th>พื้นที่</th><th>สถานะ</th></tr></thead><tbody><% rows.forEach((room) => { %><tr><td><%= room.room_number %></td><td><%= room.floor %></td><td><%= room.area_sqm %> ตร.ม.</td><td><%= room.status %></td></tr><% }) %></tbody></table></main></body></html>
+<%- include('../partials/shell-start') %>
+<div class="page-intro">
+  <div><p class="section-kicker">ข้อมูลอาคาร</p><h1>ห้องพัก</h1><p>ตรวจสอบเลขห้อง พื้นที่ และสถานะการเข้าพักในอาคาร</p></div>
+  <span class="count-label">ทั้งหมด <%= total %> ห้อง</span>
+</div>
+<section aria-labelledby="rooms-heading">
+  <div class="table-toolbar"><h2 id="rooms-heading">รายการห้องพัก</h2><p class="field-help">แสดง <%= rows.length %> จาก <%= total %> ห้อง</p></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>เลขห้อง</th><th>ชั้น</th><th class="num">พื้นที่ใช้สอย</th><th>สถานะการเข้าพัก</th></tr></thead>
+    <tbody>
+      <% if (!rows.length) { %><tr><td colspan="4" class="empty-cell">ยังไม่มีห้องพักในรายการนี้</td></tr><% } %>
+      <% rows.forEach((room) => { %>
+        <tr><td><strong><%= room.room_number %></strong></td><td>ชั้น <%= room.floor %></td><td class="num"><%= quantity(room.area_sqm) %> ตร.ม.</td><td><span class="badge <%= room.status === 'Occupied' ? 'success' : 'muted' %>"><%= room.status === 'Occupied' ? 'มีผู้เช่า' : room.status === 'Vacant' ? 'ห้องว่าง' : 'ปิดใช้งาน' %></span></td></tr>
+      <% }) %>
+    </tbody>
+  </table></div>
+  <% if (total > pageSize) { %>
+    <nav class="table-toolbar" aria-label="หน้ารายการห้องพัก"><p class="field-help">หน้า <%= page %> จาก <%= Math.ceil(total / pageSize) %></p><div class="action-bar"><% if (page > 1) { %><a class="button button-outline" href="/rooms?page=<%= page - 1 %>">หน้าก่อน</a><% } %><% if (page * pageSize < total) { %><a class="button button-outline" href="/rooms?page=<%= page + 1 %>">หน้าถัดไป</a><% } %></div></nav>
+  <% } %>
+</section>
+<%- include('../partials/shell-end') %>

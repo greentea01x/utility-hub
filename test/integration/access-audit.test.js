@@ -55,7 +55,13 @@ describe(
     }
 
     async function readings(values = { water: 1260, electric: 5350 }, userId = 1) {
-      return saveReadings({ roomId: 21, period: '2026-09', values, userId });
+      return saveReadings({
+        roomId: 21,
+        period: '2026-09',
+        values,
+        userId,
+        technicianName: 'สมชาย ช่างอาคาร',
+      });
     }
 
     async function draft() {
@@ -164,6 +170,7 @@ describe(
           period: '2026-09',
           utility_type: 'water',
           current_reading: 1260,
+          technician_name: 'สมชาย ช่างอาคาร',
         },
       });
       assert.equal(response.status, 200);

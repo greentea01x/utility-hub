@@ -58,6 +58,7 @@ describe(
         period,
         values: { water: 1260, electric: 5350 },
         userId: 1,
+        technicianName: 'สมชาย ช่างอาคาร',
       });
     }
 
@@ -162,6 +163,7 @@ describe(
             period: '2026-09',
             utility_type: 'water',
             current_reading: 1260,
+            technician_name: 'สมชาย ช่างอาคาร',
           },
         });
         assert.equal(response.status, 403);
@@ -228,6 +230,7 @@ describe(
             period: '2026-09',
             utility_type: utility,
             current_reading: current,
+            technician_name: 'สมชาย ช่างอาคาร',
           },
         });
         assert.equal(result.status, 200);
@@ -249,6 +252,7 @@ describe(
           period: '2026-09',
           values: { water: 1260, electric: 5279 },
           userId: 1,
+          technicianName: 'สมชาย ช่างอาคาร',
         }),
         { code: 'READING_BELOW_PREVIOUS', status: 422 },
       );
@@ -261,18 +265,36 @@ describe(
         0,
       );
       await assert.rejects(
-        saveReadings({ roomId: 80, period: '2026-09', values: { water: 1 }, userId: 1 }),
+        saveReadings({
+          roomId: 80,
+          period: '2026-09',
+          values: { water: 1 },
+          userId: 1,
+          technicianName: 'สมชาย ช่างอาคาร',
+        }),
         { code: 'ROOM_NOT_OCCUPIED' },
       );
       await assert.rejects(
-        saveReadings({ roomId: 9999, period: '2026-09', values: { water: 1 }, userId: 1 }),
+        saveReadings({
+          roomId: 9999,
+          period: '2026-09',
+          values: { water: 1 },
+          userId: 1,
+          technicianName: 'สมชาย ช่างอาคาร',
+        }),
         { code: 'ROOM_NOT_FOUND' },
       );
     });
 
     it('uses the last available reading after missed months and edits without duplicating rows', async () => {
       await recordDemo('2026-11');
-      await saveReadings({ roomId: 21, period: '2026-11', values: { water: 1261 }, userId: 1 });
+      await saveReadings({
+        roomId: 21,
+        period: '2026-11',
+        values: { water: 1261 },
+        userId: 1,
+        technicianName: 'สมชาย ช่างอาคาร',
+      });
       const { rows } = await db.pool.query(
         "SELECT previous_reading, current_reading FROM meter_readings WHERE room_id = 21 AND period = '2026-11' AND utility_type = 'water'",
       );
@@ -291,6 +313,7 @@ describe(
                 period,
                 utility_type: 'water',
                 current_reading: 1260,
+                technician_name: 'สมชาย ช่างอาคาร',
               },
             })
           ).status,
@@ -325,7 +348,13 @@ describe(
         { utility_type: 'electric', amount: '560.00' },
         { utility_type: 'water', amount: '180.00' },
       ]);
-      await saveReadings({ roomId: 21, period: '2026-09', values: { water: 1261 }, userId: 1 });
+      await saveReadings({
+        roomId: 21,
+        period: '2026-09',
+        values: { water: 1261 },
+        userId: 1,
+        technicianName: 'สมชาย ช่างอาคาร',
+      });
       assert.equal((await generateDrafts('2026-09', 1)).generated, 0);
       assert.equal((await db.pool.query('SELECT total FROM bills')).rows[0].total, '1808.00');
     });
@@ -360,6 +389,7 @@ describe(
         period: '2026-09',
         values: { water: 1250.01, electric: 5280.01 },
         userId: 1,
+        technicianName: 'สมชาย ช่างอาคาร',
       });
       await generateDrafts('2026-09', 1);
       const items = await db.pool.query(

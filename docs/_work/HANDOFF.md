@@ -1,6 +1,185 @@
 # Current handoff — Juristic Platform
 
-Updated: 2026-10-10 (Asia/Bangkok)
+Updated: 2026-10-17 (Asia/Bangkok)
+
+## Current login panorama — 2026-10-17
+
+The user replaced the previous portrait photo with the supplied landscape `5.jpg`. It is copied
+unchanged to `public/images/login-residence-panorama.jpg` (1280×640). The login image now uses
+its native 2:1 frame with centered cover positioning, removing the earlier portrait side gutters.
+The figure's top spacing is 24px, with the story vertically centered beside the existing form.
+Alt text, image dimensions and source credits were updated. Browser checks confirmed the correct
+image loaded without horizontal overflow; the current screenshot is
+`docs/_work/login-panorama-preview-2026-10-17/login.jpg`. This supersedes the portrait choice below.
+
+## Login building photo replacement — 2026-10-17
+
+The user supplied `1.jpg` and requested it replace the left-side login photograph. The original
+1400×2099 image was copied unchanged to `public/images/login-residence.jpg`; the login template
+now uses it with updated alt text and dimensions. Its existing 4:3 frame uses `object-fit: contain`
+and a pale blue background to show the entire portrait building without increasing the panel's
+height. Credits distinguish the user-supplied login image from the existing Unsplash dashboard
+photo. The latter remains in use on the dashboard. Live browser checks confirmed the new image
+loaded at its expected dimensions with no horizontal overflow. Formatting/diff checks passed.
+Screenshot: `docs/_work/login-photo-preview-2026-10-17/login.jpg`. No server restart was needed.
+
+## Required manually entered meter technician — 2026-10-16
+
+The user explicitly chose manual technician-name entry for every save rather than account-name
+autofill. Each editable room now has a required ชื่อช่างผู้จดมิเตอร์ field with a ช่างประจำอาคาร
+label. It starts blank on each fresh page/successful save; failed validation retains the entered
+name. HTML, API and service paths require a trimmed 2–100-character name. Saved names and Bangkok
+timestamps appear separately beneath water/electric readings. The authenticated user ID remains
+the independent audit actor; a client-supplied account ID is not trusted.
+
+Migration `004-meter-technician-name.sql` adds a nullable name snapshot without updating existing
+readings. It was applied to the live demo in a transaction, preserving its two meter rows and
+all pre-existing values (checked by count/checksum excluding the new nullable field). Legacy
+records show ไม่ได้ระบุชื่อช่าง (ข้อมูลเดิม). Name changes with unchanged numbers create audited
+reading edits; identical names and numbers remain idempotent. The static example uses an
+explicitly fictional technician name; no sample records were inserted.
+
+The server was restarted (health HTTP 200). Full Node 24 unit/integration verification passed
+**53/53**, with no skipped tests and all public-data checksum guards passing. Live browser checks
+confirmed required/whitespace-name gating and blank fields after reload, without submitting a
+meter save. Desktop/mobile layouts showed no overflow. E2E sources were updated for required
+names but were not run during this change. Screenshots are in
+`docs/_work/meter-technician-preview-2026-10-16/`; work remains uncommitted.
+
+## Meter entry reference implementation — 2026-10-16
+
+The user requested the attached meter-entry design and explicitly clarified that its example
+values must remain illustrative, with no insertion into the live backend. `/readings` now uses
+floor-grouped room cards on desktop and mobile, a default pending filter, room search, previous
+readings on gray backgrounds, current water/electric inputs, live units and per-room Save buttons.
+The mobile progress strip remains above the bottom navigation. A separate, clearly labelled static
+example shows rooms 205–207 and the reference values (water 1,250 → 1,260; electricity
+5,280 → 5,350); this example has no submission controls. Actual room counts and editors still use
+database values. No sample readings, bills, payments or other application records were inserted.
+
+The page also exposes the active tenant and the existing backend reading lock in its UI. Approved
+rooms have disabled inputs; validation/lock responses stay on the room card with entered values and
+search context retained. Blank form inputs are rejected instead of being coerced to zero. Saving
+keeps the completed room visible; the existing API/service/schema and role restrictions remain.
+The component guide's unrelated financial actions and unsupported replacement checkbox were not
+added to this page. Screenshots are in `docs/_work/meter-page-preview-2026-10-16/`.
+
+The local server was restarted to load the route changes (health HTTP 200). Visual checks at
+1668px and 390px found no horizontal overflow. Live unit calculations, below-previous validation,
+Save gating and empty search were checked without saving on the live demo. The full Node 24
+unit/integration suite passed **48/48** (including five new reading-page cases), with no failures
+or skipped tests and public checksums unchanged. Formatting, targeted lint and diff checks passed.
+Changes remain in the working tree.
+
+## Selected future resident LINE menu prototype — 2026-10-16
+
+The user requested working web prototypes for all six resident menu destinations and asked to
+record this design as the one to use. The buildless prototype lives in `public/resident-preview/`
+and is available at `/resident-preview/` through the existing static server. It preserves the
+approved emerald/pastel/emoji menu design and the mockup brand ศุภาลัย เรสซิเดนซ์. It does not
+change the operator UI or its configured residence name. See the prototype's `README.md` and
+`design-decision.json` for the selected design and future scope. Sample room 205 data is isolated
+in `data.js`; no real resident data or database calls are used. Contact examples and announcement
+read state stay in browser-local prototype storage. LINE/LIFF identity, per-room authorization,
+resident APIs, and actual delivery remain future implementation. The semester emphasis remains
+the completed internal office workflow.
+
+## Current reference blue design — 2026-10-16
+
+The user requested a return to the two attached blue reference images. The current palette is
+blue/white/light gray, superseding the sage palette below. Reference colors were extracted after
+converting the uploaded image's embedded Display ICC profile to sRGB: primary/sidebar `#1B4FA0`,
+active menu `#446FB1`, workspace `#F5F6F8`, water `#78AEC2` / `#0A6B90`, electricity
+`#C2A373` / `#8F5900`, paid `#127A3A`, pending `#9A5B00`, overdue `#A4231A`, common `#6B4FBB`.
+The dashboard now has a compact white header, no large introductory banner, ten cards with colored
+left borders and the reference chart arrangement. Dark readable Thai typography is retained.
+The visible dashboard heading is now ภาพรวม; the existing login smoke assertion was updated to
+reflect this requested design.
+
+Fourteen original colored Twemoji v14.0.2 SVGs are self-hosted under `public/emoji/`; the graphics
+license and attribution are included. Navigation and meter/chart accents use decorative images
+with empty alt/aria-hidden so accessible link names stay unchanged. The existing three custom SVG
+illustrations and favicon are blue again. A supporting white/blue apartment photo by Ciro Rizzo
+(Unsplash License) appears below dashboard shortcuts and on login, clearly labelled as illustrative.
+Credits are publicly available at `/image-credits.html`. No external font/image requests occur at
+runtime. Rooms, amounts and progress still come from real data, and the residence remains named
+สุขธารา เรสซิเดนซ์. No unimplemented replacement/void/LINE controls were added from the component guide.
+
+Mobile readings now use rounded filter chips, water/electric emoji accents, a compact header and
+a progress strip above bottom navigation, preserving all forms, validation and permission rules.
+Lint and diff checks passed; all eight isolated Chrome scenarios passed after the final adjustments.
+Public application data was unchanged. Visual checks at 1668px (reference width) and 390px showed
+no horizontal overflow or broken images. Screenshots are in
+`docs/_work/reference-blue-preview-2026-10-16/`; the local app remains running. Changes are saved
+in the working tree and have not been committed/pushed as part of this visual request.
+
+## Previous sage color palette — 2026-10-16
+
+The user replaced the blue palette with sage **#B6C7AA**, cream **#F6E6CB**, sand **#E7D4B5**,
+taupe **#A0937D** and earth **#6B6254**. The shared CSS, three original SVG illustrations,
+favicon, charts and dashboard stripe pattern now use the warm palette. Main actions use a darker
+olive derivative so light text remains readable; active sage sidebar items use dark text. Typography was subsequently darkened at the user’s request: headings use near-black
+`#24271F`, body text `#2F3027`, supporting copy `#494438`, with stronger heading, number and label
+weights. Desktop and mobile views were checked visually without page overflow. Inputs and keyboard focus use darker outlines,
+with cream focus rings in the sidebar. Screen palette changes preserve neutral receipt printing.
+Layout, data, menus and permissions are unchanged. Lint and diff checks passed; all eight isolated
+Chrome scenarios passed, preserving public application data. New screenshots are in
+`docs/_work/sage-ui-preview-2026-10-16/`. These palette choices supersede the earlier blue design.
+
+## Formal visual refinement — 2026-10-16 (earlier palette)
+
+The earlier design used navy, light blue, white and gray across the shared shell, dashboard,
+reports, readings, login and all secondary pages. Thai text now uses a self-hosted variable
+Noto Sans Thai font, distributed unchanged with its OFL license in `public/fonts/`. Three original
+local SVG illustrations (residence, reports and meters) live in `public/images/`. Decorative images
+have empty alt text; charts keep their accessible descriptions. No external font/image requests
+are needed. Tables, status badges, headings, empty states and supporting copy have been clarified;
+bill states are displayed in Thai and amounts use grouped decimal formatting. Existing actions
+and permission rules remain in place. The room list now exposes its existing backend pagination.
+
+Reports distinguishes its one available report from three pending reports. Users/settings remain
+read-only, and tenant/announcement copy explicitly states that external LINE sending is pending.
+The mobile drawer now moves focus into the menu, contains keyboard focus and restores focus on
+Escape. Supporting text has darker contrast and the layout was visually checked at desktop and
+390px mobile widths without page overflow.
+
+Validation after this refinement: lint passed, the seven dashboard/navigation integration cases
+passed, and all eight isolated Chrome scenarios passed, including billing/payment/receipt and
+Staff restrictions. Public application data remained unchanged during both test workflows.
+Screenshots are in `docs/_work/formal-ui-preview-2026-10-16/`; the local preview is running at
+`http://127.0.0.1:3000/reports`. The changes remain saved in the working tree.
+
+## Latest UI update — 2026-10-16
+
+The current local implementation is branded **สุขธารา เรสซิเดนซ์**. The desktop layout follows the
+provided dashboard reference (blue sidebar, month controls, ten KPI cards, two usage charts, bill
+status and shortcuts). Shared navigation now follows the engineering specification's ten Admin
+menus; Staff retain only readings, rooms and the reduced dashboard. Mobile readings use room
+cards, previous/current water and electricity fields, completeness/vacancy filters, search, progress
+and three-item bottom navigation. All values come from PostgreSQL; no screenshot/demo amounts
+were inserted into the dashboard.
+
+New `/payments` and `/payments/history` pages expose the existing cash-payment flow and receipt
+history. History is filtered by Bangkok payment month, independent of the bill period. `/users`
+is a read-only account list with no password hashes. `/reports` links to the existing arrears report
+and clearly marks three unimplemented reports as pending. Remaining CRUD, bill revert/payment
+void, meter replacement and real LINE delivery remain outstanding as described below.
+
+Dashboard monetary cards count approved Unpaid/Paid bills, excluding Draft/Voided; paid amounts
+follow bill period and accumulated arrears stop at the selected period. Twelve-month charts use
+saved meter consumption, including empty months. `/api/dashboard/charts` now returns the real
+usage series; the legacy summary API is unchanged. Default periods use Asia/Bangkok. Migration
+`003-residence-name.sql` safely renames legacy UtilityHub settings, preserves customized names and
+has been applied to the demo via `db:upgrade` without resetting data.
+
+Validation on Node 24: full unit/integration run **42 passed**, followed by the expanded dashboard
+suite **7 passed** (adds payment-history boundary coverage). Chrome's isolated full browser run
+**8 passed**, including desktop navigation, month changes, mobile cards and validation, room 205
+billing/payment/receipt, Staff restrictions and audit records. Public application checksums remained
+unchanged during both test workflows. Lint passed. Screenshots from the live local app are in
+`docs/_work/ui-preview-2026-10-16/`. The local server is running at
+`http://127.0.0.1:3000/dashboard`. This UI update is saved in the working tree; it has not been
+committed or pushed as part of the redesign request.
 
 ## Read this first
 
@@ -130,19 +309,19 @@ Updated: 2026-09-20
 The application implementation is in the repository root, alongside the documentation. The
 implementation was committed as separate milestone commits:
 
-| Commit | Milestone |
-|---|---|
+| Commit    | Milestone                                                            |
+| --------- | -------------------------------------------------------------------- |
 | `97a8c82` | M0 walking skeleton, authentication, sessions, CSRF, dashboard shell |
-| `3ee185e` | M1 rooms, tenants, settings, rates, demo seed |
-| `5e58d9c` | M2 meter readings and previous-reading validation |
-| `d7e18ae` | M3 draft bill generation and bill items |
-| `95a5c9f` | M4 cash payment and receipt persistence |
-| `68d4ae8` | M4 bill approval and receipt view |
-| `36f9d93` | M5 LINE link codes, signed webhook, notification queue |
-| `ab0a4fd` | M6 announcements and daily reminder job |
-| `68ca6a1` | M7 dashboard summary, arrears report, CSV export |
-| `46e26c5` | M8 rehearsal command and final verification setup |
-| `308b707` | M6 announcements template fix |
+| `3ee185e` | M1 rooms, tenants, settings, rates, demo seed                        |
+| `5e58d9c` | M2 meter readings and previous-reading validation                    |
+| `d7e18ae` | M3 draft bill generation and bill items                              |
+| `95a5c9f` | M4 cash payment and receipt persistence                              |
+| `68d4ae8` | M4 bill approval and receipt view                                    |
+| `36f9d93` | M5 LINE link codes, signed webhook, notification queue               |
+| `ab0a4fd` | M6 announcements and daily reminder job                              |
+| `68ca6a1` | M7 dashboard summary, arrears report, CSV export                     |
+| `46e26c5` | M8 rehearsal command and final verification setup                    |
+| `308b707` | M6 announcements template fix                                        |
 
 ### Current application tree
 
@@ -198,13 +377,13 @@ The 4-role workflow (`wf_c8a91bd5-8e3`, 46 agents) finished. All five documents 
 and pass integrity checks (no `{{` placeholders, balanced `<section>` tags, every Mermaid block
 renders to SVG with zero syntax errors, no horizontal overflow at 1440px):
 
-| File | Owner | Size |
-|---|---|---|
-| `docs/index.html` | Team | documentation home |
-| `docs/01-product-decisions.html` | Lead of Product | 47 decisions, scope, roles, glossary, demo seed |
-| `docs/02-engineering-spec.html` | Principal Engineer | FR-01…49, ERD + MySQL DDL, API, billing engine, LINE, folder structure, plan |
-| `docs/03-ui-design.html` | Senior Designer | foundations, user flows, 77 device-frame mockups, LINE chat mockups |
-| `docs/04-test-plan.html` | Senior QA | strategy, ~278 test cases, 7 E2E scenarios, Playwright code, traceability matrix |
+| File                             | Owner              | Size                                                                             |
+| -------------------------------- | ------------------ | -------------------------------------------------------------------------------- |
+| `docs/index.html`                | Team               | documentation home                                                               |
+| `docs/01-product-decisions.html` | Lead of Product    | 47 decisions, scope, roles, glossary, demo seed                                  |
+| `docs/02-engineering-spec.html`  | Principal Engineer | FR-01…49, ERD + MySQL DDL, API, billing engine, LINE, folder structure, plan     |
+| `docs/03-ui-design.html`         | Senior Designer    | foundations, user flows, 77 device-frame mockups, LINE chat mockups              |
+| `docs/04-test-plan.html`         | Senior QA          | strategy, ~278 test cases, 7 E2E scenarios, Playwright code, traceability matrix |
 
 Inputs: `docs/PRD.md` (the PRD verbatim), `docs/_shared/template.html` (shared HTML head/CSS/TOC/Mermaid).
 

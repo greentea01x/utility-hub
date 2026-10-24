@@ -1,0 +1,24 @@
+<%- include('head') %>
+<a class="skip-link" href="#main-content">ข้ามไปเนื้อหาหลัก</a>
+<div class="app-shell">
+  <aside class="sidebar" id="app-sidebar" aria-label="แถบเมนู">
+    <a class="brand" href="/dashboard"><span class="brand-copy"><strong><%= residenceName %></strong><span>Juristic Platform</span></span></a>
+    <nav class="side-nav" aria-label="เมนูหลัก">
+      <% navigation.forEach((page, index) => { const active = currentPath === page.href || currentPath.startsWith(page.href + '/'); %>
+        <% if (page.group === 'system' && navigation[index - 1]?.group !== 'system') { %><p class="nav-section-label">ตั้งค่าระบบ</p><% } %>
+        <a href="<%= page.href %>" class="nav-link <%= active ? 'is-active' : '' %>" <% if (active) { %>aria-current="page"<% } %>><%- include('emoji', { icon: page.icon }) %><span><%= page.label %></span></a>
+      <% }) %>
+    </nav>
+    <div class="account-block"><span class="avatar" aria-hidden="true"><%= session.user.displayName.slice(0, 1) %></span><div><strong><%= session.user.displayName %></strong><span><%= session.user.role === 'admin' ? 'ผู้ดูแลระบบ' : 'เจ้าหน้าที่' %></span></div></div>
+    <form class="logout-form" action="/logout" method="post"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button type="submit">ออกจากระบบ</button></form>
+  </aside>
+  <button class="nav-backdrop" type="button" data-close-nav aria-label="ปิดเมนู" tabindex="-1"></button>
+  <div class="workspace">
+    <header class="topbar">
+      <div class="topbar-title"><button class="menu-toggle" type="button" aria-controls="app-sidebar" aria-expanded="false" aria-label="เปิดเมนู" data-toggle-nav>☰</button><div class="topbar-heading"><% if (['/','/dashboard','/readings'].includes(currentPath)) { %><h1 class="topbar-page-heading"><%= title %></h1><% } else { %><span><%= title %></span><% } %></div></div>
+      <div class="topbar-tools"><span class="updated-at">ข้อมูล ณ <%= updatedAt %> น.</span>
+      <% if (typeof period !== 'undefined' && period) { %>
+        <div class="period-picker"><a href="<%= currentPath %>?period=<%= shiftPeriod(period, -1) %>" aria-label="เดือนก่อนหน้า">‹</a><details class="period-menu"><summary><span class="period-full"><%= monthLabel(period) %></span><span class="period-short"><%= monthLabel(period, true) %></span><span aria-hidden="true">⌄</span></summary><form method="get" action="<%= currentPath %>"><label>เลือกรอบเดือน<input type="month" name="period" value="<%= period %>" required></label><button type="submit">แสดงข้อมูล</button></form></details><a href="<%= currentPath %>?period=<%= shiftPeriod(period, 1) %>" aria-label="เดือนถัดไป">›</a></div>
+      <% } %></div>
+    </header>
+    <main class="page-content" id="main-content">

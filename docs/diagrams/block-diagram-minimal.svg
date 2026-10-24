@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1240" viewBox="0 0 1920 1240" role="img" aria-labelledby="title desc">
+<title id="title">Block Diagram: ระบบหลักภาคเรียนนี้ และการเชื่อม LINE ในอนาคต</title>
+<desc id="desc">ผู้ดูแลระบบและเจ้าหน้าที่ใช้งาน Express กับ EJS เพื่อดูข้อมูลห้อง บันทึกมิเตอร์ จัดการบิล รับเงินสด และออกใบเสร็จ โดยอ่านและบันทึกใน PostgreSQL บน Supabase มี Webhook ผูกบัญชี LINE แล้ว ส่วนการส่งข้อความผ่าน LINE Messaging API ถึงผู้พักอาศัยแสดงด้วยเส้นประเป็นการพัฒนาต่อไป</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M3 2 L9 6 L3 10" fill="none" stroke="#929292" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker>
+<style>
+text{font-family:Thonburi,Tahoma,Arial,sans-serif;fill:#484848;text-anchor:middle;font-weight:700}
+.node{fill:#F4F4F4;stroke:#DEDEDE;stroke-width:2}
+.line{fill:none;stroke:#929292;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;marker-end:url(#arrow)}
+.future{stroke-dasharray:4 5}
+.pill{fill:#FFF;stroke:#DADADA;stroke-width:2}
+.label{font-size:28px}
+.small{font-size:23px;fill:#777;font-weight:400}
+</style>
+</defs>
+<rect width="1920" height="1240" fill="#FFF"/>
+
+<!-- Connections sit behind the nodes and labels. -->
+<path class="line future" d="M288 202 V318"/>
+<path class="line" d="M400 202 V274 Q400 292 418 292 H732 Q750 292 750 310 V490 Q750 508 768 508 H1037 Q1055 508 1055 526 V540"/>
+<path class="line" d="M1196 466 V539"/>
+<path class="line future" d="M1344 552 V526 Q1344 508 1362 508 H1694 Q1712 508 1712 490 V266 Q1712 248 1694 248 H530 Q512 248 512 230 V214"/>
+<path class="line" d="M1295 752 V780 Q1295 798 1313 798 H1568 Q1586 798 1586 816 V823"/>
+<path class="line" d="M1102 771 V1032" marker-start="url(#arrow)"/>
+
+<!-- External integration and resident endpoint. -->
+<rect class="node" x="175" y="72" width="450" height="130" rx="34"/>
+<text class="label" x="400" y="151">LINE Messaging API</text>
+<rect class="node" x="55" y="334" width="470" height="132" rx="34"/>
+<text class="label" x="290" y="413">ผู้พักอาศัยผ่าน LINE OA</text>
+
+<!-- Completed inbound account linking. -->
+<rect class="pill" x="608" y="371" width="284" height="60" rx="30"/>
+<text x="750" y="409" font-size="27">Webhook ผูกบัญชี</text>
+
+<!-- Planned outbound messages. -->
+<rect class="pill" x="1504" y="371" width="372" height="60" rx="30"/>
+<text x="1690" y="409" font-size="25">ส่งแจ้งเตือน: พัฒนาต่อไป</text>
+
+<!-- Main application and current semester scope. -->
+<rect class="node" x="975" y="334" width="442" height="132" rx="34"/>
+<text class="label" x="1196" y="413">ผู้ดูแลระบบ / เจ้าหน้าที่</text>
+<rect class="node" x="904" y="552" width="588" height="200" rx="34"/>
+<text x="1198" y="582" font-size="20" style="fill:#777;font-weight:400">ขอบเขตภาคเรียนนี้ · พัฒนาแล้ว</text>
+<text x="1198" y="621" font-size="31">Web App: Express + EJS</text>
+<text x="1198" y="655" font-size="27">เข้าสู่ระบบและตรวจสอบสิทธิ์</text>
+<text x="1198" y="689" font-size="27">ดูข้อมูลห้อง / มิเตอร์น้ำ–ไฟ / บิล</text>
+<text x="1198" y="723" font-size="27">บันทึกรับชำระเงินสด</text>
+<rect class="node" x="1328" y="836" width="515" height="130" rx="34"/>
+<text class="label" x="1585.5" y="914">ออกใบเสร็จหลังยืนยันรับเงิน</text>
+
+<!-- Shared persistence, connected to the application. -->
+<rect class="pill" x="959" y="872" width="286" height="60" rx="30"/>
+<text x="1102" y="910" font-size="25">อ่านและบันทึกข้อมูล</text>
+<path class="node" d="M902 1078 V1170 C902 1210 1302 1210 1302 1170 V1078 Z"/>
+<ellipse class="node" cx="1102" cy="1078" rx="200" ry="30"/>
+<text x="1102" y="1160" font-size="28">PostgreSQL — Supabase</text>
+
+<!-- Quiet legend clarifies completed work versus future development. -->
+<path d="M80 1116 H150" stroke="#929292" stroke-width="2" fill="none"/>
+<text x="170" y="1124" style="text-anchor:start" class="small">ส่วนที่พัฒนาแล้วในภาคเรียนนี้</text>
+<path d="M80 1160 H150" stroke="#929292" stroke-width="2" stroke-dasharray="4 5" fill="none"/>
+<text x="170" y="1168" style="text-anchor:start" class="small">ส่วนส่งข้อความ LINE ที่จะพัฒนาต่อไป</text>
+</svg>

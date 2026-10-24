@@ -1,1 +1,15 @@
-<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title><%= title %> · Juristic Platform</title><link rel="stylesheet" href="/css/app.css"></head><body><header><a href="/dashboard">UtilityHub</a><span>Juristic Platform</span><form action="/logout" method="post"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button>ออกจากระบบ</button></form></header><main><h1>ตั้งค่า</h1><p><%= settings.apartment_name %> · ครบกำหนดวันที่ <%= settings.due_day %></p><h2>อัตราปัจจุบันและประวัติ</h2><table><thead><tr><th>ประเภท</th><th>ราคา</th><th>เริ่มใช้</th></tr></thead><tbody><% rates.forEach((rate) => { %><tr><td><%= rate.utility_type %></td><td><%= rate.unit_price %></td><td><%= rate.effective_from %></td></tr><% }) %></tbody></table></main></body></html>
+<%- include('../partials/shell-start') %>
+<div class="page-intro"><div><p class="section-kicker">การจัดการระบบ</p><h1>ตั้งค่า</h1><p>ข้อมูลอาคาร รอบชำระเงิน และประวัติอัตราค่าบริการที่ใช้คำนวณบิล</p></div></div>
+<section class="panel workspace-section" aria-labelledby="building-settings-heading">
+  <div class="section-heading"><div><h2 id="building-settings-heading">ข้อมูลอาคารและการชำระเงิน</h2><p>ข้อมูลปัจจุบันที่บันทึกไว้ในระบบ</p></div><span class="badge muted">ดูข้อมูล</span></div>
+  <div class="form-grid"><div><p class="field-help">ชื่ออาคาร</p><h3><%= settings.apartment_name %></h3></div><div><p class="field-help">วันครบกำหนดชำระรายเดือน</p><h3>วันที่ <%= settings.due_day %> ของทุกเดือน</h3></div></div>
+</section>
+<section aria-labelledby="rates-heading">
+  <div class="table-toolbar"><div><h2 id="rates-heading">อัตราค่าบริการและประวัติ</h2><p class="field-help">ระบบใช้อัตราที่มีผลตามวันที่เริ่มใช้ของแต่ละรายการ</p></div></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>ประเภทค่าบริการ</th><th class="num">อัตราค่าบริการ</th><th>เริ่มใช้</th></tr></thead>
+    <tbody><% rates.forEach((rate) => { %><tr><td><strong><%= rate.utility_type === 'water' ? 'ค่าน้ำประปา' : rate.utility_type === 'electric' ? 'ค่าไฟฟ้า' : 'ค่าส่วนกลาง' %></strong></td><td class="num"><%= money(rate.unit_price) %> บาท / <%= rate.utility_type === 'common' ? 'ตร.ม.' : 'หน่วย' %></td><td><%= displayDate(rate.effective_from) %></td></tr><% }) %></tbody>
+  </table></div>
+</section>
+<p class="surface-note">หน้านี้แสดงข้อมูลปัจจุบันและประวัติอัตราค่าบริการ การแก้ไขผ่านหน้าจอยังไม่เปิดใช้งาน</p>
+<%- include('../partials/shell-end') %>

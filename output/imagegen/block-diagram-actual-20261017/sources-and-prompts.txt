@@ -1,0 +1,185 @@
+Block Diagram อิงโค้ดโปรเจกต์ — 17 ตุลาคม 2026
+สร้างภาพด้วย built-in image_gen tool
+ตรวจโค้ดแบบอ่านอย่างเดียว ไม่ได้ทดสอบระบบที่ deploy หรือเปลี่ยนโค้ดเว็บ
+
+ลำดับอธิบายอาจารย์
+1. ผู้ดูแลระบบและเจ้าหน้าที่เข้าสู่ระบบ ระบบตรวจตัวตนและสิทธิ์ก่อนเปิดหน้าใช้งาน
+2. Web App ใช้ Node.js + Express + EJS และอ่าน/บันทึกข้อมูลใน PostgreSQL (ตั้งค่าสำหรับ Supabase)
+3. เจ้าหน้าที่หรือ Admin เลือกห้องที่มีผู้พักแล้วบันทึกเลขมิเตอร์น้ำและไฟ ต้องกรอกชื่อช่างทุกครั้ง
+4. หลังมิเตอร์ครบ Admin ต้องสั่งสร้างบิล Draft จากหน่วยใช้จริงและอัตราค่าน้ำ ค่าไฟ และค่าส่วนกลาง
+5. Admin ตรวจยอดและอนุมัติ Draft เป็น Unpaid จึงสามารถรับเงินได้
+6. เมื่อ Admin ยืนยันรับเงินสดเต็มยอด ระบบบันทึกการรับเงิน เปลี่ยนบิลเป็น Paid และสร้างใบเสร็จใน transaction เดียวกัน
+7. หน้าใบเสร็จเป็นการเปิดดู/พิมพ์เอกสารที่สร้างแล้ว ไม่ใช่ขั้นอนุมัติใบเสร็จแยก
+8. ฐานข้อมูลเป็นแหล่งข้อมูลของภาพรวมและรายงานค้างชำระ การส่งออก CSV และข้อมูลการเงินจำกัด Admin
+9. เส้นทึบด้าน LINE แสดงโค้ดที่มีแล้ว: Admin สร้างรหัส ผู้พักอาศัยส่งรหัสผ่าน LINE และ Webhook ตรวจลายเซ็นก่อนผูก LINE User ID
+10. งานตรวจรายวันสร้างคิวเตือนสำหรับบิล Unpaid ตามวันครบกำหนดเมื่อถูกเรียกใช้งาน ไม่ใช่การส่ง LINE ทันทีตอนอนุมัติบิล
+11. เส้นประแสดงการเชื่อมส่งข้อความผ่าน LINE Messaging API ที่ยังต้องพัฒนาต่อ
+
+ข้อสังเกตที่ใช้ตรวจความถูกต้อง
+- staff ดูภาพรวมที่มีเฉพาะห้องและมิเตอร์ ดูห้อง และจดมิเตอร์ได้ ไม่ได้รับข้อมูลการเงิน
+- รับชำระเฉพาะเงินสดเต็มยอดบิล Unpaid
+- การบันทึกมิเตอร์ไม่ได้สร้างบิลเอง ต้องสั่ง generate
+- มีโค้ด Webhook/ผูกบัญชี LINE และจัดคิวแจ้งเตือนแล้ว แต่ notification drain เพียงเปลี่ยนสถานะในฐานข้อมูล ไม่มีการเรียก LINE API ส่งข้อความจริง
+- ประกาศสร้าง/จัดเก็บได้ แต่ยังไม่กระจายข้อความ
+- งาน daily reminder เป็น endpoint สำหรับเรียกใช้งาน ไม่ได้ยืนยันว่ามี scheduler ที่ deploy อยู่
+- รายงานค้างชำระมีแล้ว รายงานอื่นบางรายการยังเป็น pending
+- หน้าผู้ใช้งานเป็น read-only; เพิ่มห้องตอบ 501; ไม่อ้างว่ามี CRUD ครบ
+- /resident-preview/ เป็น prototype ข้อมูลสมมุติ ไม่ใช่ระบบผู้พักอาศัยที่เชื่อมฐานข้อมูลจริง
+
+แหล่งโค้ดอ้างอิง (relative to /Users/initia-army/Documents/juristic-platform)
+package.json — เทคโนโลยีและ dependencies
+README.md — ขอบเขตฟังก์ชันและข้อจำกัด
+app.js:109 — บังคับล็อกอินและตรวจสิทธิ์ก่อน route โมดูล
+routes/auth.js:14 — ตรวจรหัสผ่านและสร้าง session
+lib/permissions.js:2 — allowlist ของ staff
+routes/dashboard.js:12 — staff รับเฉพาะข้อมูลห้องและมิเตอร์
+services/readings.js:6 — บันทึกมิเตอร์/เงื่อนไขการแก้ไข
+lib/validation.js:5 — technician_name
+views/pages/readings.ejs:38 — ช่องชื่อช่างเริ่มว่าง
+routes/bills.js:30 — คำสั่งสร้างบิล
+services/billing.js:8 — คำนวณบิลร่าง
+services/billing.js:91 — อนุมัติ Draft เป็น Unpaid
+services/payment.js:16 — เงินสดเต็มยอด/สร้าง payment และ receipt/เปลี่ยน Paid
+routes/payments.js:7 — สิทธิ์ Admin ของหน้าใบเสร็จ
+public/js/receipt.js:3 — browser print
+db/schema.sql — ตารางและข้อจำกัดข้อมูล
+routes/rooms.js:13 — เพิ่มห้องยังไม่เปิด
+routes/workspace.js — หน้าผู้ใช้/ประวัติรับเงิน
+routes/reports.js — API สรุป/รายงานค้างชำระ/CSV
+routes/tenants.js:20 — Admin สร้างรหัสผูก LINE
+routes/line.js:6 — ตรวจ HMAC ของ Webhook
+services/linking.js:15 — ผูก LINE User ID
+services/jobs.js:3 — สร้างคิวแจ้งเตือน
+routes/internal.js:15 — daily job endpoint
+routes/notifications.js:5 — ไม่ส่ง LINE API จริง
+services/announcements.js:15 — delivery_status=not_dispatched
+
+INITIAL IMAGE PROMPT
+
+Use case: infographic-diagram.
+Create a precise, elegant academic BLOCK DIAGRAM for a real Thai apartment utility-billing website, following the ATTACHED IMAGE'S STRUCTURE: standalone process rectangles arranged primarily in a vertical central chain, oval actors / endpoints, clear orthogonal arrows, and short labeled side branches. The attached chemical-process diagram is STYLE / LAYOUT inspiration ONLY. Replace ALL of its content with the verified website information below.
+
+Use ONLY black, white and gray, preserving the user's established monochrome preference. Pure white background, black typography, white or very light-gray process boxes, thin dark-gray borders, dark-gray ovals with white labels. No colors, no shadows, no gradients, no decorative imagery, no big enclosing dashboard panels, no numbered cards. Professional, sparse, legible presentation for explaining to a professor.
+Output ONE portrait-near-square image ideally 2400 x 2800. Include all nodes fully inside generous margins. Use crisp Thai sans-serif fonts with accurate tone marks, large labels, equal central node widths, evenly spaced rows. Make arrow paths and direction crystal clear. All arrows must attach to the specified node edges, never float or cross text. No crossings. Avoid curved arrows, spaghetti wiring or connector lines through unrelated nodes.
+
+TITLE at top:
+"Block Diagram"
+"ระบบจัดการห้องพักและค่าสาธารณูปโภค"
+Smaller subtitle "โครงสร้างและลำดับงานตามโค้ดระบบ"
+Small legend: solid black arrow "มีในระบบ" and gray dashed arrow "พัฒนาต่อ".
+
+USE THREE OPEN COLUMNS:
+LEFT: role note, shared database, reporting.
+CENTER: main operator workflow, top to bottom.
+RIGHT: implemented inbound LINE binding at the upper portion; notification queue and FUTURE outbound messaging in the lower portion.
+Keep ample whitespace between columns for labeled horizontal arrows.
+
+CENTER MAIN VERTICAL CHAIN, nine shapes in this exact order:
+A. Top dark-gray OVAL: "ผู้ดูแลระบบ / เจ้าหน้าที่"
+A ↓ B, arrow label "ชื่อผู้ใช้ / รหัสผ่าน".
+B. White RECTANGLE: "เข้าสู่ระบบและตรวจสิทธิ์"
+B ↓ C, label "ผ่านการตรวจสอบ".
+C. Light-gray RECTANGLE:
+"Web App"
+"Node.js + Express + EJS"
+This C node represents the application as a whole; do not merge login into it, because LINE webhook is a separate entry into the same app.
+C ↓ D, label "เลือกห้องที่มีผู้พัก".
+D. White RECTANGLE:
+"บันทึกมิเตอร์น้ำ / ไฟฟ้า"
+"ต้องระบุชื่อช่างทุกครั้ง"
+D ↓ E, label "มิเตอร์ครบ · Admin สั่งสร้างบิล".
+E. White RECTANGLE:
+"สร้างบิลร่าง (Draft)"
+"ค่าน้ำ + ค่าไฟ + ค่าส่วนกลาง"
+E ↓ F, label "ตรวจยอดและอนุมัติ".
+F. White RECTANGLE:
+"อนุมัติบิล (Admin)"
+"Draft → Unpaid"
+F ↓ G, label "รับชำระได้เมื่อเป็น Unpaid".
+G. White RECTANGLE:
+"ยืนยันรับเงินสด (Admin)"
+"รับเต็มยอดและเปลี่ยนบิลเป็น Paid"
+G ↓ H, label "สร้างใบเสร็จอัตโนมัติ".
+H. White RECTANGLE:
+"แสดง / พิมพ์ใบเสร็จ"
+"อ้างอิงรายการรับชำระเงิน"
+H ↓ I, label "หลักฐานการชำระเงิน".
+I. Bottom dark-gray OVAL: "สิ้นสุดรายการชำระ"
+
+IMPORTANT SEMANTICS: Saving meters does not generate the bill automatically. Admin must explicitly generate a Draft, approve it to Unpaid, and confirm full CASH payment. Payment creation, bill Paid status, and receipt creation are atomic in the implementation. The H box is viewing/printing the automatically created receipt, not separate receipt approval.
+
+LEFT SIDE:
+At upper-left, a small unboxed role annotation with heading "สิทธิ์ผู้ใช้งาน":
+"เจ้าหน้าที่: ภาพรวม / ดูห้อง / จดมิเตอร์"
+"Admin: เข้าถึงทุกส่วน"
+"เจ้าหน้าที่ไม่เห็นข้อมูลการเงิน"
+No arrows into this explanatory note.
+Place one light-gray DATABASE BOX to the LEFT of C, aligned horizontally with C. It reads:
+"ฐานข้อมูล"
+"PostgreSQL · Supabase"
+Smaller compact lines:
+"ห้อง / ผู้เช่า / อัตราค่าบริการ"
+"มิเตอร์ / บิล / รับเงิน / ใบเสร็จ"
+"ผู้ใช้ / คิวแจ้งเตือน / Audit Log"
+Draw ONE horizontal DOUBLE-HEADED solid black arrow DATABASE ↔ C. Label this link "อ่าน / บันทึกข้อมูลทุกโมดูล". Use 2 short label lines above the connector if needed.
+Below database, with a clear vertical gap, place a white rectangle:
+"ภาพรวม / รายงานค้างชำระ"
+"สรุปข้อมูลและส่งออก CSV"
+"(CSV สำหรับ Admin)"
+Draw DATABASE ↓ REPORT with a single solid arrow labeled "อ่านข้อมูลสรุป".
+Below this reporting block, unboxed short notes, if space permits, aligned to left column:
+"เมนูประกอบที่มีในเว็บ"
+"ผู้เช่า · ประกาศ · ตั้งค่า"
+"ผู้ใช้งานระบบ: ดูข้อมูล"
+"เพิ่มห้องและแก้ไขผู้ใช้: ยังไม่เปิด"
+These are explanatory notes only, not workflow nodes. Do not imply full CRUD for rooms, settings, tenants or users.
+
+RIGHT UPPER: IMPLEMENTED INBOUND LINE ENTRY
+Small section label "ผูกบัญชี LINE: มีในโค้ดแล้ว".
+J. Dark-gray OVAL above webhook: "ผู้พักอาศัยผ่าน LINE"
+J ↓ K with label "ส่งรหัสผูกบัญชี".
+K. White RECTANGLE aligned horizontally with C:
+"LINE Webhook"
+"ตรวจลายเซ็น / ผูกบัญชีผู้เช่า"
+A solid LEFT-POINTING arrow K → C, label "บันทึก LINE User ID".
+Do not connect K to the login box B: inbound LINE binding does not use operator login.
+Small note just below K: "Admin เป็นผู้สร้างรหัสผูกบัญชี".
+This is implemented code, so these paths use solid lines.
+
+RIGHT LOWER: QUEUE IMPLEMENTED, OUTBOUND DELIVERY NOT YET IMPLEMENTED
+L. White RECTANGLE aligned horizontally with main F:
+"จัดคิวแจ้งเตือน"
+"เมื่อเรียกงานตรวจรายวัน"
+"ก่อนครบกำหนด / ค้างชำระ"
+Draw solid horizontal F → L, label "บิล Unpaid + วันครบกำหนด".
+This means unpaid bills provide input to a separately invoked reminder job; do NOT imply immediate LINE transmission upon approval.
+Below L draw a simple thin gray DASHED boundary containing only the following future area, heading:
+"พัฒนาต่อ: ยังไม่ส่งข้อความจริง"
+M. White rectangle with dashed gray outline:
+"LINE Messaging API"
+"ส่งบิล / แจ้งเตือน / ประกาศ"
+N. Dark-gray or white OVAL with dashed border:
+"ผู้พักอาศัยรับข้อความ"
+Draw L ↓ M as a DASHED arrow labeled "เชื่อมระบบส่งข้อความ".
+Draw M ↓ N as a DASHED arrow labeled "ส่งผ่าน LINE OA".
+N is an intended future output; keep it inside the dashed boundary.
+Do not draw solid delivery arrows. Do not put the existing reminder queue L inside the future boundary.
+Near bottom under the future boundary, small readable note:
+"ประกาศบันทึกได้แล้ว แต่ยังไม่กระจายข้อความ"
+No unsupported claim about real LINE delivery, online payment, resident authentication, or a working resident portal.
+
+LAYOUT GUIDANCE: Approximately center x=50% for main chain, database and reports x=15%, LINE x=85%. Keep central rectangles around 30% of canvas width, side rectangles around 25%, and leave clear 7–10% inter-column gutters. Put horizontal arrow labels in the gutters using short 2-line labels. Central flow should occupy most height, around y=11% through y=94%. Align database / Web App / webhook on the SAME horizontal row, and bill approval / notification queue on the SAME lower horizontal row. Do not add additional branches from individual business steps to the database; one application/database bidirectional link explicitly covers all modules and prevents tangled lines.
+
+CRITICAL: All arrow topology and implementation statuses above come from source-code inspection and are authoritative. The reference is only a visual style. Do not copy any chemical terms, pipe labels, truck symbols, extraneous nodes or content from the reference. Do not invent a separate overdueness status: bill statuses used here are Draft, Unpaid, Paid. Keep the required technician-name text. Return a polished easy-to-explain monochrome diagram with exact, legible Thai text.
+
+FINAL CONNECTOR CORRECTION PROMPT
+
+Make ONE surgical connector correction to this completed Thai monochrome block diagram. Preserve ALL wording, boxes, colors, typography, locations, shapes, layout and other arrows.
+Problem: the dashed connector from "จัดคิวแจ้งเตือน" currently stops at the top edge of the future-work boundary, so it never actually reaches the "LINE Messaging API" rectangle.
+Fix: remove ONLY that existing dashed queue-to-boundary connector (including its arrowhead). Replace it with ONE clear dashed elbow connector that starts at the BOTTOM CENTER EDGE of the "จัดคิวแจ้งเตือน" box, exits down into the whitespace, turns LEFT to run just OUTSIDE the left border of the future-work frame, turns down, then turns RIGHT and ENDS WITH AN ARROWHEAD TOUCHING THE LEFT EDGE of the "LINE Messaging API" BOX itself at its mid-height. It can cross the dashed group boundary as it enters the API box, but must not cross any text or another node.
+In the approximate 1161 x 1355 input-coordinate system, the desired path is:
+(1015, 880) -> (1015, 918) -> (810, 918) -> (810, 1044) -> (844, 1044).
+Adjust proportionally to actual rendering so it attaches perfectly to the queue and API boundaries. Preserve adequate clearance from central workflow text.
+Move the existing label "เชื่อมระบบส่งข้อความ" to just ABOVE the horizontal segment from x810 to x1015 near y900, without touching the central flow labels or the queue box. The heading "พัฒนาต่อ: ยังไม่ส่งข้อความจริง" must remain unobscured.
+Keep the existing dashed API-to-resident arrow unchanged. Keep the solid Unpaid-bill-to-queue arrow unchanged. No duplicated lines or floating arrowheads. Nothing else changes.
+

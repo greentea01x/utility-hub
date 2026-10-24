@@ -20,6 +20,17 @@ import lineRoutes from './routes/line.js';
 import notificationsRoutes from './routes/notifications.js';
 import announcementsRoutes from './routes/announcements.js';
 import reportsRoutes from './routes/reports.js';
+import workspaceRoutes from './routes/workspace.js';
+import {
+  residenceName,
+  currentPeriod,
+  monthLabel,
+  shiftPeriod,
+  money,
+  quantity,
+  displayDate,
+  chartScale,
+} from './lib/presentation.js';
 
 if (!process.env.SESSION_SECRET) throw new Error('SESSION_SECRET is required');
 const app = express();
@@ -60,6 +71,25 @@ app.use(
 );
 app.use((req, res, next) => {
   res.locals.session = req.session;
+  Object.assign(res.locals, {
+    residenceName,
+    currentPeriod,
+    monthLabel,
+    shiftPeriod,
+    money,
+    quantity,
+    displayDate,
+    chartScale,
+    currentPath: req.path,
+    updatedAt: new Intl.DateTimeFormat('th-TH-u-ca-gregory', {
+      timeZone: 'Asia/Bangkok',
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date()),
+  });
   next();
 });
 app.use('/internal', internalRoutes);
@@ -88,6 +118,7 @@ app.use(paymentsRoutes);
 app.use(notificationsRoutes);
 app.use(announcementsRoutes);
 app.use(reportsRoutes);
+app.use(workspaceRoutes);
 app.use(notFound);
 app.use(errors);
 

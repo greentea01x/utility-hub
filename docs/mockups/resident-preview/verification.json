@@ -1,0 +1,30 @@
+{
+  "testedAt": "2026-10-16T16:19:35.792Z",
+  "browser": "Chrome",
+  "base": "http://127.0.0.1:3000/resident-preview/",
+  "results": [
+    "desktop/index: rendered",
+    "desktop/bills: rendered",
+    "desktop/history: rendered",
+    "desktop/receipts: rendered",
+    "desktop/room: rendered",
+    "desktop/announcements: rendered",
+    "desktop/contact: rendered",
+    "desktop/decision: rendered",
+    "mobile/index: rendered",
+    "mobile/bills: rendered",
+    "mobile/history: rendered",
+    "mobile/receipts: rendered",
+    "mobile/room: rendered",
+    "mobile/announcements: rendered",
+    "mobile/contact: rendered",
+    "mobile/decision: rendered",
+    "Six home menu destinations open",
+    "Bill period changes, amounts, cash instructions, receipt availability",
+    "History status/search/empty state and filtered UTF-8 CSV",
+    "Past receipt detail, print action/print layout and missing receipt state",
+    "Announcement filtering, deep link, dialog, keyboard close and read persistence",
+    "Room-to-contact topic, local sample inquiry save/reload/clear"
+  ],
+  "errors": []
+}

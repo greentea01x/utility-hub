@@ -1,0 +1,12 @@
+Tool: Built-in image_gen
+Reference: /var/folders/h9/fyjkpw5n64l57lxbs5_qptvh0000gn/T/codex-clipboard-a15cd3c2-f1a3-41c2-b592-32e9db81e1a4.png
+
+Use case: ui-mockup. Create a new, polished high-resolution portrait image based on the attached edit target, for use on a Thai university project presentation. Show a LINE Official Account chat that supports two-way conversation with a HUMAN apartment office staff member. Preserve the reference's overall portrait composition, faint desaturated modern apartment background, white rounded phone-like chat frame, green LINE-style header, muted blue chat background, green outgoing bubbles on right and white incoming bubbles on left. Make all Thai text sharp, correctly spelled, comfortably readable. Remove all numbered blue annotation circles (9,10,11,12). Fit the whole interface including bottom message composer inside the image with generous safe margins. Preserve the account name as "ศุภาลัย เรสซิเดนซ์", building avatar and "Official" badge. Date chip "2 กันยายน 2026". Keep the binding example and update the following conversation to demonstrate that staff CAN reply. Use these exact messages, in sequence, with sensible line breaks and small timestamps:
+Right outgoing green at 09:14: "R4XTP9"
+Left incoming white at 09:14: "✅ ผูกบัญชีสำเร็จ\nคุณจะได้รับบิลและประกาศของห้อง 402 ผ่าน LINE นี้"
+Right outgoing green at 09:15: "ขอสอบถามบิลเดือนที่แล้วค่ะ\nค่าน้ำสูงกว่าปกติ"
+Above next incoming bubble show small sender label "เจ้าหน้าที่".
+Left incoming white at 09:16: "สวัสดีค่ะ รบกวนแจ้งเดือนของบิล\nที่ต้องการตรวจสอบ เพื่อให้เจ้าหน้าที่\nตรวจสอบเลขมิเตอร์และยอดค่าน้ำให้ค่ะ"
+Right outgoing green at 09:16: "บิลเดือนสิงหาคมค่ะ ขอบคุณค่ะ"
+Left incoming white, small sender label "เจ้าหน้าที่", at 09:17: "ได้รับข้อมูลแล้วค่ะ\nจะตรวจสอบและแจ้งผลกลับในแชตนี้ค่ะ"
+Bottom composer placeholder "ข้อความ", smiley, microphone and plus icons, like the reference. Add discreet small readable caption below the phone frame: "ภาพจำลองการสนทนากับเจ้าหน้าที่". This is a design mockup, not a claim that an existing deployed app already has this feature. No extra UI panels, no restriction message saying replies are unsupported, no annotations. Clean professional screenshot-like design with balanced spacing and consistent Thai sans-serif typography.

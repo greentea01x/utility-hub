@@ -1,1 +1,16 @@
-<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title><%= title %> · Juristic Platform</title><link rel="stylesheet" href="/css/app.css"></head><body><header><a href="/dashboard">UtilityHub</a><span>Juristic Platform</span><form action="/logout" method="post"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button>ออกจากระบบ</button></form></header><main><h1>ผู้พักอาศัย</h1><table><thead><tr><th>ห้อง</th><th>ชื่อ</th><th>โทรศัพท์</th><th>LINE</th><th>สถานะ</th></tr></thead><tbody><% tenants.forEach((tenant) => { %><tr><td><%= tenant.room_number %></td><td><%= tenant.full_name %></td><td><%= tenant.phone %></td><td><%= tenant.line_user_id ? 'ผูกแล้ว' : 'ยังไม่ผูก' %></td><td><%= tenant.status %></td></tr><% }) %></tbody></table></main></body></html>
+<%- include('../partials/shell-start') %>
+<div class="page-intro">
+  <div><p class="section-kicker">ข้อมูลผู้พักอาศัย</p><h1>ผู้เช่า</h1><p>ข้อมูลติดต่อผู้เช่าและสถานะการเชื่อมต่อ LINE สำหรับการแจ้งเตือน</p></div>
+  <span class="count-label"><%= tenants.length %> รายการ</span>
+</div>
+<div class="table-wrap"><table>
+  <thead><tr><th>ห้อง</th><th>ชื่อผู้เช่า</th><th>เบอร์โทรศัพท์</th><th>การเชื่อมต่อ LINE</th><th>สถานะ</th></tr></thead>
+  <tbody>
+    <% if (!tenants.length) { %><tr><td class="empty-cell" colspan="5">ยังไม่มีผู้เช่าในรายการนี้</td></tr><% } %>
+    <% tenants.forEach((tenant) => { %>
+      <tr><td><strong><%= tenant.room_number %></strong></td><td><%= tenant.full_name %></td><td><%= tenant.phone %></td><td><span class="badge <%= tenant.line_user_id ? 'success' : 'muted' %>"><%= tenant.line_user_id ? 'ผูก LINE แล้ว' : 'ยังไม่ผูก LINE' %></span></td><td><span class="badge <%= tenant.status === 'Active' ? 'success' : 'muted' %>"><%= tenant.status === 'Active' ? 'กำลังเข้าพัก' : 'สิ้นสุดการเข้าพัก' %></span></td></tr>
+    <% }) %>
+  </tbody>
+</table></div>
+<p class="surface-note">สถานะการผูก LINE ใช้เตรียมรายชื่อผู้รับแจ้งเตือน ส่วนการส่งข้อความผ่าน LINE ยังไม่เปิดใช้งาน</p>
+<%- include('../partials/shell-end') %>

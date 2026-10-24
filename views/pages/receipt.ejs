@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title><%= title %> · <%= receipt.receipt_number %></title>
+  <title><%= title %> · <%= residenceName %> · <%= receipt.receipt_number %></title>
   <link rel="stylesheet" href="/css/app.css">
   <script src="/js/receipt.js" defer></script>
 </head>
@@ -11,7 +11,7 @@
   <main class="receipt-page">
     <section class="receipt">
       <p class="eyebrow">ใบเสร็จรับเงิน</p>
-      <h1>UtilityHub Apartment</h1>
+      <h1><%= residenceName %></h1>
       <p>เลขที่ <%= receipt.receipt_number %></p>
       <p>ห้อง <%= receipt.room_number %> · <%= receipt.full_name ?? '-' %></p>
       <p>รอบบิล <%= receipt.period %></p>

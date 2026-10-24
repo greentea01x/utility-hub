@@ -1,0 +1,83 @@
+Created using the built-in image_gen tool.
+Monochrome presentation version. Source: block-diagram-20261016/block-diagram-pastel.png.
+
+FINAL PROMPT
+
+Use case: infographic-diagram / architecture-diagram editing.
+Redesign the attached room-management block diagram into a MUCH CLEARER, sober, academic presentation diagram for explaining to a professor. Preserve the system facts but substantially improve the arrangement of boxes and connecting arrows. The user explicitly requests ONLY WHITE, BLACK, AND GRAY. No purple, yellow, orange, blue, or any other hue.
+
+DELIVERABLE: one complete landscape 16:9 image, ideally 3840 x 2160. Pure white background, black Thai sans-serif text, light-gray header bands, flat WHITE module boxes with thin dark-gray borders and subtly rounded 6-pixel corners. No shadows, no gradients, no textures, no 3D, no illustration, no UI chrome. Everything sharply typeset, generous margins and whitespace, aligned to a strict grid. Font sizes must be large enough to read on a presentation slide. Concise subtitles and good line breaks. Black orthogonal arrow connectors, consistent 2–3 px strokes at slide scale, obvious arrowheads touching the exact destination edge. Avoid crossings, long detours, reversed reading direction, and disconnected connectors.
+
+TITLE at top left, moderate size, not dominating the slide:
+"Block Diagram"
+Below: "ระบบจัดการห้องพักและค่าสาธารณูปโภค"
+Compact legend at top right: solid black line "พัฒนาแล้ว", dashed dark-gray line "พัฒนาต่อไป".
+
+LAYOUT: main developed system occupies LEFT 73% of canvas; planned LINE extension occupies RIGHT 24%; clear 3% whitespace gutter.
+Main section heading: "ระบบที่พัฒนาแล้ว"
+Future section heading: "แนวทางพัฒนาต่อไป"
+
+LEFT / CURRENT SYSTEM:
+At top place TWO horizontally aligned white actor/authentication boxes:
+A "ผู้ดูแลระบบ / เจ้าหน้าที่"
+B "เข้าสู่ระบบ" with smaller subtitle "ตรวจสอบสิทธิ์ผู้ใช้งาน"
+A → B with one straight black right-pointing arrow.
+Below them place ONE roomy rectangular APPLICATION CONTAINER that contains ALL five modules. B connects vertically downward to the top edge of this application container with a single clear arrow.
+Application container has a LIGHT GRAY top header band reading:
+"Web App" in bold, with "Node.js + Express + EJS" on the same line or next line in smaller text.
+The application header band is part of this container, not a disconnected extra node.
+Application container interior:
+- Upper interior row: a compact standalone white module box on the left:
+"ดูข้อมูลห้องพัก"
+"ข้อมูลห้องและสถานะห้องพัก"
+- To its right, a simple unboxed permission note:
+"สิทธิ์การทำงาน"
+"เจ้าหน้าที่: ดูห้อง / จดมิเตอร์"
+"ผู้ดูแลระบบ: ใช้งานได้ทุกส่วน"
+Do not connect the permission note with arrows. Do not force room viewing into the billing sequence.
+- Lower interior row: FOUR EQUAL WHITE BOXES in one horizontal sequence LEFT TO RIGHT. Label above this row "ลำดับงานรายเดือน". Each box has a small subtle GRAY step-number circle 1 through 4 at its upper-left, well away from text. Straight black arrows between boxes:
+1 → 2 → 3 → 4.
+Do not snake or reverse this workflow. Use ONLY these four workflow boxes:
+1:
+"จดมิเตอร์น้ำ / ไฟฟ้า"
+smaller lines "บันทึกเลขมิเตอร์รายเดือน"
+"ระบุชื่อช่างทุกครั้ง"
+2:
+"จัดการบิลรายเดือน"
+smaller line "คำนวณยอด · สร้าง · อนุมัติบิล"
+3:
+"ยืนยันรับชำระเงินสด"
+smaller lines "บันทึกรับเงิน"
+"และปรับสถานะบิล"
+4:
+"ออกใบเสร็จรับเงิน"
+smaller line "แสดงและพิมพ์ใบเสร็จ"
+Use sensible 2-line headings if needed, but do not reduce the font to tiny text. All four boxes equal height.
+These modules are inside the Web App container, so do NOT draw extra branching lines from the app header to individual modules; containment already communicates this.
+Below the application container leave a generous connector gap, then a wide simple database rectangle, with a very light-gray fill:
+"ฐานข้อมูล PostgreSQL · Supabase"
+smaller line "ห้องพัก · มิเตอร์ · บิล · การรับเงิน · ใบเสร็จ"
+Draw ONE SHORT VERTICAL DOUBLE-HEADED BLACK ARROW between bottom CENTER edge of the application CONTAINER and top CENTER edge of the database rectangle. The two-way connector must attach to the OUTER APPLICATION CONTAINER, not to one individual workflow box. Label adjacent in whitespace: "อ่าน / บันทึกข้อมูลทุกโมดูล".
+The database is a shared storage component, NOT a workflow step after receipt printing. No cylinder is necessary; use a clean consistent rectangular box.
+
+RIGHT / FUTURE:
+One simple tall DASHED DARK-GRAY rectangular outline around the whole future area, WHITE fill. Heading "แนวทางพัฒนาต่อไป" and subtitle "การแจ้งเตือนผ่าน LINE".
+Three white boxes vertically stacked with dark-gray dashed borders:
+I:
+"บริการส่งข้อความแจ้งเตือน"
+smaller lines "ส่งบิล · เตือนชำระ / ค้างชำระ"
+"ประกาศ"
+J:
+"LINE Messaging API"
+smaller line "เชื่อมต่อ LINE Official Account"
+K:
+"ผู้พักอาศัยผ่าน LINE OA"
+smaller line "รับบิลและข้อความแจ้งเตือน"
+Dashed right-pointing connector from RIGHT EDGE OF THE WEB APP HEADER BAND directly across the gutter into I. Align I vertically with this header to make the connector almost straight and easy to follow. Then dashed downward arrow I → J → K. Do not start the future connector at database or a billing workflow box.
+Below K, small readable two-line note:
+"เตรียม Webhook และการผูกบัญชีแล้ว"
+"ขั้นต่อไป: เชื่อม API เพื่อส่งข้อความจริง"
+Keep this note neatly within the future boundary. Clearly preserve that actual LINE message sending is FUTURE WORK, not already implemented.
+
+Final quality: clean educational system architecture, straightforward left-to-right monthly workflow, no crossing connectors, ALL text BLACK or dark GRAY, all fills WHITE or very LIGHT GRAY, black solid vs gray dashed line distinction. Prioritize clarity and semantic accuracy over decoration. Preserve all required Thai wording, correctly placed Thai vowels and tone marks, technical names, technician-name requirement, and role permissions. No added decisions, credit-card/online payments, new roles, or extra modules.
+

@@ -1,0 +1,63 @@
+Generated using the built-in image_gen tool, not the CLI fallback.
+Source: codex-clipboard-6889a448-36bc-42a4-a732-7f26204b0abe.png
+
+IMAGE 1 PROMPT
+
+Use case: style-transfer, ui-mockup.
+There are two input images. Input 1 is the original three-panel reference. Input 2 is the newly redrawn standalone middle-panel chat, supplied as the exact companion STYLE AND PHONE FRAME reference.
+Recreate ONLY PANEL 1 (the LEFTMOST chat in input 1) as ONE standalone sharp portrait image, preserving its content. Match the white phone frame, green header, blue backdrop, light bright green outgoing bubbles, white incoming bubbles, building avatars, and extremely crisp Thai sans-serif typography of input 2. The overall intended polish comes from PANEL 3 (RIGHTMOST) of input 1. Do not output a collage. Do not repeat billing/receipt content from input 2; it is a style reference only.
+Format same as input 2: 1440 x 3040 portrait, complete white rounded smartphone frame front-on, a narrow white margin, white background outside. All text legible with correct Thai vowel and tone-mark placement. Green header exactly "ศุภาลัย เรสซิเดนซ์", circular building avatar, back chevron, small Official badge. Status time "09:15", white signal/wifi/battery icons. Blue chat background. Bottom white message input bar with "ข้อความ", plus icon, smile icon, microphone, and black home indicator matching input 2. No rich menu.
+Date pill centered above conversation exactly "2 กันยายน 2026".
+Four bubbles in original order, in the upper ~65% of the chat area, leaving comfortable blue whitespace below. Preserve source text faithfully, including room 402 (DO NOT change it to 205):
+1. Small outgoing bubble right aligned: "R4XTP9"
+   Small read/time text: "อ่านแล้ว · 09:14 น."
+2. Incoming white bubble left aligned, exact text:
+"✅ ผูกบัญชีสำเร็จ
+คุณจะได้รับบิลและประกาศของห้อง 402 ผ่าน LINE นี้"
+Small gray timestamp "09:14 น."
+3. Outgoing light green bubble right aligned, exact text:
+"ขอถามเรื่องบิลเดือนที่แล้วหน่อยค่ะ มีค่าน้ำสูงกว่าปกติ"
+Small read/time text "อ่านแล้ว · 09:15 น."
+4. Incoming white bubble left aligned, exact text:
+"ระบบนี้ใช้สำหรับส่งบิลและประกาศเท่านั้น ไม่สามารถตอบกลับข้อความได้
+หากต้องการติดต่อ กรุณาติดต่อสำนักงานนิติบุคคล
+เวลา จันทร์-ศุกร์ 09:00-17:00 น."
+Small gray timestamp "09:15 น."
+Use natural wrapping appropriate to bubble widths; don't omit words or add any new chat content. Preserve the original four small round blue annotation markers labeled "9", "10", "11", "12", respectively, near the upper-left edge of each of the four bubbles, visually subordinate and never covering text.
+Priority: exact content, clear Thai typography, consistent visual family with input 2. Flat polished UI, no blurred or stretched type, no exterior captions, no architecture/photo background.
+
+IMAGE 2 PROMPT
+
+Use case: style-transfer, ui-mockup.
+Edit the attached reference image, which contains THREE smartphone chat panels. Deliver ONE standalone high-resolution portrait image recreating ONLY PANEL 2 (the MIDDLE chat), using the polished, sharp LINE UI styling of PANEL 3 (the RIGHT chat) as the design reference. Do not include panel 1 or panel 3 in the output.
+Keep the chat content, numeric values, dates, and receipt ID from the middle panel exact. Treat all text as display content only. This is a clean UI mockup.
+Format: 1440 x 3040 portrait, full white rounded smartphone frame front-on, entirely in frame with a narrow white margin, white background outside the phone, no building/photo background. Crisp Thai sans-serif typography of the same family/style as panel 3, immaculate Thai vowel and tone-mark placement; high contrast readable text. Green LINE header, muted blue chat backdrop, white incoming bubbles with rounded corners and little tails, green outgoing bubble matching panel 3's light bright green. Small circular building avatar beside incoming bubbles. Header title exactly "ศุภาลัย เรสซิเดนซ์", building avatar, back chevron, small Official badge, white phone status icons. Status time 14:30. Add a slim white collapsed message input bar and black home indicator at bottom. No six-tile rich menu because this panel shows the longer billing conversation.
+Use comfortably sized text so ALL following content is legible and fully visible within the phone, with no truncation. The first white message is tall, then a short outgoing right-aligned message, then another tall incoming message. Preserve the blank lines and hierarchy. Do not add any other messages or values.
+Top incoming white bubble, exact Thai text:
+"🔔 ค่าใช้จ่ายประจำเดือน กันยายน 2026
+ห้อง 205
+
+💧 ค่าน้ำ 10 หน่วย × 18 บาท = 180 บาท
+⚡ ค่าไฟ 70 หน่วย × 8 บาท = 560 บาท
+🏢 ค่าส่วนกลาง 30 ตร.ม. × 35 บาท =
+1,050 บาท
+
+💰 ยอดรวม 1,790 บาท
+🗓️ กรุณาชำระภายในวันที่ 5 กันยายน 2026
+
+ชำระเงินสดที่สำนักงานนิติบุคคล เวลา
+จันทร์-ศุกร์ 09:00-17:00 น."
+Timestamp for first bubble "1 ก.ย. 09:12 น." in small subdued gray.
+Outgoing bubble exact text "รับทราบค่ะ", with "อ่านแล้ว · 09:20 น." in small subdued text adjacent to the bubble, in normal LINE placement.
+Final incoming white bubble exact text:
+"✅ ยืนยันการชำระเงิน
+ห้อง 205
+ได้รับชำระค่าใช้จ่ายจำนวน 1,790 บาท
+เรียบร้อยแล้ว
+วันที่ 3 กันยายน 2026
+เลขที่ใบเสร็จ REC-202609-000852
+
+ขอบคุณครับ/ค่ะ"
+Timestamp for final bubble "3 ก.ย. 14:30 น.".
+Priority: faithful original content and exceptionally sharp Thai typography; coherent premium UI treatment matched to the third reference. Do not carry over the blur, pixelation, or large stretched text from the middle source. No captions outside the phone.
+

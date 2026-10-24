@@ -1,0 +1,175 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1600" viewBox="0 0 2400 1600">
+  <defs>
+    <linearGradient id="header" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#173B67"/>
+      <stop offset="1" stop-color="#216C91"/>
+    </linearGradient>
+    <linearGradient id="answer" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFF7DC"/>
+      <stop offset="1" stop-color="#FFE8A9"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="#22334D" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      text { font-family: "Thonburi", "Noto Sans Thai", "Tahoma", sans-serif; fill: #18263A; }
+      .math { font-family: "Arial", "Thonburi", sans-serif; }
+      .title { font-size: 52px; font-weight: 700; }
+      .subtitle { font-size: 28px; }
+      .card-title { font-size: 32px; font-weight: 700; }
+      .section-title { font-size: 29px; font-weight: 700; }
+      .body { font-size: 25px; }
+      .small { font-size: 21px; }
+      .tiny { font-size: 18px; }
+      .final { font-size: 29px; font-weight: 700; }
+    </style>
+  </defs>
+
+  <rect width="2400" height="1600" fill="#F3F6FA"/>
+
+  <!-- Header -->
+  <rect x="45" y="30" width="2310" height="125" rx="26" fill="url(#header)" filter="url(#shadow)"/>
+  <text x="1200" y="91" text-anchor="middle" class="title" fill="#FFFFFF">การหา Cross Product ด้วย Determinant</text>
+  <text x="1200" y="133" text-anchor="middle" class="subtitle" fill="#D8ECF7">แปลงเวกเตอร์ → ตั้งเมทริกซ์ → คำนวณทีละแกน → เขียนคำตอบเป็น i, j, k</text>
+
+  <!-- What to do -->
+  <rect x="50" y="180" width="690" height="350" rx="22" fill="#FFFFFF" stroke="#5E9BD3" stroke-width="3" filter="url(#shadow)"/>
+  <rect x="50" y="180" width="690" height="68" rx="22" fill="#E8F2FC"/>
+  <text x="85" y="225" class="card-title" fill="#205A92">โจทย์ให้ทำอะไร?</text>
+  <circle cx="90" cy="291" r="20" fill="#2F78B7"/><text x="90" y="300" text-anchor="middle" class="small" font-weight="700" fill="#FFFFFF">1</text>
+  <text x="125" y="300" class="body">เขียนเวกเตอร์เป็นพิกัด (x, y, z)</text>
+  <circle cx="90" cy="350" r="20" fill="#2F78B7"/><text x="90" y="359" text-anchor="middle" class="small" font-weight="700" fill="#FFFFFF">2</text>
+  <text x="125" y="359" class="body">นำเวกเตอร์ 2 ตัวใส่ใน determinant</text>
+  <circle cx="90" cy="409" r="20" fill="#2F78B7"/><text x="90" y="418" text-anchor="middle" class="small" font-weight="700" fill="#FFFFFF">3</text>
+  <text x="125" y="418" class="body">คำนวณสัมประสิทธิ์ของ i, j, k</text>
+  <circle cx="90" cy="468" r="20" fill="#2F78B7"/><text x="90" y="477" text-anchor="middle" class="small" font-weight="700" fill="#FFFFFF">4</text>
+  <text x="125" y="477" class="body">ผลลัพธ์คือเวกเตอร์ที่ตั้งฉากกับทั้งคู่</text>
+  <rect x="405" y="270" width="295" height="218" rx="18" fill="#FFF2F4" stroke="#EA7584" stroke-width="2"/>
+  <text x="552" y="310" text-anchor="middle" class="section-title" fill="#BE3044">ต้องระวัง</text>
+  <text x="552" y="357" text-anchor="middle" class="body math" font-weight="700">U × V ≠ V × U</text>
+  <text x="552" y="400" text-anchor="middle" class="body math">V × U = −(U × V)</text>
+  <text x="552" y="446" text-anchor="middle" class="small">สลับลำดับแล้วเครื่องหมาย</text>
+  <text x="552" y="476" text-anchor="middle" class="small">ของคำตอบจะกลับทั้งหมด</text>
+
+  <!-- Coordinate conversion -->
+  <rect x="770" y="180" width="740" height="350" rx="22" fill="#FFFFFF" stroke="#5FC09A" stroke-width="3" filter="url(#shadow)"/>
+  <rect x="770" y="180" width="740" height="68" rx="22" fill="#E7F8F1"/>
+  <text x="805" y="225" class="card-title" fill="#197354">แปลงเวกเตอร์เป็นพิกัด</text>
+  <text x="805" y="280" class="small">สัมประสิทธิ์หน้า i, j, k คือพิกัด x, y, z ตามลำดับ</text>
+  <line x1="1137" y1="300" x2="1137" y2="500" stroke="#D5E7DF" stroke-width="2"/>
+  <g class="body math">
+    <text x="810" y="333" fill="#1A5F91">A = 2i − j</text><text x="1020" y="333" font-weight="700">= (2, −1, 0)</text>
+    <text x="810" y="383" fill="#1A5F91">B = 2j − k</text><text x="1020" y="383" font-weight="700">= (0, 2, −1)</text>
+    <text x="810" y="433" fill="#1A5F91">C = 2k − i</text><text x="1020" y="433" font-weight="700">= (−1, 0, 2)</text>
+    <text x="1168" y="333" fill="#7A4C9E">D = 3i + 4j − k</text><text x="1390" y="333" text-anchor="end" font-weight="700">(3, 4, −1)</text>
+    <text x="1168" y="383" fill="#7A4C9E">E = 2j + k</text><text x="1390" y="383" text-anchor="end" font-weight="700">(0, 2, 1)</text>
+    <text x="1168" y="433" fill="#7A4C9E">F = i − j</text><text x="1390" y="433" text-anchor="end" font-weight="700">(1, −1, 0)</text>
+  </g>
+  <rect x="804" y="462" width="665" height="45" rx="20" fill="#F0FAF6"/>
+  <text x="1137" y="493" text-anchor="middle" class="small">ถ้าไม่มีแกนใด ให้ใส่สัมประสิทธิ์ของแกนนั้นเป็น 0</text>
+
+  <!-- General determinant formula -->
+  <rect x="1540" y="180" width="810" height="350" rx="22" fill="#FFFFFF" stroke="#B28BD3" stroke-width="3" filter="url(#shadow)"/>
+  <rect x="1540" y="180" width="810" height="68" rx="22" fill="#F2EAF9"/>
+  <text x="1575" y="225" class="card-title" fill="#75469A">สูตรที่ใช้ทุกข้อ</text>
+  <text x="1580" y="285" class="body math" font-weight="700">U × V =</text>
+  <line x1="1710" y1="262" x2="1710" y2="388" stroke="#18263A" stroke-width="4"/>
+  <line x1="1968" y1="262" x2="1968" y2="388" stroke="#18263A" stroke-width="4"/>
+  <g class="body math" text-anchor="middle">
+    <text x="1765" y="298" font-style="italic">i</text><text x="1840" y="298" font-style="italic">j</text><text x="1915" y="298" font-style="italic">k</text>
+    <text x="1765" y="340">u₁</text><text x="1840" y="340">u₂</text><text x="1915" y="340">u₃</text>
+    <text x="1765" y="380">v₁</text><text x="1840" y="380">v₂</text><text x="1915" y="380">v₃</text>
+  </g>
+  <text x="1580" y="435" class="small math">= (u₂v₃ − u₃v₂)i + (u₃v₁ − u₁v₃)j</text>
+  <text x="1818" y="474" class="small math">+ (u₁v₂ − u₂v₁)k</text>
+  <rect x="2015" y="270" width="290" height="185" rx="18" fill="#FFF4DE" stroke="#E8B34E" stroke-width="2"/>
+  <text x="2160" y="311" text-anchor="middle" class="section-title" fill="#A66C00">จำง่าย</text>
+  <text x="2160" y="352" text-anchor="middle" class="small math">i : แถว 2×3</text>
+  <text x="2160" y="387" text-anchor="middle" class="small math">j : แถว 3×1</text>
+  <text x="2160" y="422" text-anchor="middle" class="small math">k : แถว 1×2</text>
+
+  <!-- Exercises section -->
+  <rect x="50" y="560" width="2300" height="470" rx="22" fill="#FFFFFF" stroke="#D7E1EC" stroke-width="2" filter="url(#shadow)"/>
+  <text x="85" y="615" class="card-title">ตัวอย่างและแบบฝึกหัดจากภาพ</text>
+  <text x="650" y="615" class="small" fill="#64748B">A×B เป็นตัวอย่าง ส่วนโจทย์ให้หา B×C และ C×A</text>
+
+  <!-- A x B -->
+  <rect x="78" y="642" width="720" height="355" rx="20" fill="#F2F8FE" stroke="#6CA4D8" stroke-width="2"/>
+  <text x="112" y="689" class="section-title" fill="#205A92">ตัวอย่าง: A × B</text>
+  <text x="112" y="728" class="small math">A = (2, −1, 0),  B = (0, 2, −1)</text>
+  <text x="112" y="778" class="body math" font-weight="700">A × B =</text>
+  <line x1="250" y1="745" x2="250" y2="900" stroke="#18263A" stroke-width="4"/>
+  <line x1="535" y1="745" x2="535" y2="900" stroke="#18263A" stroke-width="4"/>
+  <g class="body math" text-anchor="middle">
+    <text x="315" y="785" font-style="italic">i</text><text x="392" y="785" font-style="italic">j</text><text x="470" y="785" font-style="italic">k</text>
+    <text x="315" y="833">2</text><text x="392" y="833">−1</text><text x="470" y="833">0</text>
+    <text x="315" y="881">0</text><text x="392" y="881">2</text><text x="470" y="881">−1</text>
+  </g>
+  <text x="112" y="934" class="small math">i[1] − j[−2] + k[4]</text>
+  <rect x="112" y="951" width="620" height="36" rx="18" fill="#DDEEFF"/>
+  <text x="422" y="978" text-anchor="middle" class="final math" fill="#164F84">A × B = i + 2j + 4k</text>
+
+  <!-- B x C -->
+  <rect x="840" y="642" width="720" height="355" rx="20" fill="#F0FAF6" stroke="#60BC94" stroke-width="2"/>
+  <text x="874" y="689" class="section-title" fill="#197354">ข้อ 1: B × C</text>
+  <text x="874" y="728" class="small math">B = (0, 2, −1),  C = (−1, 0, 2)</text>
+  <text x="874" y="778" class="body math">i : 2(2) − (−1)(0) = 4</text>
+  <text x="874" y="824" class="body math">j : (−1)(−1) − 0(2) = 1</text>
+  <text x="874" y="870" class="body math">k : 0(0) − 2(−1) = 2</text>
+  <text x="874" y="916" class="small math">จึงได้พิกัด (4, 1, 2)</text>
+  <rect x="874" y="941" width="620" height="46" rx="22" fill="#DDF3EA"/>
+  <text x="1184" y="974" text-anchor="middle" class="final math" fill="#126043">B × C = 4i + j + 2k</text>
+
+  <!-- C x A -->
+  <rect x="1602" y="642" width="720" height="355" rx="20" fill="#FFF7EC" stroke="#E5A953" stroke-width="2"/>
+  <text x="1636" y="689" class="section-title" fill="#9A630E">ข้อ 2: C × A</text>
+  <text x="1636" y="728" class="small math">C = (−1, 0, 2),  A = (2, −1, 0)</text>
+  <text x="1636" y="778" class="body math">i : 0(0) − 2(−1) = 2</text>
+  <text x="1636" y="824" class="body math">j : 2(2) − (−1)(0) = 4</text>
+  <text x="1636" y="870" class="body math">k : (−1)(−1) − 0(2) = 1</text>
+  <text x="1636" y="916" class="small math">จึงได้พิกัด (2, 4, 1)</text>
+  <rect x="1636" y="941" width="620" height="46" rx="22" fill="#FFEACB"/>
+  <text x="1946" y="974" text-anchor="middle" class="final math" fill="#875107">C × A = 2i + 4j + k</text>
+
+  <!-- Homework section -->
+  <rect x="50" y="1060" width="2300" height="465" rx="22" fill="#FFFFFF" stroke="#A889C2" stroke-width="3" filter="url(#shadow)"/>
+  <rect x="50" y="1060" width="2300" height="70" rx="22" fill="#F1EAF7"/>
+  <text x="85" y="1106" class="card-title" fill="#70458F">การบ้าน: D = 3i + 4j − k,  E = 2j + k,  F = i − j</text>
+  <text x="1725" y="1106" class="small" fill="#70458F">ให้หา D×E, D×F และ E×F</text>
+
+  <!-- D x E -->
+  <line x1="815" y1="1155" x2="815" y2="1493" stroke="#E3D8EC" stroke-width="2"/>
+  <line x1="1585" y1="1155" x2="1585" y2="1493" stroke="#E3D8EC" stroke-width="2"/>
+  <text x="100" y="1188" class="section-title" fill="#70458F">1) D × E</text>
+  <text x="100" y="1227" class="small math">D = (3,4,−1), E = (0,2,1)</text>
+  <text x="100" y="1276" class="body math">i : 4(1) − (−1)(2) = 6</text>
+  <text x="100" y="1320" class="body math">j : (−1)(0) − 3(1) = −3</text>
+  <text x="100" y="1364" class="body math">k : 3(2) − 4(0) = 6</text>
+  <text x="100" y="1408" class="small math">พิกัดผลลัพธ์ = (6, −3, 6)</text>
+  <rect x="100" y="1431" width="650" height="52" rx="24" fill="#EDE2F5"/>
+  <text x="425" y="1468" text-anchor="middle" class="final math" fill="#60367D">D × E = 6i − 3j + 6k</text>
+
+  <!-- D x F -->
+  <text x="865" y="1188" class="section-title" fill="#B94A5A">2) D × F</text>
+  <text x="865" y="1227" class="small math">D = (3,4,−1), F = (1,−1,0)</text>
+  <text x="865" y="1276" class="body math">i : 4(0) − (−1)(−1) = −1</text>
+  <text x="865" y="1320" class="body math">j : (−1)(1) − 3(0) = −1</text>
+  <text x="865" y="1364" class="body math">k : 3(−1) − 4(1) = −7</text>
+  <text x="865" y="1408" class="small math">พิกัดผลลัพธ์ = (−1, −1, −7)</text>
+  <rect x="865" y="1431" width="650" height="52" rx="24" fill="#FBE5E8"/>
+  <text x="1190" y="1468" text-anchor="middle" class="final math" fill="#A83143">D × F = −i − j − 7k</text>
+
+  <!-- E x F -->
+  <text x="1635" y="1188" class="section-title" fill="#187D83">3) E × F</text>
+  <text x="1635" y="1227" class="small math">E = (0,2,1), F = (1,−1,0)</text>
+  <text x="1635" y="1276" class="body math">i : 2(0) − 1(−1) = 1</text>
+  <text x="1635" y="1320" class="body math">j : 1(1) − 0(0) = 1</text>
+  <text x="1635" y="1364" class="body math">k : 0(−1) − 2(1) = −2</text>
+  <text x="1635" y="1408" class="small math">พิกัดผลลัพธ์ = (1, 1, −2)</text>
+  <rect x="1635" y="1431" width="650" height="52" rx="24" fill="#DFF3F4"/>
+  <text x="1960" y="1468" text-anchor="middle" class="final math" fill="#12686D">E × F = i + j − 2k</text>
+
+  <!-- Footer check -->
+  <rect x="50" y="1540" width="2300" height="42" rx="21" fill="#183C65"/>
+  <text x="1200" y="1569" text-anchor="middle" class="small" fill="#FFFFFF">วิธีตรวจ: นำคำตอบไป dot กับเวกเตอร์ต้นฉบับทั้งสอง ต้องได้ 0 เพราะผล Cross Product ตั้งฉากกับทั้งคู่</text>
+</svg>

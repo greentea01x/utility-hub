@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title description">
+  <title id="title">Block Diagram — ขอบเขตภาคเรียนนี้และแนวทางพัฒนาต่อไป</title>
+  <desc id="description">ระบบ Express และ EJS ที่พัฒนาแล้ว ได้แก่ เข้าสู่ระบบ ตรวจสิทธิ์ ดูข้อมูลห้อง จดมิเตอร์ สร้างและอนุมัติบิล รับเงินสด และออกใบเสร็จ เชื่อมต่อ PostgreSQL บน Supabase ส่วนการส่งข้อความผ่าน LINE Messaging API ถึงผู้พักอาศัยผ่าน LINE OA แสดงในกรอบเส้นประเป็นแนวทางพัฒนาต่อไป</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 1 1 L 9 5 L 1 9" fill="none" stroke="#176B5B" stroke-width="1.8" stroke-linejoin="round"/></marker>
+    <marker id="future-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M 1 1 L 9 5 L 1 9" fill="none" stroke="#9A6A24" stroke-width="1.8" stroke-linejoin="round"/></marker>
+    <style>
+      text { font-family: Thonburi, Tahoma, Arial, sans-serif; fill: #18312D; }
+      .title { font-family: Arial, sans-serif; font-size: 56px; font-weight: 700; letter-spacing: -1px; }
+      .heading { font-size: 32px; font-weight: 700; }
+      .body { font-size: 24px; }
+      .small { font-size: 20px; fill: #5B706B; }
+      .node-title { font-size: 26px; font-weight: 700; text-anchor: middle; }
+      .node-sub { font-size: 20px; fill: #516B63; text-anchor: middle; }
+      .future-title { fill: #80581F; }
+      .future-sub { fill: #846D4A; }
+      .flow { fill: none; stroke: #176B5B; stroke-width: 3; marker-end: url(#arrow); }
+      .future-flow { fill: none; stroke: #9A6A24; stroke-width: 3; stroke-dasharray: 9 7; marker-end: url(#future-arrow); }
+    </style>
+  </defs>
+  <rect width="1920" height="1080" fill="#FAFBF9"/>
+  <rect x="64" y="55" width="8" height="98" rx="4" fill="#176B5B"/>
+  <text x="96" y="104" class="title">Block Diagram</text>
+  <text x="98" y="150" class="body" fill="#5B706B">ระบบจัดการห้องพักและค่าสาธารณูปโภค</text>
+  <line x1="1360" y1="125" x2="1412" y2="125" stroke="#176B5B" stroke-width="4"/>
+  <text x="1428" y="133" class="small">พัฒนาแล้ว</text>
+  <line x1="1595" y1="125" x2="1647" y2="125" stroke="#9A6A24" stroke-width="3" stroke-dasharray="8 6"/>
+  <text x="1663" y="133" class="small">พัฒนาต่อไป</text>
+
+  <rect x="64" y="198" width="1116" height="814" rx="24" fill="#F0F7F3" stroke="#BFD8C9" stroke-width="2"/>
+  <text x="96" y="252" class="heading">ขอบเขตภาคเรียนนี้</text>
+  <rect x="948" y="221" width="194" height="46" rx="23" fill="#176B5B"/>
+  <text x="1045" y="251" text-anchor="middle" font-size="23" font-weight="700" style="fill:#FFFFFF">พัฒนาแล้ว</text>
+  <text x="98" y="289" class="small">เน้นการทำงานภายในสำนักงาน ตั้งแต่เข้าสู่ระบบจนถึงออกใบเสร็จ</text>
+
+  <rect x="380" y="316" width="484" height="70" rx="14" fill="#FFFFFF" stroke="#76A18F" stroke-width="2"/>
+  <text x="622" y="360" class="node-title">ผู้ดูแลระบบ / เจ้าหน้าที่</text>
+  <path d="M 622 386 V 420" class="flow"/>
+
+  <rect x="100" y="420" width="1044" height="400" rx="18" fill="#FFFFFF" stroke="#176B5B" stroke-width="3"/>
+  <text x="130" y="468" font-size="32" font-weight="700">Web App · Node.js + Express + EJS</text>
+  <text x="130" y="506" class="body">เข้าสู่ระบบ (Login) และตรวจสอบสิทธิ์ผู้ใช้งาน</text>
+  <line x1="128" y1="528" x2="1116" y2="528" stroke="#DCE9E1" stroke-width="2"/>
+
+  <rect x="128" y="552" width="300" height="92" rx="12" fill="#F0F7F3" stroke="#BFD8C9" stroke-width="1.5"/>
+  <text x="278" y="590" class="node-title">ดูข้อมูลห้องพัก</text>
+  <text x="278" y="623" class="node-sub">ข้อมูลห้องและสถานะห้องพัก</text>
+
+  <rect x="472" y="552" width="300" height="92" rx="12" fill="#F0F7F3" stroke="#BFD8C9" stroke-width="1.5"/>
+  <text x="622" y="590" class="node-title">จดมิเตอร์น้ำ / ไฟฟ้า</text>
+  <text x="622" y="623" class="node-sub">บันทึกเลขมิเตอร์รายเดือน</text>
+
+  <path d="M 777 598 H 810" class="flow"/>
+  <rect x="816" y="552" width="300" height="92" rx="12" fill="#F0F7F3" stroke="#BFD8C9" stroke-width="1.5"/>
+  <text x="966" y="590" class="node-title">จัดการบิลรายเดือน</text>
+  <text x="966" y="623" class="node-sub">คำนวณยอด · สร้าง · อนุมัติบิล</text>
+
+  <path d="M 966 649 V 683" class="flow"/>
+  <rect x="816" y="688" width="300" height="92" rx="12" fill="#F0F7F3" stroke="#BFD8C9" stroke-width="1.5"/>
+  <text x="966" y="726" class="node-title">ยืนยันรับชำระเงินสด</text>
+  <text x="966" y="759" class="node-sub">บันทึกการรับเงินและปรับสถานะบิล</text>
+
+  <path d="M 811 734 H 778" class="flow"/>
+  <rect x="472" y="688" width="300" height="92" rx="12" fill="#176B5B"/>
+  <text x="622" y="726" class="node-title" style="fill:#FFFFFF">ออกใบเสร็จรับเงิน</text>
+  <text x="622" y="759" class="node-sub" style="fill:#E2F1E9">แสดงและพิมพ์ใบเสร็จ</text>
+
+  <text x="130" y="714" font-size="22" font-weight="700">สิทธิ์การทำงาน</text>
+  <text x="130" y="744" font-size="19" fill="#516B63">เจ้าหน้าที่: ดูห้อง / จดมิเตอร์</text>
+  <text x="130" y="773" font-size="19" fill="#516B63">ผู้ดูแลระบบ: ใช้งานได้ทุกส่วน</text>
+
+  <path d="M 622 826 V 877" class="flow" marker-start="url(#arrow)"/>
+  <text x="648" y="860" class="small">อ่าน / บันทึกข้อมูลทุกโมดูล</text>
+  <rect x="350" y="884" width="544" height="88" rx="14" fill="#E0EEE5" stroke="#76A18F" stroke-width="2"/>
+  <text x="622" y="922" class="node-title">PostgreSQL Database · Supabase</text>
+  <text x="622" y="954" class="node-sub">ห้องพัก · มิเตอร์ · บิล · การรับเงิน · ใบเสร็จ</text>
+
+  <rect x="1232" y="198" width="624" height="814" rx="24" fill="#FCFAF5" stroke="#C7A874" stroke-width="2.5" stroke-dasharray="12 9"/>
+  <text x="1264" y="252" class="heading future-title">แนวทางพัฒนาต่อไป</text>
+  <text x="1266" y="289" class="small future-sub">เชื่อมการแจ้งเตือนถึงผู้พักอาศัยผ่าน LINE</text>
+  <rect x="1294" y="327" width="500" height="49" rx="24" fill="#F1E8D5"/>
+  <text x="1544" y="359" text-anchor="middle" font-size="23" font-weight="700" class="future-title">ส่วนขยายหลังขอบเขตภาคเรียนนี้</text>
+
+  <path d="M 1148 470 H 1287" class="future-flow"/>
+  <rect x="1294" y="420" width="500" height="100" rx="14" fill="#FFFFFF" stroke="#C7A874" stroke-width="2" stroke-dasharray="8 6"/>
+  <text x="1544" y="462" class="node-title future-title">บริการส่งข้อความแจ้งเตือน</text>
+  <text x="1544" y="498" class="node-sub future-sub">ส่งบิล · เตือนชำระ / ค้างชำระ · ประกาศ</text>
+
+  <path d="M 1544 526 V 573" class="future-flow"/>
+  <rect x="1294" y="580" width="500" height="100" rx="14" fill="#FFFFFF" stroke="#C7A874" stroke-width="2" stroke-dasharray="8 6"/>
+  <text x="1544" y="622" class="node-title future-title">LINE Messaging API</text>
+  <text x="1544" y="658" class="node-sub future-sub">เชื่อมต่อกับ LINE Official Account</text>
+
+  <path d="M 1544 686 V 733" class="future-flow"/>
+  <rect x="1294" y="740" width="500" height="100" rx="14" fill="#FFFFFF" stroke="#C7A874" stroke-width="2" stroke-dasharray="8 6"/>
+  <text x="1544" y="782" class="node-title future-title">ผู้พักอาศัยผ่าน LINE OA</text>
+  <text x="1544" y="818" class="node-sub future-sub">รับบิลและข้อความแจ้งเตือน</text>
+
+  <line x1="1294" y1="878" x2="1794" y2="878" stroke="#E6D8BF" stroke-width="1.5"/>
+  <text x="1294" y="913" font-size="20" font-weight="700" class="future-title">มีส่วนรับ Webhook และผูกบัญชีเตรียมไว้แล้ว</text>
+  <text x="1294" y="946" font-size="20" class="future-sub">ขั้นต่อไปคือเชื่อม API เพื่อส่งข้อความจริง</text>
+  <text x="66" y="1048" font-size="18" fill="#647B73">ภาพรวมระบบ: กระบวนการหลักที่พัฒนาแล้วในภาคเรียนนี้ และแผนขยายการสื่อสารผ่าน LINE</text>
+</svg>

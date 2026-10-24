@@ -1,0 +1,42 @@
+{
+  "captured_date": "2026-10-15",
+  "source": "Existing local product application",
+  "data_mode": "Existing database data; no billing or payment mutations",
+  "files": [
+    {
+      "file": "01-login.jpg",
+      "route": "/login",
+      "capture": "full-page"
+    },
+    {
+      "file": "02-dashboard.jpg",
+      "route": "/dashboard",
+      "capture": "viewport"
+    },
+    {
+      "file": "03-rooms.jpg",
+      "route": "/rooms",
+      "capture": "viewport"
+    },
+    {
+      "file": "03-rooms-full.jpg",
+      "route": "/rooms",
+      "capture": "full-page"
+    },
+    {
+      "file": "04-meter-readings.jpg",
+      "route": "/readings",
+      "capture": "viewport"
+    },
+    {
+      "file": "04-meter-readings-full.jpg",
+      "route": "/readings",
+      "capture": "full-page"
+    },
+    {
+      "file": "05-monthly-bills.jpg",
+      "route": "/bills",
+      "capture": "viewport"
+    }
+  ]
+}

@@ -7,7 +7,7 @@ const router = Router();
 router.get('/tenants', requireRole('admin'), async (req, res, next) => {
   try {
     return res.render('pages/tenants', {
-      title: 'ผู้พักอาศัย',
+      title: 'ผู้เช่า',
       tenants: await listTenants({
         status: req.query.status ?? 'active',
         query: req.query.q ?? '',

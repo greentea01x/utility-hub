@@ -1,0 +1,22 @@
+<%- include('../partials/shell-start') %>
+<div class="page-intro"><div><p class="section-kicker">การเงินและใบเสร็จ</p><h1>รับชำระเงิน</h1><p><%= history ? 'ตรวจสอบรายการรับชำระและเปิดใบเสร็จ แยกตามเดือนที่รับเงิน' : 'เลือกรายการค้างชำระ ตรวจสอบยอดเงิน และบันทึกการรับชำระเงินสด' %></p></div></div>
+<nav class="tabs" aria-label="รายการรับชำระ"><a class="<%= !history ? 'is-active' : '' %>" <%- !history ? 'aria-current="page"' : '' %> href="/payments">รับชำระเงิน</a><a class="<%= history ? 'is-active' : '' %>" <%- history ? 'aria-current="page"' : '' %> href="/payments/history">ประวัติการรับชำระ</a></nav>
+<form class="search-form" method="get">
+  <% if (history) { %><input type="hidden" name="period" value="<%= period %>"><% } %>
+  <label class="search-label">ค้นหาห้อง<%= history ? ' / เลขที่ใบเสร็จ' : '' %><input name="q" value="<%= q %>" placeholder="<%= history ? 'เช่น 205 หรือเลขที่ใบเสร็จ' : 'เช่น 205' %>" maxlength="50"></label><button type="submit">ค้นหา</button>
+</form>
+<% if (!rows.length) { %>
+  <section class="panel empty-state"><img class="empty-illustration" src="/images/reports-overview.svg" alt="" width="180" height="135"><h2><%= history ? 'ยังไม่มีรายการรับชำระ' : q ? 'ไม่พบรายการที่ค้นหา' : 'ไม่มีบิลที่รอรับชำระ' %></h2><p><%= history ? 'ลองเลือกเดือนอื่น หรือค้นหาด้วยเลขห้องและเลขที่ใบเสร็จ' : q ? 'ตรวจสอบเลขห้องที่ค้นหา แล้วลองอีกครั้ง' : 'บิลที่อนุมัติแล้วและยังไม่ชำระจะแสดงในหน้านี้' %></p></section>
+<% } else { %>
+  <div class="table-toolbar"><h2><%= history ? 'รายการรับชำระ' : 'บิลที่รอชำระ' %></h2><span class="count-label"><%= rows.length %> รายการ</span></div>
+  <div class="table-wrap"><table><thead><tr><% if (history) { %><th>วันที่ชำระ</th><% } %><th>ห้อง</th><th>รอบบิล</th><th class="num">ยอดเงิน (บาท)</th><th><%= history ? 'สถานะ' : 'ครบกำหนด' %></th><th><%= history ? 'ใบเสร็จ / ผู้รับเงิน' : 'ดำเนินการ' %></th></tr></thead><tbody>
+    <% rows.forEach((row) => { %>
+      <tr><% if (history) { %><td><%= displayDate(row.received_at) %></td><% } %><td><strong><%= row.room_number %></strong></td><td><%= monthLabel(row.period) %></td><td class="num"><strong><%= money(history ? row.amount : row.total) %></strong></td><td><% if (history) { %><span class="badge <%= row.voided_at ? 'muted' : 'success' %>"><%= row.voided_at ? 'ยกเลิกแล้ว' : 'รับชำระแล้ว' %></span><% } else { %><%= displayDate(row.due_date) %><% } %></td><td>
+        <% if (history) { %><% if (row.receipt_id) { %><a href="/receipts/<%= row.receipt_id %>"><%= row.receipt_number %></a><% } %><small class="cell-detail"><%= row.received_by %></small>
+        <% } else { %><form action="/bills/<%= row.id %>/pay" method="post"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button type="submit">รับชำระเงินสด</button></form><% } %>
+      </td></tr>
+    <% }) %>
+  </tbody></table></div>
+<% } %>
+<% if (!history) { %><p class="surface-note">รายการครอบคลุมบิลที่รอชำระทุกงวด เมื่อบันทึกแล้วระบบจะออกใบเสร็จรับเงิน</p><% } %>
+<%- include('../partials/shell-end') %>

@@ -1,0 +1,41 @@
+Created using the built-in image_gen tool.
+Fictional mobile meter-reading screen with required technician name.
+Source: codex-clipboard-de044fb9-96cc-4483-a204-55b803a908c8.png
+
+FINAL PROMPT
+
+Use case: ui-mockup / style-transfer.
+Create ONE exceptionally sharp, high-fidelity MOBILE meter-reading app screen based on the attached Thai reference. This is a fictional product mockup. Preserve the useful blue-and-white mobile app design and meter-entry workflow, improve legibility and spacing, and prominently ADD a REQUIRED TECHNICIAN NAME field to EACH room's reading form. This is the user's essential requirement: a technician's name must be entered every time before saving. Show a sample entered name and explicitly communicate the requirement; also show technician attribution on a completed room.
+Output a single portrait image around 1440 x 3040, a fully visible rounded white smartphone front-on with a thin elegant bezel, on a plain very pale gray background, no building photograph, no hands, no perspective. The interface occupies almost the full image. Crisp Thai sans-serif typography, exact Thai spelling and tone marks, large readable dark navy text. Flat polished UI, cobalt blue #2455A4 primary, white cards, very light gray-blue page background, restrained shadows, thin light gray borders, green completed state, red required asterisks. No LINE branding. No chat bubbles. No English explanations outside the screen.
+
+Design top-to-bottom, fit ALL content in one screen with no clipping:
+1. Compact phone status bar: 09:16, signal, wifi, battery.
+2. White app header with bold title "จดมิเตอร์" left and month selector "ก.ย. 2026" right with small chevron. A small understated pill says "ข้อมูลสมมุติ".
+3. Three compact pill filters in one row: "ทั้งหมด 67" (selected blue with white text), "ยังไม่จด 25", "จดแล้ว 42". A small secondary chip below: "ห้องว่าง 13". Keep these compact to give room to the form.
+4. Slim pale gray floor section strip: "ชั้น 2".
+5. Main white rounded room card. Top line bold "ห้อง 205" with a light cyan badge "มีผู้เช่า".
+   Water section, blue droplet icon and text "มิเตอร์น้ำ". Side-by-side labeled numeric fields:
+   Left label "เดือนก่อน", disabled gray dashed-border value "1,250".
+   Right label "เดือนนี้ *", white editable value "1,260", red asterisk.
+   Small blue supporting text "ใช้ไป 10 หน่วย".
+   Electricity section, orange lightning icon and text "มิเตอร์ไฟฟ้า". Same two-column numeric fields:
+   Left label "เดือนก่อน", disabled gray dashed-border value "5,280".
+   Right label "เดือนนี้ *", white editable value "5,350", red asterisk.
+   Supporting text "ใช้ไป 70 หน่วย".
+   An empty checkbox followed by "เปลี่ยนมิเตอร์ในรอบนี้".
+   Then a distinct lightly blue-tinted subsection inside THIS room card for the mandatory technician information. It must be prominent, readable, and clearly part of the saved room record:
+   Label exactly "ชื่อช่างผู้จดมิเตอร์ *" with red asterisk.
+   Full-width white text input containing the fictional name "สมชาย ใจดี", with a small person icon at the left.
+   Helper text exactly "ต้องกรอกชื่อช่างทุกครั้งก่อนบันทึก" with small red required marker; clearly readable, not tiny.
+   Full-width cobalt blue active button with white bold text "บันทึกการจดมิเตอร์".
+   The input is shown filled as a demonstration; do NOT add remember-name or autofill controls.
+6. Compact pale green completed room card below the main form:
+   Left "ห้อง 206"; right green "จดแล้ว".
+   Second line small water/lightning icons with "12 หน่วย" and "81 หน่วย".
+   Third line person icon with "ผู้จด: วิชัย รักงาน · 09:05 น." to visibly show that saved records retain the technician's name. This is fictional.
+7. Compact white pending room row: "ห้อง 207", water and lightning values "—", small neutral badge "ยังไม่จด".
+8. Bottom sticky white progress strip: "จดแล้ว 42/67 ห้อง" at left, "63%" at right, blue progress bar filled 63%.
+9. Bottom white navigation with three simple well-designed icons and labels: "จดมิเตอร์" selected blue, "ห้องพัก", "ภาพรวม". Black phone home indicator below.
+
+Keep every numeric value accurate. Do not introduce more rooms, extra people, additional features, or explanatory text outside the phone. This is one fictional app screen showing the input state for room 205. The most important addition is the REQUIRED technician-name field with sample name and the rule that it is required every time. Make this addition visually obvious while keeping the reference's overall design language.
+

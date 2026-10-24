@@ -1,30 +1,41 @@
-<!doctype html>
-<html lang="th">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title><%= title %> · Juristic Platform</title>
-  <link rel="stylesheet" href="/css/app.css">
-</head>
-<body>
-  <header>
-    <a href="/dashboard">UtilityHub</a><span>Juristic Platform</span>
-    <form action="/logout" method="post"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button>ออกจากระบบ</button></form>
-  </header>
-  <main>
-    <p class="eyebrow">ภาพรวม</p>
-    <h1>ยินดีต้อนรับ, <%= session.user.displayName %></h1>
-    <% if (summary) { %>
-      <p>รอบจดมิเตอร์ <%= summary.period %> · ห้องพักทั้งหมด <%= summary.rooms_total %> ห้อง · มีผู้พักอาศัย <%= summary.rooms_occupied %> ห้อง</p>
-      <p role="status">จดมิเตอร์ครบแล้ว <%= summary.readings_complete %> ห้อง · รอจดมิเตอร์ <%= summary.readings_remaining %> ห้อง</p>
-    <% } else { %>
-      <p>จัดการรอบบิลจากการจดมิเตอร์จนถึงออกใบเสร็จ</p>
-    <% } %>
-    <nav class="page-nav" aria-label="งานหลัก">
-      <% navigation.forEach((page) => { %>
-        <a href="<%= page.href %>"><%= page.label %></a>
-      <% }) %>
-    </nav>
-  </main>
-</body>
-</html>
+<%- include('../partials/shell-start') %>
+<% if (summary) { %>
+  <div class="kpi-grid staff-kpis">
+    <% [{label:'ห้องทั้งหมด',value:summary.rooms_total,tone:'neutral',icon:'rooms'}, {label:'มีผู้เช่า',value:summary.rooms_occupied,tone:'blue',icon:'tenants'}, {label:'จดมิเตอร์ครบแล้ว',value:summary.readings_complete,tone:'green',icon:'readings'}, {label:'รอจดมิเตอร์',value:summary.readings_remaining,tone:'amber',icon:'readings'}].forEach((card) => { %><section class="kpi <%= card.tone %>"><div class="kpi-heading"><h2><%= card.label %></h2></div><strong class="kpi-value"><%= quantity(card.value) %></strong><p>ห้อง</p></section><% }) %>
+  </div>
+  <section class="panel staff-progress"><div class="panel-heading"><h2>ความคืบหน้ารอบจดมิเตอร์</h2><span class="unit-tag">รอบ <%= monthLabel(period) %></span></div><div class="panel-body"><p role="status">จดมิเตอร์ครบแล้ว <%= summary.readings_complete %> ห้อง · รอจดมิเตอร์ <%= summary.readings_remaining %> ห้อง</p><progress value="<%= summary.readings_complete %>" max="<%= summary.rooms_occupied || 1 %>" aria-label="ความคืบหน้าการจดมิเตอร์"></progress><div class="quick-links"><a class="button" href="/readings?period=<%= period %>">ไปจดมิเตอร์</a><a class="button button-secondary" href="/rooms">ดูห้องพัก</a></div></div></section>
+<% } else { const { rooms, totals, items, charts } = overview; const occupancy = rooms.total ? Math.round(rooms.occupied / rooms.total * 100) : 0; %>
+  <div class="kpi-grid">
+    <% const cards = [
+      {icon:'rooms',label:'ห้องทั้งหมด',value:quantity(rooms.total),note:quantity(rooms.floors)+' ชั้น',tone:'neutral'},
+      {icon:'tenants',label:'มีผู้เช่า',value:quantity(rooms.occupied),note:occupancy+'% ของห้องทั้งหมด',tone:'blue'},
+      {icon:'rooms',label:'ห้องว่าง',value:quantity(rooms.vacant),note:'ไม่ออกบิลในรอบนี้',tone:'neutral'},
+      {icon:'water',label:'ยอดค่าน้ำเดือนนี้',value:'฿'+money(items.water.amount),note:quantity(items.water.units)+' หน่วย · บิลที่อนุมัติแล้ว',tone:'water'},
+      {icon:'electric',label:'ยอดค่าไฟเดือนนี้',value:'฿'+money(items.electric.amount),note:quantity(items.electric.units)+' หน่วย · บิลที่อนุมัติแล้ว',tone:'amber'},
+      {icon:'building',label:'ยอดค่าส่วนกลาง',value:'฿'+money(items.common.amount),note:quantity(items.common.count)+' ห้อง · ตามพื้นที่ในบิล',tone:'purple'},
+      {icon:'bills',label:'ยอดเรียกเก็บทั้งหมด',value:'฿'+money(totals.billed),note:quantity(totals.approved)+' ใบ · ไม่รวมฉบับร่าง '+quantity(totals.drafts)+' ใบ',tone:'blue'},
+      {icon:'payments',label:'รับชำระแล้ว',value:'฿'+money(totals.paid),note:quantity(totals.paid_count)+' ใบ · นับตามงวดของบิล',tone:'green'},
+      {icon:'arrears',label:'ค้างชำระ',value:'฿'+money(totals.outstanding),note:quantity(totals.outstanding_count)+' ใบ · เฉพาะรอบเดือนที่เลือก',tone:'red'},
+      {icon:'reports',label:'ค้างชำระสะสมทุกงวด',value:'฿'+money(totals.all_outstanding),note:'รวมงวดก่อนหน้าถึงรอบที่เลือก',tone:'red'},
+    ]; cards.forEach((card) => { %><section class="kpi <%= card.tone %>"><div class="kpi-heading"><h2><%= card.label %></h2></div><strong class="kpi-value"><%= card.value %></strong><p><%= card.note %></p></section><% }) %>
+  </div>
+  <div class="dashboard-columns">
+    <div class="chart-column"><%- include('../partials/usage-chart', { utility: 'water', series: charts }) %><%- include('../partials/usage-chart', { utility: 'electric', series: charts }) %></div>
+    <div class="dashboard-side">
+      <section class="panel bill-status-panel"><div class="panel-heading"><h2>สถานะบิล · <%= monthLabel(period) %></h2></div><div class="panel-body">
+        <% const statuses = [{label:'ชำระแล้ว',count:totals.paid_count,tone:'paid'}, {label:'รอชำระ',count:totals.pending_count,tone:'pending'}, {label:'เกินกำหนด',count:totals.overdue_count,tone:'overdue'}]; const circle = 2 * Math.PI * 65; let offset = 0; %>
+        <div class="donut-layout"><svg class="donut-chart" viewBox="0 0 180 180" role="img" aria-label="สถานะบิลที่อนุมัติแล้ว <%= totals.approved %> ใบ">
+          <defs><pattern id="overdue-stripes" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(35)"><rect width="6" height="6" fill="#ffffff"/><rect width="3" height="6" fill="#a4231a"/></pattern></defs>
+          <circle class="donut-track" cx="90" cy="90" r="65"/>
+          <% statuses.forEach((status) => { const length = totals.approved ? status.count / totals.approved * circle : 0; %><circle class="donut-segment <%= status.tone %>" cx="90" cy="90" r="65" stroke-dasharray="<%= length %> <%= circle %>" stroke-dashoffset="<%= -offset %>" transform="rotate(-90 90 90)"/><% offset += length; }); %>
+          <text class="donut-count" x="90" y="89" text-anchor="middle"><%= totals.approved %></text><text class="donut-caption" x="90" y="110" text-anchor="middle">ใบในงวดนี้</text>
+        </svg><ul class="chart-legend"><% statuses.forEach((status) => { %><li><span class="legend-label"><i class="legend-swatch <%= status.tone %>" aria-hidden="true"></i><%= status.label %></span><strong><%= status.count %></strong><span><%= totals.approved ? Math.round(status.count / totals.approved * 100) : 0 %>%</span></li><% }) %></ul></div>
+        <dl class="bill-reconciliation"><div><dt>ยอดเรียกเก็บทั้งหมด</dt><dd><%= money(totals.billed) %></dd></div><div><dt>− รับชำระแล้ว</dt><dd><%= money(totals.paid) %></dd></div><div class="reconciliation-total"><dt>= ค้างชำระ</dt><dd><%= money(totals.outstanding) %></dd></div></dl>
+        <% if (!totals.approved) { %><p class="empty-caption">ยังไม่มีบิลที่อนุมัติในรอบเดือนนี้</p><% } %>
+      </div></section>
+      <section class="panel"><div class="panel-heading"><h2>ทางลัด</h2></div><div class="quick-links shortcut-grid"><a class="button" href="/payments">รับชำระเงิน</a><a class="button button-secondary" href="/bills?period=<%= period %>">บิลประจำเดือน</a><a class="button button-outline" href="/readings?period=<%= period %>">จดมิเตอร์</a><a class="button button-outline" href="/announcements">จัดการประกาศ</a></div></section>
+      <section class="panel residence-photo-card"><div class="panel-heading"><h2>ภาพประกอบอาคารที่พักอาศัย</h2></div><figure><img src="/images/residence-photo.jpg" alt="ภาพประกอบอาคารพักอาศัยสีขาวพร้อมระเบียงกระจกสีน้ำเงิน" width="1200" height="900" loading="lazy" decoding="async"><figcaption>ภาพประกอบ · <a href="https://unsplash.com/photos/modern-white-apartment-building-with-blue-glass-balconies-vpAUwzvzJn4" target="_blank" rel="noreferrer">Ciro Rizzo / Unsplash</a></figcaption></figure></section>
+    </div>
+  </div>
+<% } %>
+<%- include('../partials/shell-end') %>

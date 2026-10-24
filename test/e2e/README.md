@@ -22,7 +22,7 @@ To use an already-running server, set `E2E_BASE_URL` and run `npm run test:e2e`.
 This test command loads `.env` for the Playwright runner and starts the app on its
 configured `PORT` unless `E2E_BASE_URL` is set.
 
-To run **all six scenarios**, including the room 205 and staff paths, without touching the
+To run **all eight scenarios**, including the room 205 and staff paths, without touching the
 public demo data, set `TEST_DATABASE_URL` in `.env.test` and run:
 
 ```sh

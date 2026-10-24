@@ -1,0 +1,27 @@
+<%- include('../partials/shell-start') %>
+<section class="page-hero reports-hero" aria-labelledby="reports-heading">
+  <div class="hero-content">
+    <span class="section-kicker">ข้อมูลเพื่อการบริหาร</span>
+    <h1 id="reports-heading">รายงาน</h1>
+    <p>ดูข้อมูลการเรียกเก็บ การรับชำระ และการใช้สาธารณูปโภค<br class="desktop-break">อย่างเป็นระบบ เพื่อช่วยติดตามและวางแผนงานของอาคาร</p>
+    <div class="hero-tags"><span><i class="status-dot" aria-hidden="true"></i>พร้อมใช้งาน 1 รายงาน</span><span>ดาวน์โหลดเป็นไฟล์ CSV ได้</span></div>
+  </div>
+  <img class="hero-illustration" src="/images/reports-overview.svg" alt="" width="480" height="260">
+</section>
+<div class="section-heading report-section-heading"><div><h2>เลือกรายงานที่ต้องการ</h2><p>แต่ละรายงานแสดงรายละเอียดและสถานะการใช้งานไว้อย่างชัดเจน</p></div><span class="count-label">4 ประเภทรายงาน</span></div>
+<div class="report-grid">
+  <a class="panel report-card report-card-available" href="/reports/arrears">
+    <div class="report-card-top"><span class="report-icon"><%- include('../partials/icon', {icon:'bills'}) %></span><span class="badge success"><i class="status-dot" aria-hidden="true"></i>พร้อมใช้งาน</span></div>
+    <h2>รายการค้างชำระ</h2><p>ตรวจสอบบิลที่ยังไม่ได้ชำระ แยกตามรอบเดือน<br>พร้อมข้อมูลห้องพัก ผู้เช่า ยอดค้าง และวันครบกำหนด</p>
+    <div class="report-card-footer"><span class="file-label"><%- include('../partials/icon', {icon:'reports'}) %>ส่งออก CSV</span><span class="report-action">เปิดรายงาน <span aria-hidden="true">↗</span></span></div>
+  </a>
+  <% [
+    {title:'สรุปการเรียกเก็บและรับชำระรายเดือน',description:'สรุปยอดเรียกเก็บ ยอดรับชำระ และยอดคงค้างของแต่ละเดือน',icon:'payments'},
+    {title:'ประวัติรายห้อง 12 เดือน',description:'ติดตามประวัติการใช้สาธารณูปโภคและการชำระเงินของแต่ละห้อง',icon:'rooms'},
+    {title:'ห้องที่ใช้น้ำ/ไฟสูงสุด',description:'เปรียบเทียบการใช้น้ำและไฟฟ้า เพื่อช่วยสังเกตความผิดปกติ',icon:'readings'}
+  ].forEach((report) => { %>
+  <section class="panel report-card is-pending"><div class="report-card-top"><span class="report-icon"><%- include('../partials/icon', {icon:report.icon}) %></span><span class="badge muted">อยู่ระหว่างพัฒนา</span></div><h2><%= report.title %></h2><p><%= report.description %></p><div class="report-card-footer"><span class="pending-label">ยังไม่เปิดใช้งาน</span><span class="pending-symbol" aria-hidden="true">—</span></div></section>
+  <% }) %>
+</div>
+<section class="report-guide" aria-labelledby="report-guide-heading"><div class="guide-intro"><span class="guide-icon"><%- include('../partials/icon', {icon:'reports'}) %></span><div><h2 id="report-guide-heading">เริ่มต้นใช้งานรายงาน</h2><p>ตรวจสอบข้อมูลก่อนนำไปใช้อ้างอิงทุกครั้ง</p></div></div><ol><li><span>01</span><div><strong>เลือกรายงาน</strong><p>เปิดรายงานที่พร้อมใช้งาน</p></div></li><li><span>02</span><div><strong>ตรวจสอบรอบเดือน</strong><p>เลือกเดือนที่ต้องการดูข้อมูล</p></div></li><li><span>03</span><div><strong>ดาวน์โหลดข้อมูล</strong><p>ส่งออก CSV เพื่อใช้งานต่อ</p></div></li></ol></section>
+<%- include('../partials/shell-end') %>

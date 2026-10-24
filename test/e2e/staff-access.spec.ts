@@ -14,7 +14,7 @@ test('E2E · staff meter workflow and financial access restrictions', async ({ p
   await page.getByLabel('รหัสผ่าน').fill(process.env.E2E_STAFF_PASSWORD!);
   await page.getByRole('button', { name: 'เข้าสู่ระบบ' }).click();
   await expect(page).toHaveURL(/\/readings$/);
-  await expect(page.getByRole('link', { name: /ไปหน้าบิลรายเดือน/ })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: /ไปหน้าบิลประจำเดือน/ })).toHaveCount(0);
 
   await page.goto('/dashboard');
   await expect(page.getByRole('status')).toContainText('รอจดมิเตอร์');
@@ -29,6 +29,7 @@ test('E2E · staff meter workflow and financial access restrictions', async ({ p
   const previousElectric = Number(await row.locator('td').nth(3).textContent());
   await row.getByLabel('น้ำ ห้อง 206').fill(String(previousWater + 10));
   await row.getByLabel('ไฟฟ้า ห้อง 206').fill(String(previousElectric + 70));
+  await row.getByLabel('ชื่อช่างผู้จดมิเตอร์ ห้อง 206').fill('วิชัย ช่างอาคาร');
   await row.getByRole('button', { name: 'บันทึก' }).click();
   await expect(page.getByRole('status')).toHaveText('บันทึกเลขมิเตอร์เรียบร้อย');
 

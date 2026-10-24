@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="260" viewBox="0 0 520 260" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">อาคารพักอาศัย</title>
+  <desc id="desc">ภาพอาคารอพาร์ตเมนต์ทรงร่วมสมัยพร้อมต้นไม้ในโทนสีน้ำเงิน ฟ้า และขาว</desc>
+  <defs>
+    <linearGradient id="sky" x1="260" y1="12" x2="260" y2="244" gradientUnits="userSpaceOnUse"><stop stop-color="#EDF5FA"/><stop offset="1" stop-color="#EDF5FA" stop-opacity="0"/></linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="25" y2="26" gradientUnits="userSpaceOnUse"><stop stop-color="#86C9E8"/><stop offset="1" stop-color="#CDE8F5"/></linearGradient>
+    <linearGradient id="side" x1="346" y1="70" x2="400" y2="232" gradientUnits="userSpaceOnUse"><stop stop-color="#D4E6F2"/><stop offset="1" stop-color="#BCD2E3"/></linearGradient>
+    <g id="window"><rect width="30" height="28" rx="2" fill="#163B63"/><path d="M3 3h24v22H3z" fill="url(#glass)"/><path d="M15 3v22" stroke="#FFFFFF" stroke-opacity=".6" stroke-width="2"/><path d="m3 18 19-15h5v6L7 25H3z" fill="#FFFFFF" fill-opacity=".22"/></g>
+    <g id="window-row"><use href="#window" x="156"/><use href="#window" x="205"/><use href="#window" x="254"/><use href="#window" x="303"/></g>
+  </defs>
+  <rect x="29" y="13" width="462" height="230" rx="115" fill="url(#sky)"/>
+  <circle cx="423" cy="54" r="20" fill="#D4E6F2"/>
+  <path d="M54 112h47m-22-12h51M414 93h47m-22 11h35" stroke="#D4E6F2" stroke-width="3" stroke-linecap="round"/>
+  <ellipse cx="268" cy="236" rx="199" ry="12" fill="#163B63" fill-opacity=".06"/>
+  <path d="m345 55 50 22v153h-50z" fill="url(#side)"/>
+  <path d="m345 52 54 23v9l-54-22z" fill="#7D9AB5"/>
+  <path d="M140 61h207v169H140z" fill="#FFFFFF"/>
+  <path d="M132 54h221v10H132z" fill="#163B63"/>
+  <path d="M140 64h11v166h-11z" fill="#EDF5FA"/>
+  <path d="M140 104h207M140 146h207M140 188h207" stroke="#E6EFF5" stroke-width="5"/>
+  <use href="#window-row" y="72"/>
+  <use href="#window-row" y="114"/>
+  <use href="#window-row" y="156"/>
+  <path d="M224 197h43v33h-43z" fill="#163B63"/>
+  <path d="M228 201h35v29h-35z" fill="#86C9E8"/>
+  <path d="M245.5 201v29" stroke="#FFFFFF" stroke-width="2"/>
+  <path d="M211 192h68v5h-68z" fill="#2055A2"/>
+  <path d="M156 203h39v18h-39zM296 203h37v18h-37z" fill="#CDE8F5"/>
+  <path d="m361 87 18 8v25l-18-6zM361 134l18 7v25l-18-6zM361 181l18 7v25l-18-6z" fill="#7D9AB5" fill-opacity=".45"/>
+  <path d="m363 90 13 6v18l-13-4zM363 137l13 5v18l-13-4zM363 184l13 5v18l-13-4z" fill="#86C9E8"/>
+  <path d="M219 230h54l8 7h-70z" fill="#BCD2E3"/>
+  <path d="M74 230h365" stroke="#7D9AB5" stroke-width="2" stroke-linecap="round"/>
+  <path d="M106 226v-59" stroke="#7D9AB5" stroke-width="4" stroke-linecap="round"/>
+  <path d="M107 181c-23 0-31-15-25-30 4-10 13-13 21-11 9-13 28-6 29 7 14 14 1 35-25 34Z" fill="#86C9E8"/>
+  <path d="M106 201v-41m0 24-13-12m13 3 14-12" stroke="#2055A2" stroke-opacity=".45" stroke-width="2" stroke-linecap="round"/>
+  <path d="M419 229v-41" stroke="#7D9AB5" stroke-width="3" stroke-linecap="round"/>
+  <path d="M419 199c-17 0-24-12-18-23 3-8 11-9 17-8 9-10 23-3 22 8 8 11-1 23-21 23Z" fill="#ACD5EA"/>
+  <path d="M419 216v-31m0 17-9-9m9 2 9-9" stroke="#2055A2" stroke-opacity=".4" stroke-width="2" stroke-linecap="round"/>
+  <path d="M118 230c0-12 9-20 18-20s17 8 17 20M373 230c0-11 9-18 18-18s16 7 16 18" fill="#CDE8F5"/>
+  <path d="M88 230h28m278 0h34" stroke="#86C9E8" stroke-width="5" stroke-linecap="round"/>
+</svg>

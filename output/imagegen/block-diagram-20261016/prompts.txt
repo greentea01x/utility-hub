@@ -1,0 +1,86 @@
+Created using the built-in image_gen tool.
+Original system diagram redesigned using the second reference's pastel flowchart style.
+
+INITIAL PROMPT
+
+Use case: infographic-diagram / style-transfer.
+Create ONE clean, very sharp landscape block diagram image by redesigning INPUT IMAGE 1 in the visual language of INPUT IMAGE 2.
+Input 1 = the Thai room-management system architecture, authoritative for content and implementation status.
+Input 2 = stylistic reference ONLY: simple Miro-like flowchart on light gray canvas, pastel purple rounded process blocks, yellow actor/end blocks, thin dark outlines and directional connectors, spacious legible sans-serif labels.
+The user wants a new image, not a Miro screenshot. Do NOT copy the second image's order/shipping/card-payment content, collaboration cursors, people's name tags, logos, toolbar, zoom controls, or app chrome. Do not add arbitrary decision diamonds: this architecture does not require invented yes/no decisions.
+
+DELIVERABLE: one complete presentation-ready landscape image, ideally 3840 x 2160, with all nodes, labels and arrowheads clear and comfortably inside margins. Flat shapes, no gradients, no 3D, no shadows, no decorative pictures. Light gray #F4F4F4 background, dark charcoal outlines around 2 px at slide scale, pastel lilac #B0A1F5 process blocks, warm yellow #FFE142 actor blocks, pale sky blue #90BFFF database. Elegant rounded corners as in input 2. Thai typography must be crisp and correctly spelled; black text, short lines, generous padding.
+
+HEADER:
+Large title left "Block Diagram"
+Subtitle "ระบบจัดการห้องพักและค่าสาธารณูปโภค"
+Top-right small legend: solid line "พัฒนาแล้ว"; amber dashed line "พัฒนาต่อไป".
+Main system occupies roughly the left 72%; planned LINE integration in a distinct narrow right-side dashed-outline region, roughly 25%, separated by a clear gutter.
+
+MAIN CURRENT SYSTEM:
+Small section label "พัฒนาแล้ว · ขอบเขตภาคเรียนนี้".
+Top row of three connected standalone blocks, left to right:
+A. Yellow actor node: "ผู้ดูแลระบบ / เจ้าหน้าที่"
+solid arrow A → B.
+B. Lilac process: "เข้าสู่ระบบ" with smaller subtitle "ตรวจสอบสิทธิ์ผู้ใช้งาน"
+solid arrow B → C.
+C. Lilac process: "Web App" with subtitle "Node.js + Express + EJS"
+
+Below top row place the five module blocks, all standalone, with room to breathe. Use this exact module arrangement: top module row has room information (left), meter recording (center), monthly billing (right); second module row has receipt issuing (center) and cash payment (right). Use lilac fill consistently, with a slightly lighter tint for secondary subtitles.
+D. "ดูข้อมูลห้องพัก"
+   subtitle "ข้อมูลห้องและสถานะห้องพัก"
+E. "จดมิเตอร์น้ำ / ไฟฟ้า"
+   subtitle "บันทึกเลขมิเตอร์รายเดือน"
+   second small line "ระบุชื่อช่างทุกครั้ง"
+F. "จัดการบิลรายเดือน"
+   subtitle "คำนวณยอด · สร้าง · อนุมัติบิล"
+G. "ยืนยันรับชำระเงินสด"
+   subtitle "บันทึกรับเงินและปรับสถานะบิล"
+H. "ออกใบเสร็จรับเงิน"
+   subtitle "แสดงและพิมพ์ใบเสร็จ"
+
+Required solid arrow topology:
+C connects downward via a neat branched connector to D and E, indicating available app modules.
+E → F (horizontal right).
+F → G (vertical downward).
+G → H (horizontal left).
+Do not connect D sequentially into E, because room viewing is a separate module.
+Keep connectors in the whitespace, not through text or through unrelated blocks.
+
+Near the lower-left under D put a compact unboxed note, with a small pale lavender heading pill "สิทธิ์การทำงาน":
+"เจ้าหน้าที่: ดูห้อง / จดมิเตอร์"
+"ผู้ดูแลระบบ: ใช้งานได้ทุกส่วน"
+This note is informative, not an extra process node; no extra arrows to it.
+
+Along the bottom of the current-system region, one wide pale-blue DATABASE CYLINDER:
+"PostgreSQL Database · Supabase"
+smaller line "ห้องพัก · มิเตอร์ · บิล · การรับเงิน · ใบเสร็จ"
+C (Web App) ↔ DATABASE with a solid two-way connector, routed in the open outer margin beside the module area, avoiding crossings with the business-flow arrows. Label that database link "อ่าน / บันทึกข้อมูลทุกโมดูล". This link must clearly connect the app and database, not make the database a workflow step after printing a receipt.
+
+RIGHT-SIDE PLANNED EXTENSION:
+A faint warm-cream area with thin amber DASHED rounded outline, no heavy panels. Heading "แนวทางพัฒนาต่อไป".
+Small subtitle "เชื่อมการแจ้งเตือนผ่าน LINE".
+Three vertically stacked blocks with amber dashed borders and very pale lilac/yellow fills:
+I. "บริการส่งข้อความแจ้งเตือน"
+   smaller two-line subtitle "ส่งบิล · เตือนชำระ / ค้างชำระ"
+   "ประกาศ"
+J. "LINE Messaging API"
+   subtitle "เชื่อมต่อ LINE Official Account"
+K. Yellow endpoint "ผู้พักอาศัยผ่าน LINE OA"
+   subtitle "รับบิลและข้อความแจ้งเตือน"
+Required arrows, all amber dashed: C → I, I ↓ J, J ↓ K.
+The arrow C → I must start at the Web App, not at cash payment or database.
+Below K, short readable note, kept within the future section:
+"เตรียม Webhook และการผูกบัญชีแล้ว"
+"ขั้นต่อไป: เชื่อม API เพื่อส่งข้อความจริง"
+Preserve this distinction: current system is developed; sending real LINE messages is planned, NOT already working.
+
+CRITICAL QUALITY:
+All text uses the supplied wording. Retain technical names and Thai labels accurately. No invented payment gateway, credit-card flow, online payments, stock check, cancellation, or extra roles. No duplicated nodes or floating arrowheads. Clean orthogonal connectors with arrowheads visibly touching the intended target edge, consistent block sizes, sufficient whitespace, balanced composition. Make it look like a professional simple pastel flowchart in the second reference, NOT the dense green framed design of input 1.
+
+FINAL CORRECTION PROMPT
+
+Edit the attached completed block-diagram image with ONE surgical correction only. Keep all Thai and English text, font sizes, colors, shapes, positions, canvas size, legends, future LINE region, and existing arrows unchanged.
+The horizontal black distribution connector above the three module boxes currently floats disconnected from Web App. Add a thin black orthogonal connector from the BOTTOM CENTER EDGE of the "Web App / Node.js + Express + EJS" box down to the height of that horizontal distribution line, then left to join its existing rightmost elbow above "จัดการบิลรายเดือน". The junction must be fully continuous and unambiguous. This will make Web App feed the existing branched arrows leading to room information, meter reading, and monthly billing. The existing bus is roughly x190 to x874 at y365 in the 1672x941 reference, and the Web App bottom center is roughly x934 y321. So add the short path (934,321) → (934,365) → (874,365), scaled proportionally as needed. The added path is a connector stem without a new arrowhead; retain the three existing downward arrowheads into the modules.
+Do not connect the distribution bus to the database two-way line. Do not add or remove nodes. Do not change the invoice→cash→receipt arrows. Do not change any text. Preserve the finished wide pastel flowchart and its crisp Thai typography.
+

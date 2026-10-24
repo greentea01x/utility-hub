@@ -1,0 +1,11 @@
+    </main>
+    <footer class="workspace-footer"><span><%= residenceName %></span><span>ระบบจัดการค่าสาธารณูปโภคและค่าส่วนกลาง · <a href="/image-credits.html">เครดิตภาพ</a></span></footer>
+  </div>
+</div>
+<nav class="mobile-bottom-nav" aria-label="เมนูบนมือถือ">
+  <% const mobilePages = navigation.filter((page) => ['/readings', '/rooms', '/dashboard'].includes(page.href)); mobilePages.sort((a,b) => ['/readings','/rooms','/dashboard'].indexOf(a.href) - ['/readings','/rooms','/dashboard'].indexOf(b.href)); mobilePages.forEach((page) => { %>
+    <a href="<%= page.href %>" class="<%= currentPath === page.href ? 'is-active' : '' %>" <% if (currentPath === page.href) { %>aria-current="page"<% } %>><%- include('emoji', { icon: page.icon }) %><span><%= page.label %></span></a>
+  <% }) %>
+</nav>
+</body>
+</html>

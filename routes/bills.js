@@ -3,6 +3,7 @@ import { z } from 'zod';
 import pool from '../db/pool.js';
 import { approveBills, generateDrafts } from '../services/billing.js';
 import { AppError } from '../lib/errors.js';
+import { currentPeriod } from '../lib/presentation.js';
 import { requireRole } from '../middleware/auth.js';
 import { billingPeriod } from '../lib/validation.js';
 
@@ -10,7 +11,7 @@ const router = Router();
 router.use(['/bills', '/api/bills'], requireRole('admin'));
 router.get('/bills', async (req, res, next) => {
   try {
-    const period = billingPeriod.parse(req.query.period ?? new Date().toISOString().slice(0, 7));
+    const period = billingPeriod.parse(req.query.period ?? currentPeriod());
     const [bills] = await pool.execute(
       `SELECT b.id, r.room_number, b.period, b.status, b.total, b.due_date, receipt.id AS receipt_id
        FROM bills b JOIN rooms r ON r.id=b.room_id
@@ -19,7 +20,7 @@ router.get('/bills', async (req, res, next) => {
        WHERE b.period = ? ORDER BY r.room_number`,
       [period],
     );
-    return res.render('pages/bills', { title: 'บิลรายเดือน', bills, period });
+    return res.render('pages/bills', { title: 'บิลประจำเดือน', bills, period });
   } catch (error) {
     if (error instanceof z.ZodError)
       return next(new AppError(422, 'VALIDATION_FAILED', 'รอบบิลไม่ถูกต้อง'));

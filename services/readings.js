@@ -1,8 +1,14 @@
 import { withTx } from '../db/tx.js';
 import { AppError } from '../lib/errors.js';
 import { recordAudit } from '../lib/audit.js';
+import { technicianName as technicianNameInput, technicianNameMessage } from '../lib/validation.js';
 
-export async function saveReadings({ roomId, period, values, userId }) {
+export async function saveReadings({ roomId, period, values, userId, technicianName }) {
+  const name = technicianNameInput.safeParse(technicianName);
+  if (!name.success)
+    throw new AppError(422, 'VALIDATION_FAILED', technicianNameMessage, {
+      technician_name: technicianNameMessage,
+    });
   return withTx(async (connection) => {
     const [[room]] = await connection.execute(
       'SELECT id, status, water_baseline, electric_baseline FROM rooms WHERE id = ? FOR UPDATE',
@@ -32,7 +38,7 @@ export async function saveReadings({ roomId, period, values, userId }) {
       if (current < previous)
         throw new AppError(422, 'READING_BELOW_PREVIOUS', 'เลขมิเตอร์ใหม่ต้องไม่น้อยกว่าครั้งก่อน');
       const columns =
-        'id, room_id, period, utility_type, previous_reading, current_reading, recorded_by, recorded_at';
+        'id, room_id, period, utility_type, previous_reading, current_reading, technician_name, recorded_by, recorded_at';
       const [[before]] = await connection.execute(
         `SELECT ${columns} FROM meter_readings WHERE room_id = ? AND period = ? AND utility_type = ? FOR UPDATE`,
         [roomId, period, utility],
@@ -40,20 +46,22 @@ export async function saveReadings({ roomId, period, values, userId }) {
       if (
         before &&
         Number(before.previous_reading) === previous &&
-        Number(before.current_reading) === current
+        Number(before.current_reading) === current &&
+        before.technician_name === name.data
       ) {
         saved[utility] = { units: current - previous };
         continue;
       }
       const [[after]] = await connection.execute(
-        `INSERT INTO meter_readings (room_id, period, utility_type, previous_reading, current_reading, recorded_by)
-         VALUES (?, ?, ?, ?, ?, ?)
+        `INSERT INTO meter_readings (room_id, period, utility_type, previous_reading, current_reading, technician_name, recorded_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (room_id, period, utility_type) DO UPDATE
          SET previous_reading = EXCLUDED.previous_reading,
              current_reading = EXCLUDED.current_reading,
+             technician_name = EXCLUDED.technician_name,
              recorded_by = EXCLUDED.recorded_by,
              recorded_at = CURRENT_TIMESTAMP RETURNING ${columns}`,
-        [roomId, period, utility, previous, current, userId],
+        [roomId, period, utility, previous, current, name.data, userId],
       );
       await recordAudit(connection, {
         entityType: 'reading',

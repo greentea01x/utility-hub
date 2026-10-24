@@ -1,1 +1,17 @@
-<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title><%= title %> · Juristic Platform</title><link rel="stylesheet" href="/css/app.css"></head><body><header><a href="/dashboard">UtilityHub</a><span>Juristic Platform</span><form action="/logout" method="post"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button>ออกจากระบบ</button></form></header><main><h1>ประกาศ</h1><form method="post" action="/announcements"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><label>หัวข้อ<input name="title" maxlength="60" required></label><label>ข้อความ<textarea name="body" maxlength="400" required></textarea></label><button>เผยแพร่ประกาศ</button></form><h2>ประกาศที่ผ่านมา</h2><% announcements.forEach((announcement) => { %><article><h3><%= announcement.title %></h3><p><%= announcement.body %></p></article><% }) %></main></body></html>
+<%- include('../partials/shell-start') %>
+<div class="page-intro"><div><p class="section-kicker">สื่อสารกับผู้พักอาศัย</p><h1>ประกาศ</h1><p>เผยแพร่ข่าวสารของอาคารและตรวจสอบประกาศที่ผ่านมา</p></div></div>
+<section class="form-panel" aria-labelledby="compose-heading">
+  <div class="section-heading"><div><h2 id="compose-heading">สร้างประกาศใหม่</h2><p>เขียนหัวข้อให้ชัดเจนและใช้ข้อความกระชับ</p></div></div>
+  <form method="post" action="/announcements">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <label>หัวข้อประกาศ <span aria-hidden="true">*</span><input name="title" maxlength="60" required placeholder="เช่น แจ้งกำหนดทำความสะอาดถังเก็บน้ำ"><span class="field-help">ไม่เกิน 60 ตัวอักษร</span></label>
+    <label>ข้อความประกาศ <span aria-hidden="true">*</span><textarea name="body" maxlength="400" required rows="5" placeholder="ระบุรายละเอียด วันเวลา และข้อมูลที่ผู้พักอาศัยควรทราบ"></textarea><span class="field-help">ไม่เกิน 400 ตัวอักษร</span></label>
+    <p class="field-help">ประกาศที่บันทึกจะแสดงในรายการด้านล่าง การส่งประกาศผ่าน LINE ยังไม่เปิดใช้งาน</p><div class="action-bar"><button type="submit">เผยแพร่ประกาศ</button></div>
+  </form>
+</section>
+<section aria-labelledby="announcement-history-heading">
+  <div class="table-toolbar"><h2 id="announcement-history-heading">ประกาศที่ผ่านมา</h2><span class="count-label"><%= announcements.length %> ประกาศ</span></div>
+  <% if (!announcements.length) { %><div class="panel empty-state"><h3>ยังไม่มีประกาศ</h3><p>ประกาศที่เผยแพร่จะแสดงในส่วนนี้</p></div><% } %>
+  <% announcements.forEach((announcement) => { %><article class="panel workspace-section"><div class="section-heading"><h3><%= announcement.title %></h3><span class="field-help"><%= displayDate(announcement.created_at) %></span></div><p class="announcement-body"><%= announcement.body %></p></article><% }) %>
+</section>
+<%- include('../partials/shell-end') %>

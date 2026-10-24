@@ -1,1 +1,10 @@
-<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title><%= title %> · Juristic Platform</title><link rel="stylesheet" href="/css/app.css"></head><body><header><a href="/dashboard">UtilityHub</a><span>Juristic Platform</span><form action="/logout" method="post"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button>ออกจากระบบ</button></form></header><main><h1><%= title %></h1><p>รอบบิล <%= period %></p><p><a href="/reports/arrears?period=<%= period %>&format=csv">ดาวน์โหลด CSV</a></p><table><thead><tr><th>ห้อง</th><th>ผู้พักอาศัย</th><th>ยอดค้าง</th><th>ครบกำหนด</th></tr></thead><tbody><% rows.forEach((row) => { %><tr><td><%= row.room_number %></td><td><%= row.full_name ?? '-' %></td><td><%= row.total %></td><td><%= row.due_date %></td></tr><% }) %></tbody></table></main></body></html>
+<%- include('../partials/shell-start') %>
+<div class="page-intro"><div><p class="section-kicker">รายงานการเงิน</p><h1><%= title %></h1><p>รายการค้างชำระของรอบบิล <%= monthLabel(period) %> สำหรับตรวจสอบและติดตามการชำระ</p></div><a class="button button-outline" href="/reports/arrears?period=<%= period %>&format=csv">ดาวน์โหลด CSV</a></div>
+<div class="table-toolbar"><h2>รายการค้างชำระ</h2><span class="count-label"><%= rows.length %> รายการ</span></div>
+<% if (!rows.length) { %>
+  <section class="panel empty-state"><img class="empty-illustration" src="/images/reports-overview.svg" alt="" width="180" height="135"><h2>ไม่พบรายการค้างชำระในรอบนี้</h2><p>เลือกเดือนอื่นจากด้านบนเพื่อตรวจสอบข้อมูลย้อนหลัง</p></section>
+<% } else { %>
+  <div class="table-wrap"><table><thead><tr><th>ห้อง</th><th>ผู้พักอาศัย</th><th class="num">ยอดค้าง (บาท)</th><th>ครบกำหนด</th></tr></thead><tbody><% rows.forEach((row) => { %><tr><td><strong><%= row.room_number %></strong></td><td><%= row.full_name ?? '—' %></td><td class="num"><strong><%= money(row.total) %></strong></td><td><%= displayDate(row.due_date) %></td></tr><% }) %></tbody></table></div>
+<% } %>
+<p class="surface-note">ส่งออกข้อมูลเป็นไฟล์ CSV เพื่อนำไปตรวจสอบหรือจัดทำรายงานต่อได้</p>
+<%- include('../partials/shell-end') %>

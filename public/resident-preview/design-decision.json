@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "decisionId": "resident-menu-web-preview-2026-10-16",
+  "decisionDate": "2026-10-16",
+  "timeZone": "Asia/Bangkok",
+  "status": "selected_for_future_development",
+  "userRequest": "สร้างเว็บปลายทางแต่ละเมนูคอนโด และเก็บแบบที่เลือกไว้ใช้พัฒนาต่อไป",
+  "deliverableType": "local_buildless_prototype",
+  "productionFeatureCommissioned": false,
+  "semesterScope": "เน้นระบบภายในสำนักงานที่พัฒนาแล้ว ส่วนผู้พักอาศัยผ่าน LINE เป็นแนวทางพัฒนาต่อไป",
+  "brand": {
+    "name": "ศุภาลัย เรสซิเดนซ์",
+    "source": "user_selected_mockup",
+    "referenceImage": "docs/mockups/line-chat/05-condo-rich-menu-redesign.png",
+    "visualDirection": "emerald_condo_banner_with_six_pastel_emoji_menu_cards"
+  },
+  "entryPath": "/resident-preview/",
+  "entryFile": "index.html",
+  "menus": [
+    {
+      "id": "bills",
+      "label": "ดูบิลเดือนนี้",
+      "emoji": "💰",
+      "file": "bills.html",
+      "behaviors": ["view_bill_breakdown", "view_cash_payment_instructions"]
+    },
+    {
+      "id": "history",
+      "label": "ประวัติชำระเงิน",
+      "emoji": "🗓️",
+      "file": "history.html",
+      "behaviors": ["filter_payment_history", "download_sample_csv"]
+    },
+    {
+      "id": "receipts",
+      "label": "ใบเสร็จรับเงิน",
+      "emoji": "🧾",
+      "file": "receipts.html",
+      "behaviors": ["view_past_receipt", "print_receipt"]
+    },
+    {
+      "id": "room",
+      "label": "ข้อมูลห้องพัก",
+      "emoji": "🏢",
+      "file": "room.html",
+      "behaviors": ["view_linked_room_read_only"]
+    },
+    {
+      "id": "announcements",
+      "label": "ข่าวสารคอนโด",
+      "emoji": "📣",
+      "file": "announcements.html",
+      "behaviors": ["filter_announcements", "read_announcement_details"]
+    },
+    {
+      "id": "contact",
+      "label": "ติดต่อนิติบุคคล",
+      "emoji": "🎧",
+      "file": "contact.html",
+      "behaviors": ["view_office_hours", "save_sample_inquiry_in_local_browser"]
+    }
+  ],
+  "sampleData": {
+    "fictional": true,
+    "room": "205",
+    "billPeriod": "2026-09",
+    "billTotalTHB": 1790,
+    "billStatus": "unpaid",
+    "pastPaidRecords": true
+  },
+  "integration": {
+    "lineConnected": false,
+    "liffConnected": false,
+    "apiConnected": false,
+    "authenticationImplemented": false,
+    "onlinePaymentImplemented": false,
+    "databaseChanged": false,
+    "inquiriesSentToOffice": false,
+    "externalNetworkRequired": false,
+    "newDependencies": []
+  },
+  "futureEngineeringRequirements": [
+    "Validate LINE or LIFF identity on the server using the appropriate signed identity credentials.",
+    "Authorize the resident against the linked room on every resident data request.",
+    "Implement resident data and inquiry APIs before connecting this interface to real information."
+  ]
+}

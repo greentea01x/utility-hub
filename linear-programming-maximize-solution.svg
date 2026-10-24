@@ -1,0 +1,182 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="1200" viewBox="0 0 2000 1200">
+  <defs>
+    <linearGradient id="headerGradient" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#123B73"/>
+      <stop offset="1" stop-color="#1E5BA7"/>
+    </linearGradient>
+    <linearGradient id="answerGradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFF3D6"/>
+      <stop offset="1" stop-color="#FFE3A1"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="#233B5D" flood-opacity="0.12"/>
+    </filter>
+    <marker id="axisArrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,5 L0,10 z" fill="#17253A"/>
+    </marker>
+    <marker id="purpleArrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,5 L0,10 z" fill="#7B4EC5"/>
+    </marker>
+    <style>
+      text { font-family: "Thonburi", "Noto Sans Thai", "Tahoma", sans-serif; fill: #17253A; }
+      .title { font-size: 46px; font-weight: 700; }
+      .subtitle { font-size: 31px; font-weight: 700; }
+      .card-title { font-size: 31px; font-weight: 700; }
+      .body { font-size: 25px; }
+      .small { font-size: 21px; }
+      .tiny { font-size: 18px; }
+      .math { font-family: "Arial", "Thonburi", sans-serif; }
+    </style>
+  </defs>
+
+  <rect width="2000" height="1200" fill="#F4F7FC"/>
+
+  <!-- Header -->
+  <rect x="50" y="35" width="1900" height="100" rx="24" fill="url(#headerGradient)" filter="url(#shadow)"/>
+  <text x="1000" y="101" text-anchor="middle" class="title" fill="#FFFFFF">วิธีกราฟ: Linear Programming (Maximize)</text>
+
+  <!-- Problem card -->
+  <rect x="50" y="165" width="900" height="215" rx="22" fill="#FFFFFF" stroke="#2D78C4" stroke-width="3" filter="url(#shadow)"/>
+  <rect x="50" y="165" width="15" height="215" rx="8" fill="#2D78C4"/>
+  <text x="90" y="220" class="subtitle" fill="#184C88">โจทย์</text>
+  <text x="205" y="220" class="subtitle math">Maximize  Z = 100X + 50Y</text>
+  <line x1="85" y1="247" x2="915" y2="247" stroke="#D9E6F5" stroke-width="2"/>
+  <text x="90" y="292" class="body" font-weight="700">เงื่อนไข</text>
+  <text x="245" y="292" class="body math">1) X + 2Y ≥ 400</text>
+  <text x="590" y="292" class="body math">2) X + Y ≤ 300</text>
+  <text x="245" y="340" class="body math">3) Y ≤ 200</text>
+  <text x="590" y="340" class="body math">4) X, Y ≥ 0</text>
+
+  <!-- Graph card -->
+  <rect x="50" y="405" width="900" height="735" rx="22" fill="#FFFFFF" stroke="#DCE5F2" stroke-width="2" filter="url(#shadow)"/>
+  <text x="90" y="462" class="card-title">1. วาดเส้นและหาพื้นที่ที่เป็นไปได้</text>
+  <rect x="645" y="430" width="270" height="50" rx="25" fill="#FFF0B8"/>
+  <text x="780" y="463" text-anchor="middle" class="small" font-weight="700" fill="#8A6500">พื้นที่สีเหลือง = คำตอบที่เป็นไปได้</text>
+
+  <!-- Grid -->
+  <g stroke="#E7EDF5" stroke-width="1.5">
+    <line x1="130" y1="1060" x2="130" y2="520"/>
+    <line x1="310" y1="1060" x2="310" y2="520"/>
+    <line x1="490" y1="1060" x2="490" y2="520"/>
+    <line x1="670" y1="1060" x2="670" y2="520"/>
+    <line x1="850" y1="1060" x2="850" y2="520"/>
+    <line x1="130" y1="1060" x2="850" y2="1060"/>
+    <line x1="130" y1="880" x2="850" y2="880"/>
+    <line x1="130" y1="700" x2="850" y2="700"/>
+    <line x1="130" y1="520" x2="850" y2="520"/>
+  </g>
+
+  <!-- Feasible region -->
+  <polygon points="130,700 310,700 490,880" fill="#FFD84A" fill-opacity="0.62" stroke="#E9A900" stroke-width="3"/>
+  <text x="286" y="757" text-anchor="middle" class="small" font-weight="700" fill="#725300">พื้นที่ที่ผ่าน</text>
+  <text x="286" y="786" text-anchor="middle" class="small" font-weight="700" fill="#725300">ทุกเงื่อนไข</text>
+
+  <!-- Constraint lines -->
+  <line x1="130" y1="700" x2="850" y2="1060" stroke="#E83D54" stroke-width="6" stroke-linecap="round"/>
+  <line x1="130" y1="520" x2="670" y2="1060" stroke="#2476DB" stroke-width="6" stroke-linecap="round"/>
+  <line x1="130" y1="700" x2="850" y2="700" stroke="#168B55" stroke-width="6" stroke-linecap="round"/>
+
+  <!-- Objective line at optimum -->
+  <line x1="310" y1="520" x2="580" y2="1060" stroke="#7B4EC5" stroke-width="4" stroke-dasharray="12 10"/>
+  <line x1="375" y1="645" x2="412" y2="618" stroke="#7B4EC5" stroke-width="4" marker-end="url(#purpleArrow)"/>
+  <rect x="328" y="541" width="220" height="42" rx="19" fill="#EFE7FF"/>
+  <text x="438" y="570" text-anchor="middle" class="small math" font-weight="700" fill="#6E42B5">Z = 25,000</text>
+
+  <!-- Axes -->
+  <line x1="130" y1="1060" x2="885" y2="1060" stroke="#17253A" stroke-width="4" marker-end="url(#axisArrow)"/>
+  <line x1="130" y1="1060" x2="130" y2="492" stroke="#17253A" stroke-width="4" marker-end="url(#axisArrow)"/>
+  <text x="900" y="1071" class="subtitle math">X</text>
+  <text x="112" y="487" class="subtitle math">Y</text>
+
+  <!-- Ticks and labels -->
+  <g class="small math" text-anchor="middle">
+    <line x1="130" y1="1060" x2="130" y2="1072" stroke="#17253A" stroke-width="3"/><text x="130" y="1103">0</text>
+    <line x1="310" y1="1060" x2="310" y2="1072" stroke="#17253A" stroke-width="3"/><text x="310" y="1103">100</text>
+    <line x1="490" y1="1060" x2="490" y2="1072" stroke="#17253A" stroke-width="3"/><text x="490" y="1103">200</text>
+    <line x1="670" y1="1060" x2="670" y2="1072" stroke="#17253A" stroke-width="3"/><text x="670" y="1103">300</text>
+    <line x1="850" y1="1060" x2="850" y2="1072" stroke="#17253A" stroke-width="3"/><text x="850" y="1103">400</text>
+  </g>
+  <g class="small math" text-anchor="end">
+    <line x1="118" y1="880" x2="130" y2="880" stroke="#17253A" stroke-width="3"/><text x="105" y="888">100</text>
+    <line x1="118" y1="700" x2="130" y2="700" stroke="#17253A" stroke-width="3"/><text x="105" y="708">200</text>
+    <line x1="118" y1="520" x2="130" y2="520" stroke="#17253A" stroke-width="3"/><text x="105" y="528">300</text>
+  </g>
+
+  <!-- Graph labels -->
+  <text x="655" y="1000" class="small math" font-weight="700" fill="#D9213B">X + 2Y = 400</text>
+  <text x="180" y="553" class="small math" font-weight="700" fill="#1764C7">X + Y = 300</text>
+  <text x="708" y="685" class="small math" font-weight="700" fill="#087A42">Y = 200</text>
+
+  <!-- Vertices -->
+  <circle cx="130" cy="700" r="10" fill="#17253A" stroke="#FFFFFF" stroke-width="4"/>
+  <circle cx="310" cy="700" r="10" fill="#17253A" stroke="#FFFFFF" stroke-width="4"/>
+  <circle cx="490" cy="880" r="15" fill="#E8293F" stroke="#FFFFFF" stroke-width="5"/>
+  <text x="143" y="680" class="small math" font-weight="700">A (0,200)</text>
+  <text x="325" y="680" class="small math" font-weight="700">B (100,200)</text>
+  <rect x="512" y="840" width="255" height="76" rx="16" fill="#FFE5E9" stroke="#E8293F" stroke-width="2"/>
+  <text x="532" y="871" class="small math" font-weight="700" fill="#C71930">C (200,100)</text>
+  <text x="532" y="901" class="small" font-weight="700" fill="#C71930">จุดที่ให้ค่าสูงสุด</text>
+
+  <!-- Step 1 -->
+  <rect x="980" y="165" width="970" height="250" rx="22" fill="#FFFFFF" stroke="#73AEE8" stroke-width="3" filter="url(#shadow)"/>
+  <circle cx="1032" cy="218" r="34" fill="#1F66AA"/>
+  <text x="1032" y="230" text-anchor="middle" font-size="34" font-weight="700" fill="#FFFFFF">1</text>
+  <text x="1082" y="228" class="card-title" fill="#184C88">วาดเส้นขอบและเลือกด้าน</text>
+  <text x="1018" y="277" class="body">เปลี่ยน ≥ หรือ ≤ เป็น = เพื่อวาดเส้น แล้วใช้เครื่องหมายเดิมเลือกด้าน</text>
+  <text x="1020" y="321" class="body math" fill="#D9213B">X + 2Y = 400  →  (400,0), (0,200)</text>
+  <text x="1020" y="360" class="body math" fill="#1764C7">X + Y = 300    →  (300,0), (0,300)</text>
+  <text x="1540" y="321" class="small" fill="#D9213B">≥ เลือกด้านเหนือเส้น</text>
+  <text x="1540" y="360" class="small" fill="#1764C7">≤ เลือกด้านใต้เส้น</text>
+  <text x="1020" y="397" class="body math" fill="#087A42">Y = 200  →  เส้นแนวนอน และเลือกด้านล่าง</text>
+
+  <!-- Step 2 -->
+  <rect x="980" y="435" width="970" height="285" rx="22" fill="#FFFFFF" stroke="#64BE88" stroke-width="3" filter="url(#shadow)"/>
+  <circle cx="1032" cy="488" r="34" fill="#188754"/>
+  <text x="1032" y="500" text-anchor="middle" font-size="34" font-weight="700" fill="#FFFFFF">2</text>
+  <text x="1082" y="498" class="card-title" fill="#147247">หาจุดตัดที่เป็นจุดมุม</text>
+  <text x="1020" y="548" class="body" font-weight="700">เส้น 1 กับเส้น 2</text>
+  <text x="1020" y="590" class="body math">X + 2Y = 400</text>
+  <text x="1020" y="628" class="body math">X + Y = 300</text>
+  <line x1="1018" y1="639" x2="1240" y2="639" stroke="#17253A" stroke-width="2"/>
+  <text x="1020" y="678" class="body math" font-weight="700">ลบสมการ → Y = 100, X = 200</text>
+  <rect x="1445" y="535" width="455" height="142" rx="18" fill="#EAF8F0"/>
+  <text x="1475" y="578" class="body math" font-weight="700" fill="#147247">C = (200,100)</text>
+  <text x="1475" y="619" class="body math">เส้น 1 กับ 3 → A = (0,200)</text>
+  <text x="1475" y="660" class="body math">เส้น 2 กับ 3 → B = (100,200)</text>
+
+  <!-- Step 3 -->
+  <rect x="980" y="740" width="970" height="175" rx="22" fill="#FFFFFF" stroke="#F0BF3F" stroke-width="3" filter="url(#shadow)"/>
+  <circle cx="1032" cy="793" r="34" fill="#E6A914"/>
+  <text x="1032" y="805" text-anchor="middle" font-size="34" font-weight="700" fill="#FFFFFF">3</text>
+  <text x="1082" y="803" class="card-title" fill="#916900">ระบุพื้นที่ที่เป็นไปได้</text>
+  <text x="1020" y="853" class="body">บริเวณที่ผ่านทุกเงื่อนไขพร้อมกัน คือสามเหลี่ยม A–B–C</text>
+  <text x="1020" y="894" class="body">ฟังก์ชันเชิงเส้นจะได้ค่าสูงสุดที่จุดมุมจุดใดจุดหนึ่ง จึงตรวจทั้ง 3 จุด</text>
+
+  <!-- Step 4 -->
+  <rect x="980" y="935" width="970" height="205" rx="22" fill="#FFFFFF" stroke="#EE7787" stroke-width="3" filter="url(#shadow)"/>
+  <circle cx="1032" cy="985" r="34" fill="#D83851"/>
+  <text x="1032" y="997" text-anchor="middle" font-size="34" font-weight="700" fill="#FFFFFF">4</text>
+  <text x="1082" y="995" class="card-title" fill="#B8273D">แทนค่าจุดมุมใน Z = 100X + 50Y</text>
+
+  <!-- Table -->
+  <rect x="1018" y="1018" width="535" height="100" rx="12" fill="#F9FBFE" stroke="#B9C8DB" stroke-width="2"/>
+  <line x1="1210" y1="1018" x2="1210" y2="1118" stroke="#B9C8DB" stroke-width="2"/>
+  <line x1="1018" y1="1052" x2="1553" y2="1052" stroke="#B9C8DB" stroke-width="2"/>
+  <line x1="1018" y1="1085" x2="1553" y2="1085" stroke="#B9C8DB" stroke-width="2"/>
+  <text x="1114" y="1044" text-anchor="middle" class="small" font-weight="700">จุดมุม</text>
+  <text x="1382" y="1044" text-anchor="middle" class="small" font-weight="700">ค่า Z</text>
+  <text x="1114" y="1077" text-anchor="middle" class="small math">(0,200)</text>
+  <text x="1382" y="1077" text-anchor="middle" class="small math">10,000</text>
+  <text x="1114" y="1110" text-anchor="middle" class="small math">(100,200)</text>
+  <text x="1382" y="1110" text-anchor="middle" class="small math">20,000</text>
+  <text x="1508" y="1077" text-anchor="middle" class="tiny math"></text>
+
+  <!-- Winning row and final answer -->
+  <rect x="1572" y="1018" width="340" height="100" rx="16" fill="url(#answerGradient)" stroke="#E8293F" stroke-width="3"/>
+  <text x="1742" y="1050" text-anchor="middle" class="small math" font-weight="700" fill="#C71930">(200,100) → 25,000</text>
+  <text x="1742" y="1082" text-anchor="middle" class="small" font-weight="700" fill="#C71930">ค่าสูงสุด</text>
+  <text x="1742" y="1110" text-anchor="middle" class="small math" font-weight="700" fill="#8A2A36">X = 200, Y = 100</text>
+
+  <rect x="980" y="1155" width="970" height="30" rx="15" fill="#173F72"/>
+  <text x="1465" y="1178" text-anchor="middle" font-size="22" font-weight="700" fill="#FFFFFF">คำตอบสุดท้าย: X = 200, Y = 100 และ Zmax = 25,000</text>
+</svg>

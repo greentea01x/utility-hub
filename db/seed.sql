@@ -2,7 +2,7 @@ INSERT INTO users (username, display_name, password_hash, role)
 VALUES ('admin', 'ผู้ดูแลระบบ', '__ADMIN_PASSWORD_HASH__', 'admin');
 
 INSERT INTO settings (id, apartment_name, address, phone, office_hours, due_day)
-VALUES (1, 'UtilityHub Apartment', 'กรุงเทพมหานคร', '020000000', '09:00–17:00 น.', 5);
+VALUES (1, 'สุขธารา เรสซิเดนซ์', 'กรุงเทพมหานคร', '020000000', '09:00–17:00 น.', 5);
 
 INSERT INTO rooms (room_number, floor, area_sqm, status, water_baseline, electric_baseline)
 SELECT (floor_no::text || LPAD(room_no::text, 2, '0')), floor_no,
