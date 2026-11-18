@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title desc">
+  <title id="title">Condo one</title>
+  <desc id="desc">An architectural C surrounding a single tower, in plum, sage and peach.</desc>
+  <rect x="1" y="1" width="94" height="94" rx="27" fill="#F8F3EE"/>
+  <path d="M66 23a30 30 0 1 0 0 50" fill="none" stroke="#79616F" stroke-width="8" stroke-linecap="round"/>
+  <path d="M46 35 62 26v43H46z" fill="#7E9680"/>
+  <path d="M62 26 72 31v38H62z" fill="#EAB595"/>
+  <path d="M52 42h4m-4 9h4m-4 9h4" fill="none" stroke="#F8F3EE" stroke-width="3" stroke-linecap="round"/>
+  <path d="M42 69h33" fill="none" stroke="#79616F" stroke-width="4" stroke-linecap="round"/>
+</svg>

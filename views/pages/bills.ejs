@@ -1,0 +1,36 @@
+<%- include('../partials/shell-start') %>
+<div class="page-intro"><div><p class="section-kicker">การเรียกเก็บรายเดือน</p><h1>บิลประจำเดือน</h1><p>ตรวจสอบบิลฉบับร่าง อนุมัติยอดเรียกเก็บ และติดตามการชำระของ <%= monthLabel(period) %></p></div></div>
+<section class="panel workspace-section mobile-billing-work" aria-labelledby="billing-work-heading">
+  <div class="section-heading"><div><h2 id="billing-work-heading">จัดเตรียมบิลประจำเดือน</h2><p>บันทึกมิเตอร์ให้ครบก่อนสร้างบิล แล้วตรวจสอบยอดก่อนอนุมัติ</p></div></div>
+  <form action="/bills/generate" method="post" class="action-bar">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <input type="hidden" name="period" value="<%= period %>">
+    <button type="submit">สร้าง/อัปเดตบิลฉบับร่าง</button>
+    <a class="button button-outline" href="/readings?period=<%= period %>">ตรวจสอบมิเตอร์</a>
+  </form>
+</section>
+<section aria-labelledby="bills-heading">
+  <div class="table-toolbar"><h2 id="bills-heading">รายการบิล</h2><span class="count-label"><%= bills.length %> ใบ</span></div>
+  <div class="table-wrap mobile-card-wrap"><table class="mobile-card-table mobile-bills-table" role="table" aria-labelledby="bills-heading">
+    <thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">ห้อง</th><th scope="col" role="columnheader">สถานะบิล</th><th scope="col" role="columnheader" class="num">ยอดรวม (บาท)</th><th scope="col" role="columnheader">ครบกำหนด</th><th scope="col" role="columnheader">ดำเนินการ</th></tr></thead>
+    <tbody role="rowgroup">
+      <% if (!bills.length) { %><tr role="row"><td role="cell" class="empty-cell" colspan="5"><strong>ยังไม่มีบิลในรอบเดือนนี้</strong><br>เริ่มจากจดมิเตอร์ แล้วสร้างบิลฉบับร่างเพื่อดำเนินการต่อ</td></tr><% } %>
+      <% bills.forEach((bill) => { %>
+        <tr role="row" data-room="<%= bill.room_number %>" data-bill-id="<%= bill.id %>">
+          <td role="cell" class="mobile-card-primary" data-mobile-label="ห้อง"><strong><%= bill.room_number %></strong></td>
+          <td role="cell" class="mobile-card-status" data-mobile-label="สถานะบิล"><span class="badge <%= bill.status === 'Paid' ? 'success' : bill.status === 'Unpaid' ? 'warning' : 'muted' %>"><%= bill.status === 'Draft' ? 'ฉบับร่าง' : bill.status === 'Unpaid' ? 'รอชำระ' : bill.status === 'Paid' ? 'ชำระแล้ว' : 'ยกเลิกแล้ว' %></span></td>
+          <td role="cell" class="num mobile-card-amount" data-mobile-label="ยอดรวม (บาท)"><strong><%= money(bill.total) %></strong></td>
+          <td role="cell" data-mobile-label="ครบกำหนด"><%= displayDate(bill.due_date) %></td>
+          <td role="cell" class="mobile-card-actions" data-mobile-label="ดำเนินการ">
+            <% if (bill.status === 'Draft' && session.user.role === 'admin') { %>
+              <form action="/bills/<%= bill.id %>/approve" method="post"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="period" value="<%= period %>"><button type="submit">อนุมัติบิล</button></form>
+            <% } else if (bill.status === 'Unpaid') { %>
+              <form action="/bills/<%= bill.id %>/pay" method="post"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button type="submit">รับชำระเงินสด</button></form>
+            <% } else if (bill.receipt_id) { %><a class="button button-outline" href="/receipts/<%= bill.receipt_id %>">ดูใบเสร็จ</a><% } else { %><span class="field-help">—</span><% } %>
+          </td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table></div>
+</section>
+<%- include('../partials/shell-end') %>

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#79616f">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <title><%= title %> · <%= residenceName %> · <%= receipt.receipt_number %></title>
+  <link rel="stylesheet" href="/css/app.css">
+  <link rel="stylesheet" href="/css/mobile-pages.css">
+  <link rel="stylesheet" href="/css/brand-ui.css">
+  <script src="/js/receipt.js" defer></script>
+</head>
+<body>
+  <main class="receipt-page">
+    <section class="receipt">
+      <div class="receipt-brand"><img class="brand-symbol" src="/images/condo-one-logo.svg" alt="" width="48" height="48"><div><p class="eyebrow">ใบเสร็จรับเงิน</p><h1><%= residenceName %></h1></div></div>
+      <p class="receipt-number">เลขที่ <%= receipt.receipt_number %></p>
+      <p>ห้อง <%= receipt.room_number %> · <%= receipt.full_name ?? '-' %></p>
+      <p>รอบบิล <%= monthLabel(receipt.period) %></p>
+      <p>วันที่รับชำระ <%= displayDate(receipt.received_at) %> · เงินสด</p>
+      <div class="table-wrap mobile-card-wrap">
+        <table class="mobile-card-table mobile-receipt-table" role="table" aria-label="รายละเอียดใบเสร็จ">
+          <thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">รายการ</th><th scope="col" role="columnheader">จำนวน</th><th scope="col" role="columnheader">อัตรา</th><th scope="col" role="columnheader">จำนวนเงิน</th></tr></thead>
+          <tbody role="rowgroup">
+            <% items.forEach((item) => { %>
+              <tr role="row"><td role="cell" class="mobile-card-primary" data-mobile-label="รายการ"><%= item.description %></td><td role="cell" data-mobile-label="จำนวน"><%= quantity(item.quantity) %></td><td role="cell" data-mobile-label="อัตรา (บาท)"><%= money(item.unit_price) %></td><td role="cell" class="mobile-card-amount mobile-card-wide" data-mobile-label="จำนวนเงิน (บาท)"><%= money(item.amount) %></td></tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+      <h2 class="receipt-total">รวม <%= money(receipt.amount) %> บาท</h2>
+      <div class="receipt-actions"><button type="button" data-print-receipt disabled>พิมพ์ใบเสร็จ</button><a class="button button-outline receipt-back-link" href="/payments/history">กลับประวัติการรับชำระ</a></div>
+    </section>
+  </main>
+</body>
+</html>

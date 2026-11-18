@@ -1,0 +1,8 @@
+<%- include('../partials/shell-start') %>
+<div class="page-intro"><div><p class="section-kicker">การจัดการระบบ</p><h1>ผู้ใช้งานระบบ</h1><p>ตรวจสอบบัญชีผู้ดูแลระบบและเจ้าหน้าที่ พร้อมสิทธิ์ในการเข้าถึงข้อมูล</p></div><span class="count-label"><%= users.length %> บัญชี</span></div>
+<div class="table-wrap mobile-card-wrap"><table class="mobile-card-table mobile-users-table" role="table" aria-label="รายการผู้ใช้งานระบบ">
+  <thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">ชื่อผู้ใช้</th><th scope="col" role="columnheader">ชื่อที่แสดง</th><th scope="col" role="columnheader">สิทธิ์การใช้งาน</th><th scope="col" role="columnheader">สถานะบัญชี</th></tr></thead>
+  <tbody role="rowgroup"><% if (!users.length) { %><tr role="row"><td role="cell" class="empty-cell" colspan="4">ยังไม่มีบัญชีผู้ใช้งานในรายการนี้</td></tr><% } %><% users.forEach((user) => { %><tr role="row"><td role="cell" class="mobile-card-primary" data-mobile-label="ชื่อผู้ใช้"><strong><%= user.username %></strong></td><td role="cell" class="mobile-card-wide" data-mobile-label="ชื่อที่แสดง"><%= user.display_name %></td><td role="cell" data-mobile-label="สิทธิ์การใช้งาน"><span class="badge <%= user.role === 'admin' ? '' : 'muted' %>"><%= user.role === 'admin' ? 'ผู้ดูแลระบบ' : 'เจ้าหน้าที่' %></span></td><td role="cell" data-mobile-label="สถานะบัญชี"><span class="badge <%= user.status === 'Active' ? 'success' : 'muted' %>"><%= user.status === 'Active' ? 'ใช้งาน' : 'ปิดใช้งาน' %></span></td></tr><% }) %></tbody>
+</table></div>
+<p class="surface-note">หน้านี้ใช้ตรวจสอบบัญชีและสิทธิ์ การเพิ่มบัญชีหรือแก้ไขสิทธิ์ผ่านหน้าจอยังไม่เปิดใช้งาน</p>
+<%- include('../partials/shell-end') %>

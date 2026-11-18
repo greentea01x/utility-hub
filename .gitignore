@@ -1,0 +1,7 @@
+node_modules/
+.env
+.env.test
+db/dumps/*.sql.gz
+db/backups/
+test-results/
+playwright-report/

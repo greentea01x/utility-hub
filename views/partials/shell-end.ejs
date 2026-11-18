@@ -1,0 +1,12 @@
+    </main>
+    <footer class="workspace-footer"><span><%= residenceName %></span><span>ระบบจัดการค่าสาธารณูปโภคและค่าส่วนกลาง · <a href="/image-credits.html">เครดิตภาพ</a></span></footer>
+  </div>
+</div>
+<nav class="mobile-bottom-nav" aria-label="เมนูบนมือถือ">
+  <% const mobilePages = navigation.filter((page) => ['/readings', '/rooms', '/dashboard'].includes(page.href)); mobilePages.sort((a,b) => ['/readings','/rooms','/dashboard'].indexOf(a.href) - ['/readings','/rooms','/dashboard'].indexOf(b.href)); mobilePages.forEach((page) => { const active = currentPath === page.href || currentPath.startsWith(page.href + '/'); %>
+    <a href="<%= page.href %>" class="<%= active ? 'is-active' : '' %>" <% if (active) { %>aria-current="page"<% } %>><%- include('icon', { icon: page.icon }) %><span><%= page.label %></span></a>
+  <% }) %>
+  <button type="button" class="mobile-menu-button <%= mobilePages.some((page) => currentPath === page.href || currentPath.startsWith(page.href + '/')) ? '' : 'is-active' %>" data-toggle-nav aria-controls="app-sidebar" aria-expanded="false" aria-label="เปิดเมนูทั้งหมด"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span>เมนูทั้งหมด</span></button>
+</nav>
+</body>
+</html>

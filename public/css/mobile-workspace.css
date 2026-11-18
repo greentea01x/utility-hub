@@ -1,0 +1,387 @@
+/* Mobile workspace shares the sage, plum and rose palette with desktop. */
+.mobile-room-prefix,
+.mobile-chart-hint,
+.mobile-chart-data {
+  display: none;
+}
+
+/* DOM follows the phone reading order; explicit columns retain the desktop layout. */
+@media screen and (min-width: 1061px) {
+  .dashboard-view .chart-column {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .dashboard-view .dashboard-side {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
+
+@media screen and (min-width: 761px) and (max-width: 1060px) {
+  .dashboard-view .chart-column {
+    grid-row: 1;
+  }
+  .dashboard-view .dashboard-side {
+    grid-row: 2;
+  }
+}
+
+@media screen and (max-width: 760px) {
+  html {
+    scroll-padding-top: 140px;
+    scroll-padding-bottom: 170px;
+  }
+
+  .page-content {
+    padding: 18px 16px 24px;
+  }
+
+  .page-content input:not([type='hidden']),
+  .page-content select,
+  .page-content textarea {
+    font-size: 16px;
+    min-height: 48px;
+  }
+
+  .page-content input,
+  .page-content textarea,
+  .page-content button {
+    scroll-margin-block: 150px 180px;
+  }
+
+  .notice,
+  .error-notice {
+    overflow-wrap: anywhere;
+  }
+
+  .dashboard-view .kpi-grid {
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+
+  .dashboard-view .kpi {
+    min-width: 0;
+    min-height: 112px;
+    padding: 14px 12px;
+    border-radius: 16px;
+  }
+
+  .dashboard-view .kpi h2 {
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .dashboard-view .kpi-value {
+    font-size: clamp(19px, 5.4vw, 26px);
+    line-height: 1.45;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+
+  .dashboard-view .kpi p {
+    font-size: 12px;
+    margin-bottom: 0;
+  }
+
+  .dashboard-view .kpi[data-kpi-index='6'] {
+    grid-column: 1 / -1;
+    order: -3;
+    padding: 20px;
+    background: linear-gradient(135deg, var(--primary), #79616f);
+    border-color: transparent;
+    color: white;
+    box-shadow: 0 9px 22px #79616f24;
+  }
+
+  .dashboard-view .kpi[data-kpi-index='6'] h2,
+  .dashboard-view .kpi[data-kpi-index='6'] .kpi-value {
+    color: white;
+  }
+
+  .dashboard-view .kpi[data-kpi-index='6'] .kpi-value {
+    font-size: clamp(26px, 8vw, 36px);
+    margin: 5px 0;
+  }
+
+  .dashboard-view .kpi[data-kpi-index='6'] p {
+    color: #f6eaf0;
+  }
+
+  .dashboard-view .kpi[data-kpi-index='7'],
+  .dashboard-view .kpi[data-kpi-index='8'] {
+    order: -2;
+  }
+
+  .dashboard-view .kpi[data-kpi-index='9'] {
+    grid-column: 1 / -1;
+    min-height: 0;
+  }
+
+  .dashboard-view .dashboard-columns {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .dashboard-view .dashboard-side {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dashboard-view .residence-photo-card {
+    display: none;
+  }
+
+  .dashboard-view .panel-heading {
+    padding: 14px 16px;
+    min-height: 56px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .dashboard-view .panel-heading h2 {
+    font-size: 15px;
+    font-weight: 650;
+  }
+
+  .dashboard-view .panel-body,
+  .dashboard-view .shortcut-grid {
+    padding: 16px;
+  }
+
+  .dashboard-view .shortcut-grid .button {
+    min-height: 48px;
+    font-size: 14px;
+  }
+
+  .dashboard-view .donut-layout {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .dashboard-view .donut-chart {
+    width: 160px;
+  }
+
+  .dashboard-view .chart-legend {
+    min-width: 150px;
+  }
+
+  .dashboard-view .chart-legend li,
+  .dashboard-view .bill-reconciliation {
+    font-size: 14px;
+  }
+
+  .bill-reconciliation dd {
+    overflow-wrap: anywhere;
+    text-align: right;
+    min-width: 0;
+  }
+
+  .chart-panel .chart-body {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+  }
+
+  .chart-panel .usage-chart {
+    min-width: 600px;
+    margin-top: 12px;
+  }
+
+  .mobile-chart-hint {
+    display: block;
+    margin: 8px 16px 12px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .mobile-chart-data {
+    display: block;
+    margin: 0 16px 16px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #fcf9f6;
+  }
+
+  .mobile-chart-data summary {
+    padding: 12px;
+    min-height: 48px;
+    font-size: 14px;
+    color: var(--primary);
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .mobile-chart-data dl {
+    margin: 0;
+    padding: 0 12px 12px;
+  }
+
+  .mobile-chart-data dl > div {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 0;
+    border-top: 1px solid var(--border);
+    font-size: 13px;
+  }
+
+  .mobile-chart-data dd {
+    margin: 0;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .staff-progress .quick-links .button {
+    flex: 1;
+    min-height: 48px;
+  }
+
+  .mobile-room-prefix {
+    display: inline;
+  }
+
+  .meter-workspace .reading-toolbar .filter-chips {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .meter-workspace .filter-chip {
+    justify-content: space-between;
+    min-height: 46px;
+    font-size: 13px;
+    padding: 10px 14px;
+    border-radius: 13px;
+  }
+
+  .meter-workspace .search-form {
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .meter-workspace .search-form button {
+    min-height: 48px;
+    padding-inline: 18px;
+  }
+
+  .meter-workspace .search-form .search-label {
+    flex-basis: 60%;
+  }
+
+  .meter-workspace .meter-clear-search {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    font-size: 14px;
+  }
+
+  .meter-workspace .readings-table tr[data-room] {
+    padding: 16px;
+    gap: 14px 10px;
+    border-radius: 18px;
+    box-shadow: 0 4px 16px #79616f0a;
+  }
+
+  .meter-workspace .room-cell strong {
+    font-size: 22px;
+  }
+
+  .meter-workspace .meter-room-heading {
+    justify-content: space-between;
+  }
+
+  .meter-workspace .meter-tenant,
+  .meter-workspace .meter-saved-summary {
+    font-size: 13px;
+  }
+
+  .meter-workspace .readings-table td[data-label]::before {
+    font-size: 13px;
+  }
+
+  .meter-workspace .readings-table .previous-reading,
+  .meter-workspace .readings-table input[type='number'] {
+    min-height: 50px;
+    font-size: 17px;
+  }
+
+  .meter-workspace .meter-units {
+    font-size: 13px;
+    margin-top: 8px;
+  }
+
+  .meter-workspace .meter-recorded-by {
+    padding: 9px 0;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+  }
+
+  .meter-workspace .meter-recorded-by time {
+    font-size: 12px;
+  }
+
+  .meter-workspace .meter-technician-field {
+    padding: 14px 12px;
+    gap: 10px;
+    border-radius: 13px;
+  }
+
+  .meter-workspace .meter-technician-field label {
+    font-size: 14px;
+  }
+
+  .meter-workspace .meter-technician-role {
+    font-size: 11px;
+  }
+
+  .meter-workspace .meter-technician-field > small,
+  .meter-workspace .field-error {
+    font-size: 12px;
+  }
+
+  .meter-workspace .save-cell button {
+    min-height: 50px;
+    font-size: 16px;
+    border-radius: 13px;
+  }
+
+  .workspace:has(.readings-wrap) {
+    padding-bottom: calc(150px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .workspace:has(.readings-wrap) .reading-progress {
+    bottom: var(--mobile-nav-height, calc(72px + env(safe-area-inset-bottom, 0px)));
+    padding: 10px 16px;
+    font-size: 13px;
+  }
+
+  .meter-next-step {
+    padding: 16px;
+    border: 1px solid #d9e1d7;
+    border-radius: 16px;
+    background: #eef2eb;
+  }
+
+  .meter-next-step > a {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .meter-next-step > span {
+    font-size: 12px;
+  }
+
+  .meter-help {
+    padding: 16px;
+  }
+
+  .meter-help ol,
+  .meter-help p {
+    font-size: 13px;
+  }
+}

@@ -1,0 +1,34 @@
+<%- include('../partials/shell-start') %>
+<div class="page-intro">
+  <div><p class="section-kicker">ข้อมูลผู้พักอาศัย</p><h1>ผู้เช่า</h1><p>ข้อมูลติดต่อและการผูกบัญชี LINE สำหรับบริการลูกบ้าน</p></div>
+  <span class="count-label"><%= tenants.length %> รายการ</span>
+</div>
+<div class="table-wrap mobile-card-wrap"><table class="mobile-card-table mobile-tenants-table" role="table" aria-label="รายการผู้เช่า">
+  <thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">ห้อง</th><th scope="col" role="columnheader">ชื่อผู้เช่า</th><th scope="col" role="columnheader">เบอร์โทรศัพท์</th><th scope="col" role="columnheader">การเชื่อมต่อ LINE</th><th scope="col" role="columnheader">สถานะ</th></tr></thead>
+  <tbody role="rowgroup">
+    <% if (!tenants.length) { %><tr role="row"><td role="cell" class="empty-cell" colspan="5">ยังไม่มีผู้เช่าในรายการนี้</td></tr><% } %>
+    <% tenants.forEach((tenant) => { %>
+      <tr role="row"><td role="cell" class="mobile-card-primary" data-mobile-label="ห้อง"><strong><%= tenant.room_number %></strong></td><td role="cell" class="mobile-card-wide" data-mobile-label="ชื่อผู้เช่า"><%= tenant.full_name %></td><td role="cell" class="mobile-card-wide" data-mobile-label="เบอร์โทรศัพท์"><%= tenant.phone %></td><td role="cell" data-mobile-label="การเชื่อมต่อ LINE">
+        <span class="badge <%= tenant.line_user_id ? 'success' : 'muted' %>"><%= tenant.line_user_id ? 'ผูก LINE แล้ว' : 'ยังไม่ผูก LINE' %></span>
+        <% if (tenant.status === 'Active' && !tenant.line_user_id) { %>
+          <form action="/tenants/<%= tenant.id %>/link-code" method="post" data-line-link-form>
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <button type="submit" class="button-secondary" aria-label="สร้างรหัสผูก LINE สำหรับห้อง <%= tenant.room_number %>" aria-describedby="line-link-status-<%= tenant.id %>">สร้างรหัสผูก LINE</button>
+            <div id="line-link-status-<%= tenant.id %>" aria-live="polite" aria-atomic="true">
+              <div data-line-link-result hidden>
+                <span class="cell-detail">รหัสผูก LINE: <strong data-line-link-code></strong></span>
+                <span class="cell-detail">ใช้ได้ 1 ครั้ง · หมดอายุ 7 วันหลังสร้าง</span>
+                <span class="cell-detail">ส่งรหัสนี้ในแชต OA แล้วกลับตรวจสอบ</span>
+                <a class="cell-detail" href="/tenants">ตรวจสอบสถานะล่าสุด</a>
+              </div>
+              <p class="field-error" data-line-link-error hidden></p>
+            </div>
+          </form>
+        <% } %>
+      </td><td role="cell" data-mobile-label="สถานะ"><span class="badge <%= tenant.status === 'Active' ? 'success' : 'muted' %>"><%= tenant.status === 'Active' ? 'กำลังเข้าพัก' : 'สิ้นสุดการเข้าพัก' %></span></td></tr>
+    <% }) %>
+  </tbody>
+</table></div>
+<p class="surface-note">รหัสผูก LINE ใช้เชื่อมบัญชีลูกบ้านกับห้องพักเพื่อเข้าดูบิล ประวัติชำระเงิน และใบเสร็จ ส่งรหัสให้เฉพาะผู้พักอาศัยของห้องนั้น การสร้างรหัสใหม่จะยกเลิกรหัสเดิมที่ยังไม่ใช้ ส่วนการส่งข้อความแจ้งเตือนผ่าน LINE ยังไม่เปิดใช้งาน</p>
+<script src="/js/line-linking.js" defer></script>
+<%- include('../partials/shell-end') %>

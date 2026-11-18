@@ -1,0 +1,32 @@
+# Deploy the existing Express app with an external PostgreSQL database.
+# No database creation, data reset, migrations, cron jobs, or paid disks.
+services:
+  - type: web
+    name: condo-one
+    runtime: node
+    plan: free
+    autoDeployTrigger: "off"
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: NODE_ENV
+        value: production
+      - key: TZ
+        value: Asia/Bangkok
+      - key: DB_POOL_SIZE
+        value: "5"
+      - key: DATABASE_URL
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: LINE_CHANNEL_SECRET
+        sync: false
+      - key: LINE_LOGIN_CHANNEL_ID
+        sync: false
+      # Add PUBLIC_BASE_URL and LIFF_ID in Render after the real HTTPS URL and
+      # LIFF ID are issued. Missing values keep the resident portal disabled.
+      - key: RESIDENT_OFFICE_PHONE
+        value: "081-234-5678"

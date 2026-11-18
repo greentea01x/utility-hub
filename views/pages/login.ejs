@@ -1,0 +1,33 @@
+<%- include('../partials/head') %>
+<main class="login-page">
+  <div class="login-layout">
+    <section class="login-story" aria-label="ภาพอาคารที่พักอาศัย">
+      <figure class="login-residence-photo">
+        <img src="/images/login-residence-panorama.jpg" alt="ภาพประกอบอาคารที่พักอาศัยสูงท่ามกลางเมืองในยามเย็น" width="1280" height="640">
+      </figure>
+      <p class="login-photo-message">จดครบ ตรวจง่าย ดูยอดได้ในที่เดียว</p>
+    </section>
+    <section class="auth" aria-labelledby="login-heading">
+      <div class="login-brand-heading">
+        <div class="login-mark" aria-hidden="true"><img class="brand-symbol" src="/images/condo-one-logo.svg" alt="" width="56" height="56"></div>
+        <div class="login-brand-copy"><p class="residence-title"><%= residenceName %></p><p class="auth-description">ระบบจดค่าน้ำค่าไฟค่าส่วนกลาง</p></div>
+      </div>
+      <h1 id="login-heading">เข้าสู่ระบบ</h1>
+      <p class="auth-description">กรอกชื่อผู้ใช้และรหัสผ่านเพื่อเริ่มดูแลงานวันนี้</p>
+      <% if (typeof error !== 'undefined') { %><p class="error-notice" role="alert"><%= error %></p><% } %>
+      <form method="post" action="/login">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <label for="login-username">ชื่อผู้ใช้<input id="login-username" name="username" value="<%= username ?? '' %>" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="กรอกชื่อผู้ใช้" required></label>
+        <label id="login-password-label" for="login-password">รหัสผ่าน</label>
+        <div class="password-field">
+          <input id="login-password" name="password" type="password" autocomplete="current-password" placeholder="กรอกรหัสผ่าน" required>
+          <button class="password-toggle" type="button" data-toggle-password aria-controls="login-password" aria-label="แสดงรหัสผ่าน" aria-describedby="login-password-label" aria-pressed="false" hidden>แสดง</button>
+        </div>
+        <button class="login-submit" type="submit"><span>เข้าสู่ระบบ</span><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"/></svg></button>
+      </form>
+      <p class="login-security-note"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"/></svg><span>สำหรับผู้ดูแลระบบและเจ้าหน้าที่ที่ได้รับสิทธิ์</span></p>
+      <p class="auth-footer">หากไม่สามารถเข้าสู่ระบบได้<br>กรุณาติดต่อผู้ดูแลระบบของคอนโด</p>
+    </section>
+  </div>
+</main>
+</body></html>

@@ -1,0 +1,10 @@
+<%- include('../partials/shell-start') %>
+<div class="page-intro"><div><p class="section-kicker">รายงานการเงิน</p><h1><%= title %></h1><p>รายการค้างชำระของรอบบิล <%= monthLabel(period) %> สำหรับตรวจสอบและติดตามการชำระ</p></div><a class="button button-outline" href="/reports/arrears?period=<%= period %>&format=csv">ดาวน์โหลด CSV</a></div>
+<div class="table-toolbar"><h2 id="arrears-list-heading">รายการค้างชำระ</h2><span class="count-label"><%= rows.length %> รายการ</span></div>
+<% if (!rows.length) { %>
+  <section class="panel empty-state"><img class="empty-illustration" src="/images/reports-overview.svg" alt="" width="180" height="135"><h2>ไม่พบรายการค้างชำระในรอบนี้</h2><p>เลือกเดือนอื่นจากด้านบนเพื่อตรวจสอบข้อมูลย้อนหลัง</p></section>
+<% } else { %>
+  <div class="table-wrap mobile-card-wrap"><table class="mobile-card-table mobile-arrears-table" role="table" aria-labelledby="arrears-list-heading"><thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">ห้อง</th><th scope="col" role="columnheader">ผู้พักอาศัย</th><th scope="col" role="columnheader" class="num">ยอดค้าง (บาท)</th><th scope="col" role="columnheader">ครบกำหนด</th></tr></thead><tbody role="rowgroup"><% rows.forEach((row) => { %><tr role="row"><td role="cell" class="mobile-card-primary" data-mobile-label="ห้อง"><strong><%= row.room_number %></strong></td><td role="cell" class="mobile-card-wide" data-mobile-label="ผู้พักอาศัย"><%= row.full_name ?? '—' %></td><td role="cell" class="num mobile-card-amount" data-mobile-label="ยอดค้าง (บาท)"><strong><%= money(row.total) %></strong></td><td role="cell" data-mobile-label="ครบกำหนด"><%= displayDate(row.due_date) %></td></tr><% }) %></tbody></table></div>
+<% } %>
+<p class="surface-note">ส่งออกข้อมูลเป็นไฟล์ CSV เพื่อนำไปตรวจสอบหรือจัดทำรายงานต่อได้</p>
+<%- include('../partials/shell-end') %>
